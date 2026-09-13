@@ -54,6 +54,12 @@ export function unauthorizedResponse(): Response {
  */
 export function statusForErrorKey(key: string): number {
   if (key.endsWith(".notYourChild")) return 403;
+  // Migration-173 companion: the caller IS a parent of this child and is still
+  // refused, because the action belongs to the account's creator. That is a 403
+  // (authenticated, not permitted), never a 400 — a client retrying it as a
+  // validation error would retry forever.
+  if (key.endsWith(".creatorOnly")) return 403;
+  if (key === "link.err.sharedDelete") return 409;
   if (key.startsWith("gate.")) return 409;
   // Sale window closed between listing and purchase — a conflict with current
   // server state, like the payment-mode gates.

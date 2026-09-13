@@ -232,7 +232,6 @@ export default async function ParentLeaderboardPage({
   const { data: childRows } = await supabase
     .from("students")
     .select("profile_id, first_name, last_name, grade:grade_id(level, name), school:school_id(name)")
-    .eq("created_by_parent_profile_id", parent.profileId)
     .order("created_at", { ascending: true });
   const kids: Kid[] = ((childRows ?? []) as any[]).map((c) => ({
     profile_id: c.profile_id,

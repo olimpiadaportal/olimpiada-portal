@@ -104,6 +104,11 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
   if (!rowFresh || rowQ.isPending || live || (settled && resultQ.isPending)) {
     return (
       <View style={[pad, { flex: 1, backgroundColor: arena.bg }]}>
+        <BackBar
+          arena={arena}
+          label={t("test.run.back")}
+          onPress={() => backOrTo(router, homeTab)}
+        />
         <Skeleton height={16} width="30%" />
         <Skeleton height={26} width="60%" />
         <Skeleton height={170} />
@@ -115,15 +120,22 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
 
   if (rowQ.isError || (settled && resultQ.isError)) {
     return (
-      <View style={{ flex: 1, backgroundColor: arena.bg, justifyContent: "center" }}>
-        <ErrorRetry
-          message={t("test.err.generic")}
-          retryLabel={t("mob.retry")}
-          onRetry={() => {
-            void rowQ.refetch();
-            void resultQ.refetch();
-          }}
+      <View style={[pad, { flex: 1, backgroundColor: arena.bg }]}>
+        <BackBar
+          arena={arena}
+          label={t("test.run.back")}
+          onPress={() => backOrTo(router, homeTab)}
         />
+        <View style={{ flex: 1, justifyContent: "center" }}>
+          <ErrorRetry
+            message={t("test.err.generic")}
+            retryLabel={t("mob.retry")}
+            onRetry={() => {
+              void rowQ.refetch();
+              void resultQ.refetch();
+            }}
+          />
+        </View>
       </View>
     );
   }
@@ -131,6 +143,11 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
   if (!kindOk || closed) {
     return (
       <View style={[pad, { flex: 1, backgroundColor: arena.bg }]}>
+        <BackBar
+          arena={arena}
+          label={t("test.run.back")}
+          onPress={() => backOrTo(router, homeTab)}
+        />
         <Notice arena={arena} warn>
           {t("test.home.noticeClosed")}
         </Notice>

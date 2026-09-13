@@ -100,6 +100,33 @@ export async function paymentsClosedKey(): Promise<string | null> {
 }
 
 /**
+ * Refuse a new purchase while this child is covered by an admin-scheduled
+ * free-access interval. The global giveaway is already closed by
+ * paymentsClosedKey(); this second check covers parent- and child-scoped
+ * windows while the global payment mode remains `real`.
+ *
+ * The service-role-only predicate is the same one the access engine uses, so
+ * the purchase route cannot disagree with the content gate. Any unreadable
+ * answer fails closed before StoreKit opens.
+ */
+export async function freeAccessClosedKey(studentProfileId: string): Promise<string | null> {
+  if (!isServiceRoleConfigured) return "iap.err.generic";
+  try {
+    const admin = getAdminClient();
+    const { data, error } = await admin.rpc("is_free_access_active_for_student", {
+      p_student: studentProfileId,
+    });
+    if (error) {
+      console.error("[apple] the free-access gate could not be read:", error.code ?? "unknown");
+      return "iap.err.generic";
+    }
+    return data === true ? "gate.freeAccess" : null;
+  } catch {
+    return "iap.err.generic";
+  }
+}
+
+/**
  * May this SUBJECT be sold to THIS child right now?
  *
  * The subject-scope twin of `packageUnsellableKey`'s grade question, and it

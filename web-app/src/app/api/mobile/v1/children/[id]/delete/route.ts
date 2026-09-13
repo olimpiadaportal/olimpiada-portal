@@ -99,10 +99,19 @@ export async function POST(
       // A deletion that could not be COMPLETED is a server fault, and worth
       // retrying; a refusal ("not yours", "no such child") is neither, and
       // takes the shared key→status mapping like every other endpoint.
-      const failed = result.errorKey === "auth.child.err.serverError";
+      //
+      // MIGRATION 174 added a THIRD case the two-way split could not express:
+      // the shared-child guard (see deleteChildCore).
+      // It carries retryable:false, and the distinction is not cosmetic: the
+      // client treats a retryable 500 as "press Delete again", and pressing
+      // Delete again on a child who has a second adult will refuse every time,
+      // forever. 409 says what it is — a conflict with the account’s current
+      // state, the same status the purchase gates use — and is not retried.
+      const permanent = result.retryable === false;
+      const failed = !permanent && result.errorKey === "auth.child.err.serverError";
       return errorResponse(
         result.errorKey,
-        failed ? 500 : statusForErrorKey(result.errorKey),
+        failed ? 500 : permanent ? 409 : statusForErrorKey(result.errorKey),
         failed,
       );
     }

@@ -6,7 +6,79 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
-## RESUME POINT (2026-09-10) — 1.15.0 IS LIVE; 1.16.0 IS BLOCKED ON TWO FORMS
+## COMPLETED TASK (2026-09-13) — 1.16.0 iOS subscription and navigation hardening
+
+The unreleased 1.16.0 implementation is complete and ready for the owner's
+release commit. The iOS
+parent subscription screens retain the shared Android cards and information
+hierarchy, while the approved StoreKit offer panel is now disabled at the query,
+render and press layers during giveaway, scheduled free-access and payment-off
+states. The purchase-intent BFF independently refuses a new sale for a child
+with active free access and fails closed if that state cannot be read. Apple
+restore remains available because it does not charge the parent. Android remains
+purchase-silent.
+
+Every pushed parent, student and public information screen now has an explicit
+localized back arrow with a safe cold-deep-link fallback. The custom-header test
+setup, runner, result and review screens include the same affordance in loading,
+error, closed and active states; the runner's existing leave confirmation still
+guards an active attempt.
+
+Portrait is declared in Expo config, initialized and reasserted at runtime by
+`expo-screen-orientation ~9.0.9`, retained for iPad through full-screen mode, and
+opted into Android 16's temporary large-screen compatibility path through a
+local config plugin. Generated config confirms the iOS portrait mask,
+`UIRequiresFullScreen`, Android `screenOrientation=portrait`, and the API 36
+compatibility property. Target API 37 removes that Android opt-out and requires
+a future layout/orientation review.
+
+Validation completed: mobile 1,380 tests, web 1,481 tests, admin 1,147 tests;
+all three typechecks; clean mobile lint; mobile i18n and palette checks; Expo SDK
+dependency compatibility check; generated native-config inspection; CRLF-aware
+diff whitespace check. The dependency audit still reports 18 pre-existing
+transitive Expo/Metro/navigation advisories (8 moderate, 10 high); the new
+orientation package is not on any reported path, and the available complete fix
+would force a breaking Expo 57 upgrade. No database migration, deployment, OTA,
+signed build, store upload or commit was performed. Google SSO and store-console
+work remain deferred by the owner's instruction.
+
+## COMPLETED TASK (2026-09-12) — 1.16.0 and shared-child access
+
+The interrupted 1.16.0 work is complete; its final review and release commit are
+covered by the 2026-09-13 closeout above. A second parent/guardian can link the
+SAME child through a one-time, expiring code; the creating parent approves the
+request and can revoke access. The linked adult sees the child's results and existing access,
+without a duplicate child or a second purchase, but cannot see payment ledgers
+or manage purchases. Both adults can leave/revoke access, and administrators
+have a support view and audited revoke action. No teacher role was introduced.
+
+The create/link choice and access manager ship on web and mobile. The mobile
+work also includes first-launch language choice, controlled phone/autofill
+fields, neutral dark surfaces, small-screen fixes and validated household
+prefill for another child. Gender remains optional by the owner's latest
+decision. Google SSO remains a separately configured future feature.
+
+Database migrations 173–176 were applied to staging and production on
+2026-09-12 after a production schema backup. The rolled-back lifecycle test
+passed locally and on staging; focused production validation checks 130–134 all
+PASS. The legacy staging validation has one unrelated existing failure at check
+102 because topic/subtopic translation seed rows are absent, and its storage
+orphan query at check 88 can exhaust the managed connection; neither affects
+the new linking contract.
+
+Validation completed: web 1,479 tests, admin 1,147 tests, mobile 1,366 tests;
+all three typechecks; web/admin production builds; Expo production export for
+iOS, Android and web; mobile i18n key check; CRLF-aware diff whitespace check.
+The remaining release-owner actions are the final commit, store build/signing,
+and the Apple/Google privacy-form updates already documented below. The
+read-only submission preflight sees all 21 Apple products active, but the
+configured App Store Connect private-key value is not a usable `.p8` and the
+browser is signed out; supply a valid key/path or sign in before the Apple
+console checks and privacy-form work can be completed. The production free
+access window is open through 2026-10-10, so App Review notes must explain it if
+the 1.16.0 build is submitted before that date.
+
+## PREVIOUS RESUME POINT (2026-09-10) — 1.15.0 IS LIVE; 1.16.0 IS BLOCKED ON TWO FORMS
 
 The previous resume point described the 1.15.0 submission as in flight. It
 landed: **Apple approved 1.15.0 and all 21 in-app products on 2026-09-09 and it

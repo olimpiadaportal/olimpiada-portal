@@ -4817,6 +4817,245 @@ select '129_subject_translations_trilingual' as check_name,
        (select blank_labels from facts)              as blank_labels,
        (select translation_rows from facts)          as translation_rows;
 
+-- -----------------------------------------------------------------------------
+-- 130. MIGRATION 174 — A SHARED CHILD SURVIVES EITHER ADULT LEAVING.
+--
+-- WHY THIS IS A CHECK AND NOT A COMMENT. parent_student_links has always allowed
+-- two adults per child; nothing has ever created the second row. Every deletion
+-- path was therefore written against an assumption the schema does not enforce,
+-- and the day a co-parent is minted is the day all four defects below become
+-- live at once. Every one of them is invisible to a query until after the child
+-- is gone, so the catalogue is the only place to catch a regression:
+--
+--   * the parents cascade must read ONE shared rule (parent_children_to_delete)
+--     rather than its own inlined predicate — three copies is how the trigger and
+--     the two application paths were able to disagree;
+--   * it must PROMOTE a surviving co-parent before the parent row disappears, or
+--     students.created_by_parent_profile_id goes NULL (002, ON DELETE SET NULL)
+--     and the shared child becomes permanently unpurchasable;
+--   * the students guard must be ARMED, because students_write (010) is FOR ALL
+--     and hands the creating parent a raw DELETE that bypasses every app path;
+--   * the guard must be SECURITY DEFINER, because under a client token the link
+--     count is RLS-filtered to the caller's own rows — an invoker-rights guard
+--     counts 1 for a child with four adults and waves the delete through.
+--
+-- FORWARD TRIPWIRE, reported as `link_role_unhandled`. The co-parent phases will
+-- add a ROLE to parent_student_links (creator vs co-parent). Promotion must move
+-- that role too, and a migration that adds the column without extending
+-- promote_surviving_co_parent would leave a promoted co-parent owning the child
+-- while still labelled a co-parent. This FAILS the moment the column appears and
+-- the function does not mention it. It is a tripwire, not a proof — the word
+-- `role` appearing anywhere in the body satisfies it.
+-- -----------------------------------------------------------------------------
+with fns as (
+  select p.oid, p.proname, p.prosecdef, p.prosrc
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('parent_claimed_children', 'parent_children_to_delete',
+                       'promote_surviving_co_parent',
+                       'fn_cascade_delete_parent_children',
+                       'fn_student_shared_delete_guard')
+), facts as (
+  select
+    -- The students guard: present, BEFORE, ROW, DELETE. tgtype bits 1/2/8.
+    exists (select 1 from pg_trigger
+             where tgrelid = 'public.students'::regclass
+               and tgname = 'trg_student_shared_delete_guard'
+               and not tgisinternal
+               and (tgtype & 1) = 1 and (tgtype & 2) = 2 and (tgtype & 8) = 8)
+      as guard_armed,
+    -- The parents cascade is still armed and still BEFORE (an AFTER trigger runs
+    -- with the link rows already cascaded away, so promotion would find nothing).
+    exists (select 1 from pg_trigger
+             where tgrelid = 'public.parents'::regclass
+               and tgname = 'trg_parents_cascade_children'
+               and not tgisinternal
+               and (tgtype & 1) = 1 and (tgtype & 2) = 2 and (tgtype & 8) = 8)
+      as cascade_armed,
+    -- All five functions exist.
+    (select count(distinct proname) from fns) = 5 as all_present,
+    -- All five are SECURITY DEFINER. For the guard that is the control itself;
+    -- for the set functions it keeps the answer unfiltered by the caller's RLS.
+    coalesce((select bool_and(prosecdef) from fns), false) as all_definer,
+    -- The cascade reads the shared rule AND promotes. A body that quietly lost
+    -- either call still looks installed.
+    coalesce((select bool_and(position('parent_children_to_delete' in prosrc) > 0
+                          and position('promote_surviving_co_parent' in prosrc) > 0)
+                from fns where proname = 'fn_cascade_delete_parent_children'),
+             false) as cascade_reads_shared_rule,
+    -- Promotion moves BOTH columns: the creator, and the subscription owner
+    -- (NOT NULL ON DELETE CASCADE, so leaving it behind DELETES the live row).
+    coalesce((select bool_and(position('created_by_parent_profile_id' in prosrc) > 0
+                          and position('child_subscriptions' in prosrc) > 0
+                          and position('created_at asc' in prosrc) > 0)
+                from fns where proname = 'promote_surviving_co_parent'),
+             false) as promotion_complete,
+    -- The guard counts ACTIVE links only, and refuses a user-token row delete.
+    coalesce((select bool_and(position('''active''' in prosrc) > 0
+                          and position('auth.uid()' in prosrc) > 0
+                          and position('v_active > 1' in prosrc) > 0)
+                from fns where proname = 'fn_student_shared_delete_guard'),
+             false) as guard_complete,
+    -- None of the five is reachable from a client token. Probed by OID over
+    -- every overload, never by a text signature: a signature that no longer
+    -- resolves makes has_function_privilege RAISE, aborting the whole file.
+    coalesce((select bool_and(not has_function_privilege('anon', oid, 'EXECUTE')
+                          and not has_function_privilege('authenticated', oid, 'EXECUTE'))
+                from fns), true) as client_locked,
+    -- Forward tripwire (see the header).
+    (select count(*) from information_schema.columns
+      where table_schema = 'public' and table_name = 'parent_student_links'
+        and column_name = 'role') > 0
+    and coalesce((select bool_and(position('role' in prosrc) = 0)
+                    from fns where proname = 'promote_surviving_co_parent'),
+                 false) as link_role_unhandled
+)
+select '130_shared_child_deletion_safety' as check_name,
+       case when guard_armed and cascade_armed and all_present and all_definer
+                 and cascade_reads_shared_rule and promotion_complete
+                 and guard_complete and client_locked and not link_role_unhandled
+            then 'PASS' else 'FAIL' end as status,
+       case when guard_armed and guard_complete then 'ok'
+            else 'students BEFORE DELETE guard MISSING OR WEAKENED' end as row_delete_guard,
+       case when cascade_armed and cascade_reads_shared_rule then 'ok'
+            else 'parents cascade does not read parent_children_to_delete' end as shared_rule,
+       case when promotion_complete then 'ok'
+            else 'promotion does not re-point creator + subscription owner' end as promotion,
+       case when all_definer and client_locked then 'ok'
+            else 'a deletion-rule function is invoker-rights or client-callable' end as privileges,
+       case when link_role_unhandled
+            then 'parent_student_links.role EXISTS but promotion ignores it'
+            else 'ok' end as link_role
+  from facts;
+
+-- -----------------------------------------------------------------------------
+-- 131. MIGRATION 174 — FINANCIAL HISTORY OUTLIVES THE PERSON, AND THE LIVE
+--      SUBSCRIPTION IS HANDED OVER RATHER THAN NULLED.
+--
+-- Two halves, and they point in OPPOSITE directions on purpose, which is exactly
+-- why they are checked together:
+--
+--   * checkout_sessions, sibling_discounts, free_trials and iap_purchase_intents
+--     must be NULLABLE ON DELETE SET NULL. Each already carried a nullable SET
+--     NULL student_profile_id for this reason ("deleting a child must not delete
+--     the record of money that was taken"); the OWNER column never got the same
+--     treatment, so deleting the PARENT did what deleting the child could not.
+--     iap_purchase_intents is the sharpest: its own comment promises a surviving
+--     row "carries the parent, the product and the transaction id — which is what
+--     support needs to refund", and CASCADE meant there was no surviving row.
+--
+--   * child_subscriptions.owner_parent_profile_id must stay NOT NULL ON DELETE
+--     CASCADE. A subscription is an ACCESS record for a child who is still here,
+--     not a receipt: a NULL owner is a subscription nothing can renew, change or
+--     cancel. It is handed to a real person by promote_surviving_co_parent
+--     instead. "Harmonising" it with the four above would look like a tidy-up and
+--     would silently produce ownerless live subscriptions.
+--
+--   * students.created_by_parent_profile_id must stay ON DELETE SET NULL — that
+--     is the whole PREMISE of the promotion. If it ever became CASCADE, deleting
+--     a parent would delete a shared child outright and the promotion would never
+--     get the chance to run.
+-- -----------------------------------------------------------------------------
+with owner_fks as (
+  -- relname, never conrelid::regclass::text: the regclass cast renders
+  -- schema-qualified or not depending on search_path, so a bare IN-list of
+  -- table names would silently match NOTHING under a different search_path and
+  -- report a healthy database as broken.
+  select cls.relname::text as tbl,
+         c.confdeltype,
+         a.attnotnull
+    from pg_constraint c
+    join pg_class cls on cls.oid = c.conrelid
+    join pg_namespace ns on ns.oid = cls.relnamespace
+    join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+   where c.contype = 'f'
+     and ns.nspname = 'public'
+     and c.confrelid = 'public.profiles'::regclass
+     and array_length(c.conkey, 1) = 1
+     and a.attname = 'owner_parent_profile_id'
+), facts as (
+  select
+    (select count(*) from owner_fks
+      where tbl in ('checkout_sessions', 'sibling_discounts',
+                    'free_trials', 'iap_purchase_intents')
+        and confdeltype = 'n' and attnotnull = false) as history_fks_set_null,
+    (select count(*) from owner_fks
+      where tbl in ('checkout_sessions', 'sibling_discounts',
+                    'free_trials', 'iap_purchase_intents')
+        and (confdeltype <> 'n' or attnotnull)) as history_fks_still_cascading,
+    (select count(*) from owner_fks
+      where tbl = 'child_subscriptions'
+        and confdeltype = 'c' and attnotnull) as subscription_owner_required,
+    (select count(*) from pg_constraint c
+       join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+      where c.contype = 'f'
+        and c.conrelid = 'public.students'::regclass
+        and c.confrelid = 'public.profiles'::regclass
+        and a.attname = 'created_by_parent_profile_id'
+        and c.confdeltype = 'n') as creator_fk_set_null
+)
+select '131_parent_owner_fks_survive_deletion' as check_name,
+       case when history_fks_set_null = 4
+                 and history_fks_still_cascading = 0
+                 and subscription_owner_required = 1
+                 and creator_fk_set_null = 1
+            then 'PASS' else 'FAIL' end as status,
+       history_fks_set_null           as history_fks_set_null,
+       history_fks_still_cascading    as history_fks_still_cascading,
+       case when subscription_owner_required = 1 then 'ok'
+            else 'child_subscriptions owner is NOT NOT-NULL/CASCADE' end as subscription_owner,
+       case when creator_fk_set_null = 1 then 'ok'
+            else 'students.created_by is NOT ON DELETE SET NULL' end as creator_fk
+  from facts;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================
+
+-- 132. Parent anonymization must pass, while re-pointing a signed checkout cannot.
+select '132_checkout_owner_null_carveout' as check_name,
+ case when position('and new.owner_parent_profile_id is not null' in
+   coalesce((select prosrc from pg_proc where oid=to_regprocedure('public.fn_checkout_intent_immutable()')),''))>0
+ then 'PASS' else 'FAIL' end as status;
+
+-- 133. Co-parent access exists only behind the audited, approval-gated RPC;
+-- direct client relationship writes and payer-ledger visibility stay closed.
+with facts as (
+ select
+  to_regclass('public.parent_link_invites') is not null as invites_table,
+  to_regprocedure('public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)') is not null as mutation_rpc,
+  to_regprocedure('public.parent_link_state(uuid,uuid)') is not null as state_rpc,
+  not has_table_privilege('authenticated','public.parent_student_links','INSERT,UPDATE,DELETE') as direct_writes_closed,
+  coalesce((select position('is_parent_linked_to_student' in qual)=0 from pg_policies
+    where schemaname='public' and tablename='subscription_changes' and policyname='sub_changes_select'),false) as ledger_private,
+  has_function_privilege('service_role','public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)','EXECUTE')
+   and not has_function_privilege('authenticated','public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)','EXECUTE') as service_only
+)
+select '133_coparent_linking_security' as check_name,
+ case when invites_table and mutation_rpc and state_rpc and direct_writes_closed and ledger_private and service_only
+  then 'PASS' else 'FAIL' end as status,
+ invites_table,mutation_rpc,state_rpc,direct_writes_closed,ledger_private,service_only
+from facts;
+
+-- 133. Co-parent linking is invitation-only, approval-gated, and private.
+select '133_coparent_linking_contract' as check_name,
+ case when to_regclass('public.parent_link_invites') is not null
+   and to_regclass('public.parent_link_redeem_attempts') is not null
+   and to_regprocedure('public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)') is not null
+   and to_regprocedure('public.parent_link_state(uuid,uuid)') is not null
+   and not has_table_privilege('authenticated','public.parent_link_invites','SELECT')
+   and not has_table_privilege('authenticated','public.parent_student_links','INSERT')
+   and position('digest(v_code' in coalesce((select prosrc from pg_proc where oid=to_regprocedure(
+     'public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)')),''))>0
+ then 'PASS' else 'FAIL' end as status;
+
+-- 134. One sibling-rank implementation feeds all subscription mutations.
+select '134_sibling_rank_single_source' as check_name,
+ case when to_regprocedure('public.sibling_rank(uuid,uuid)') is not null
+   and to_regprocedure('public.sibling_discount_percent(integer)') is not null
+   and to_regprocedure('public.refresh_household_sibling_discounts(uuid)') is not null
+   and (select count(*) from pg_proc where pronamespace='public'::regnamespace
+     and proname in ('quote_child_plan','add_subscription_subject','remove_subscription_subject','quote_plan_change')
+     and position('public.sibling_rank' in prosrc)>0)=4
+ then 'PASS' else 'FAIL' end as status;

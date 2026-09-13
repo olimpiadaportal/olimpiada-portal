@@ -2,12 +2,14 @@
 // presentation only: the mode comes from get_mobile_config() and every money
 // mutation is re-validated by the BFF/server — nothing here grants anything.
 //
-// The app is PURCHASE-SILENT (docs/STORE_PAYMENTS_COMPLIANCE.md): there is no
-// checkout, no amount and no buy CTA in any mode, for either role. The posture
-// therefore only decides WHICH read-only notice a money surface shows and
-// whether the free-activation path is offered.
+// Android is purchase-silent. iOS has the approved StoreKit rail, but the
+// admin control plane still decides whether paid access is available right
+// now. The platform constant and this runtime availability decision are kept
+// separate: Android never contains a visible purchase surface, while iOS
+// closes it during giveaway, scheduled free-access and payment-off states.
 //
-//   'real'     → read-only: status only, nothing is bought here.
+//   'real'     → iOS may show the approved StoreKit rail; Android remains
+//                status-only and purchase-silent.
 //   'giveaway' → subscription access is free (activation, no payment step).
 //   'off'      → identical to 'real' on screen. NOTHING in the app reports
 //                that payments are off: that is a platform state, it reached
@@ -28,7 +30,7 @@ export type CommercePosture = {
   freeAccess: boolean;
   /** Subscription access is free: giveaway mode OR free access (never in 'off'). */
   freeFlow: boolean;
-  /** Read-only: nothing is subscribed to or purchased inside the app. */
+  /** Legacy name: true when the global posture is real-payment mode. */
   webOnly: boolean;
   paymentsOff: boolean;
 };
@@ -46,6 +48,13 @@ export function resolvePosture(
     webOnly: mode === "real",
     paymentsOff,
   };
+}
+
+/** Paid StoreKit offers may be shown only during the real-payment posture and
+ * outside an admin-scheduled free-access window. The caller must still combine
+ * this with IAP_PLATFORM_SUPPORTED; this helper never decides the platform. */
+export function paidAccessAvailable(posture: CommercePosture): boolean {
+  return posture.mode === "real" && !posture.freeAccess;
 }
 
 // ---- subjects ------------------------------------------------------------------
@@ -207,10 +216,9 @@ export function isCancellable(status: string | null | undefined): boolean {
 }
 
 // ---- formatting ----------------------------------------------------------------
-// There is no money formatter here any more (owner, 2026-08-18): the app is
-// purchase-silent, so it renders no amount at all and fmtAmount/fmtMoney had
-// no callers left. Do not reintroduce one without an owner decision — a helper
-// that can print "27,00 AZN" is how a price finds its way back onto a screen.
+// There is no database-money formatter here. Android stays purchase-silent and
+// every iOS amount must be StoreKit's own localized display string, so a helper
+// that can print "27,00 AZN" would create an unsafe second source of truth.
 
 /** Locale long date (+ optional time) in the product's home timezone
  *  (Asia/Baku). Thin wrapper over the Hermes-safe formatLongDate (Round 42:

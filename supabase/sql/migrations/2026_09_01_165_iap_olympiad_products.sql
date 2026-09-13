@@ -42,7 +42,11 @@
 -- Related root SQL file(s) / BACKPORT TARGET:
 --          * 012_seed_initial_data.sql — alongside the migration-164 product
 --            seed, once that is backported. Both are data, not schema.
--- Backport status: pending
+-- Backport status: DONE (2026-09-11). The seed went to 015, NOT 012 as this
+--   header guessed: olympiad_packages does not exist yet at 012 in the canonical
+--   run order (001-012, 014, 015, 016, 013), so the join could not resolve there.
+--   It sits just after fk_iap_products_package. On a from-zero rebuild it seeds
+--   nothing, because canonical creates no packages for it to match.
 -- Destructive change: no. Insert-only, `on conflict do nothing`.
 -- =============================================================================
 begin;

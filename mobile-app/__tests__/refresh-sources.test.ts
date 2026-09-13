@@ -232,6 +232,11 @@ const SCREENS: { file: string; sources: Expected[] }[] = [
       "cities",
       "districts",
       { name: "schools", onlyWhen: "info.cityId" },
+      // The second-child prefill's two reads. A parent who just corrected a
+      // sibling's school in Edit-Child and came straight here is holding the
+      // only gesture that can bring the corrected value into the suggestion.
+      "childrenQ",
+      { name: "rayonQ", onlyWhen: "prefillSource" },
     ],
   },
   {

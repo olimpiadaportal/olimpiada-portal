@@ -1,7 +1,8 @@
 // The root state machine (master plan §3), evaluated at boot and on config /
 // auth / deep-link changes, in strict priority order:
-//   1. force-update  2. maintenance  3. no session -> public stack
-//   4/5. role tabs   6. unknown role -> retry + logout escape
+//   0. first-launch language choice  1. force-update  2. maintenance
+//   3. no session -> public stack  4/5. role tabs
+//   6. unknown role -> retry + logout escape
 // Renders the router Stack only once every gate has passed. The OPTIONAL
 // update prompt is not in that list on purpose: it is an overlay over the
 // mounted Stack, so it can never block the app the way the gates do.
@@ -29,6 +30,8 @@ import { useAppLock } from "@/features/applock/useAppLock";
 import { LockOverlay } from "@/features/applock/LockOverlay";
 import { shouldPromptOptionalUpdate, useUpdatePrompt } from "@/lib/updatePrompt";
 import { useSeenWelcome } from "./seenWelcome";
+import { LanguageChoiceScreen } from "./LanguageChoiceScreen";
+import { localeChoiceOptions, shouldAskForLanguage, useLocaleChoice } from "./localeChoice";
 import {
   BootErrorView,
   ForceUpdateScreen,
@@ -57,6 +60,13 @@ export function RootGate() {
   const hydrateLocale = useLocaleStore((s) => s.hydrate);
   const setLocale = useLocaleStore((s) => s.setLocale);
 
+  // The first-launch language flag — its own key, never olympiq.locale's
+  // presence: the clamp effect below writes that key unprompted. features/boot/
+  // localeChoice.ts carries the full argument.
+  const localeChosen = useLocaleChoice((s) => s.chosen);
+  const choiceHydrated = useLocaleChoice((s) => s.hydrated);
+  const hydrateLocaleChoice = useLocaleChoice((s) => s.hydrate);
+
   const seenHydrated = useSeenWelcome((s) => s.hydrated);
   const hydrateSeenWelcome = useSeenWelcome((s) => s.hydrate);
 
@@ -77,12 +87,20 @@ export function RootGate() {
   // the Realtime inbox refresh covers foreground; no registration here).
   useEffect(() => {
     void hydrateLocale();
+    void hydrateLocaleChoice();
     void hydrateSeenWelcome();
     void hydrateAppLock();
     void hydrateUpdatePrompt();
     void restore();
     void initPushDisplay();
-  }, [hydrateLocale, hydrateSeenWelcome, hydrateAppLock, hydrateUpdatePrompt, restore]);
+  }, [
+    hydrateLocale,
+    hydrateLocaleChoice,
+    hydrateSeenWelcome,
+    hydrateAppLock,
+    hydrateUpdatePrompt,
+    restore,
+  ]);
 
   // Android notification channels (processor sends channelId = category);
   // re-running on a locale switch just renames them in the OS settings UI.
@@ -116,8 +134,25 @@ export function RootGate() {
   // Auth-required links while signed out are DEFERRED and replayed on login.
   const url = ExpoLinking.useLinkingURL();
   const handledUrl = useRef<string | null>(null);
+  // `booted` means THE ROUTER IS MOUNTED, not merely that boot state has loaded.
+  // Every gate below that `return`s instead of the <Stack> keeps the navigator
+  // unmounted, so a deep link consumed while one of them is up is lost: the
+  // effect marks the URL handled in `handledUrl` and then navigates into
+  // nothing. The language picker is such a gate and is the FIRST thing a new
+  // install sees — which is exactly when a notification tap or a shared link is
+  // most likely to arrive alongside it. `askingForLanguage` is therefore part
+  // of this condition, not merely part of the render below.
+  const askingForLanguage = shouldAskForLanguage({
+    hydrated: choiceHydrated,
+    chosen: localeChosen,
+    optionCount: localeChoiceOptions(config.data?.locales.supported).length,
+  });
   const booted =
-    localeHydrated && authStatus !== "restoring" && (config.data !== undefined || config.isError);
+    localeHydrated &&
+    choiceHydrated &&
+    !askingForLanguage &&
+    authStatus !== "restoring" &&
+    (config.data !== undefined || config.isError);
   useEffect(() => {
     if (!booted || !url || handledUrl.current === url) return;
     handledUrl.current = url;
@@ -164,7 +199,15 @@ export function RootGate() {
 
   // ---- gates, in priority order ----
 
-  if (!localeHydrated || !seenHydrated || !lockHydrated || authStatus === "restoring") {
+  // choiceHydrated is in here so the picker cannot flash for one frame on a
+  // launch where the user chose a language months ago.
+  if (
+    !localeHydrated ||
+    !choiceHydrated ||
+    !seenHydrated ||
+    !lockHydrated ||
+    authStatus === "restoring"
+  ) {
     return <SplashView />;
   }
 
@@ -177,6 +220,22 @@ export function RootGate() {
   }
 
   const cfg = config.data;
+
+  // FIRST LAUNCH: choose a language, before anything else the user can read.
+  //
+  // Here rather than as a route because a gate RETURNS instead of the Stack:
+  // there is nothing to deep-link past (lib/deeplink.ts can open
+  // /(public)/welcome directly) and no back gesture to defeat. After the config
+  // gates, so it offers exactly the admin-enabled locales and the clamp effect
+  // above can never snap the pick back. BEFORE force-update and maintenance, so
+  // those admin-authored trilingual messages are read in the language the user
+  // just picked rather than in whatever the device happened to be set to.
+  // Reuses `askingForLanguage` computed above with `booted`, so the deep-link
+  // guard and the render decision cannot drift apart.
+  if (askingForLanguage) {
+    return <LanguageChoiceScreen options={localeChoiceOptions(cfg?.locales.supported)} />;
+  }
+
   const gate = cfg ? evaluateVersionGate(cfg, PLATFORM, APP_VERSION) : null;
   if (gate?.forceUpdate) {
     return <ForceUpdateScreen message={gate.message} storeUrl={gate.storeUrl} locale={locale} />;

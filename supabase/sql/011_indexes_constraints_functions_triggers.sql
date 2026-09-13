@@ -309,6 +309,83 @@ create index if not exists idx_entitlements_ends_at
 -- impossible and the failure would only surface on forced-IAP day. 013 check
 -- 111 asserts no such index exists.
 
+-- The Apple IAP rail (migrations 164 and 166). The tables live in 007; these
+-- are the indexes the endpoints actually use, plus the three that make a
+-- double-sell and a double-grant unrepresentable.
+--
+-- Resolve-by-store-id (the webhook's hot path) is served by uq_iap_product,
+-- declared inline on the table. This is the app's "what can I sell on this
+-- platform" list.
+create index if not exists idx_iap_products_sellable
+  on public.iap_products (platform, scope) where active;
+
+-- Reverse lookup: "does this subject have a live iOS product?" — the question
+-- every iOS subject listing must ask before rendering, because a subject with
+-- no live iOS product must be neither purchasable nor accessible there.
+create index if not exists idx_iap_products_subject
+  on public.iap_products (subject_id, platform) where subject_id is not null;
+create index if not exists idx_iap_products_package
+  on public.iap_products (package_id, platform) where package_id is not null;
+
+-- ONE ACTIVE PRODUCT PER TARGET PER PLATFORM. Two live iOS products both
+-- selling maths-monthly makes "which one does the app show?" undecidable.
+-- Partial on `active` rather than a plain unique constraint BECAUSE a store id
+-- can never be reused: retiring a product and introducing its replacement means
+-- both rows must coexist, with only one of them active.
+create unique index if not exists uq_iap_product_subject_active
+  on public.iap_products (platform, subject_id, "interval")
+  where active and scope = 'subject';
+
+-- Split in two rather than coalescing grade_id to a sentinel uuid: a
+-- grade-pinned product and a grade-agnostic one for the same package are
+-- different products, and NULL grouping in a unique index would let two
+-- grade-agnostic rows through.
+create unique index if not exists uq_iap_product_package_active
+  on public.iap_products (platform, package_id)
+  where active and scope = 'olympiad_package' and grade_id is null;
+create unique index if not exists uq_iap_product_package_grade_active
+  on public.iap_products (platform, package_id, grade_id)
+  where active and scope = 'olympiad_package' and grade_id is not null;
+
+-- The webhook's lookup: a notification arrives carrying a transaction, and the
+-- server needs the intent behind it.
+create index if not exists idx_iap_intents_original_txn
+  on public.iap_purchase_intents (original_transaction_id)
+  where original_transaction_id is not null;
+
+-- ONE TRANSACTION, ONE INTENT. Two intents claiming the same transaction would
+-- mean two children granted from one payment. For non-renewing products every
+-- purchase is its own transaction, so this can only ever fire on a bug — and a
+-- loud failure is the correct outcome. A retry re-writes the SAME intent row
+-- (the appAccountToken is the primary key), so it never trips this.
+create unique index if not exists uq_iap_intent_original_txn
+  on public.iap_purchase_intents (original_transaction_id)
+  where original_transaction_id is not null;
+
+-- Serves the parent's RLS read and support's "what did this family buy" query.
+create index if not exists idx_iap_intents_parent
+  on public.iap_purchase_intents (owner_parent_profile_id, created_at desc);
+create index if not exists idx_iap_intents_student
+  on public.iap_purchase_intents (student_profile_id)
+  where student_profile_id is not null;
+
+-- Pruning / triage: abandoned taps, and transactions that never arrived.
+create index if not exists idx_iap_intents_pending
+  on public.iap_purchase_intents (expires_at) where consumed_at is null;
+
+-- THE ALARM QUERY (migration 166). A notification row claimed and never settled
+-- is the only way a message can be silently lost, so finding them must be free.
+create index if not exists idx_iap_notifications_unsettled
+  on public.iap_notifications (received_at)
+  where processed_at is null;
+
+-- Support's join: "this family says they were refunded — what did Apple tell us
+-- about that transaction, and when?"
+create index if not exists idx_iap_notifications_orig_txn
+  on public.iap_notifications (original_transaction_id)
+  where original_transaction_id is not null;
+
+
 create index if not exists idx_notifications_recipient on public.notifications (recipient_profile_id, read_at);
 create index if not exists idx_support_profile_status on public.support_requests (profile_id, status);
 create index if not exists idx_media_owner on public.media_assets (owner_profile_id);
@@ -344,6 +421,9 @@ begin
     'leaderboard_periods','leaderboard_entries',
     'achievements','question_analytics',
     'subscription_plans','subscriptions','payments','coupons','entitlements',
+    -- iap_products only (migration 164): iap_purchase_intents and
+    -- iap_notifications carry no updated_at column at all.
+    'iap_products',
     'notification_templates','notification_deliveries','support_requests',
     'question_reports',
     'admin_actions','content_reviews','media_assets','system_settings','feature_flags'
@@ -481,7 +561,8 @@ begin
      or new.provider             is distinct from old.provider
      or new.provider_session_id  is distinct from old.provider_session_id
      or new.expires_at           is distinct from old.expires_at
-     or new.owner_parent_profile_id is distinct from old.owner_parent_profile_id
+     or (new.owner_parent_profile_id is distinct from old.owner_parent_profile_id
+         and new.owner_parent_profile_id is not null)
      or (new.student_profile_id is distinct from old.student_profile_id
          and new.student_profile_id is not null)
   then
@@ -512,8 +593,8 @@ comment on function public.fn_checkout_intent_immutable() is
   'Migration 125/127. Freezes the signed intent (child, basket, DELTA, amount, '
   'currency, order, expiry, owner), forbids un-deciding a redemption, and pins '
   'delivered_items once written -- it is what a reversal takes back, so moving '
-  'it would let a refund revoke a subject another payment paid for. Two '
-  'one-way exceptions: the FK cascade may NULL student_profile_id, and an '
+  'it would let a refund revoke a subject another payment paid for. Three '
+  'one-way exceptions: the FK cascade may NULL student_profile_id or owner_parent_profile_id, and an '
   'operator may move a needs_review to applied.';
 
 -- A trigger function is never called directly. Line 88 of 010 default-grants
@@ -556,6 +637,18 @@ create trigger trg_audit_feature_flags
 drop trigger if exists trg_audit_subjects_pricing on public.subjects_pricing;
 create trigger trg_audit_subjects_pricing
   after insert or update on public.subjects_pricing
+  for each row execute function public.fn_audit_row();
+
+-- Project law: every admin mutation writes an audit row. iap_products
+-- (migration 164) is admin-writable through PostgREST, so the generic
+-- before/after auditor is attached rather than trusting each caller. A wrong row
+-- there silently grants the wrong subject for real money, which is exactly the
+-- class of change that has to be reconstructible afterwards. iap_purchase_intents
+-- and iap_notifications get NO audit trigger: both are written only by
+-- service_role, one row per event, and the row IS its own record.
+drop trigger if exists trg_audit_iap_products on public.iap_products;
+create trigger trg_audit_iap_products
+  after insert or update or delete on public.iap_products
   for each row execute function public.fn_audit_row();
 
 -- -----------------------------------------------------------------------------
@@ -3411,12 +3504,8 @@ begin
   -- Sibling rank = (this parent's OTHER children already on a live
   -- subscription) + 1. Copied verbatim from quote_child_subscription: a fixed
   -- percent composes trivially across cycle groups.
-  select count(distinct cs.student_profile_id) + 1 into v_rank
-  from public.child_subscriptions cs
-  where cs.owner_parent_profile_id = v_owner
-    and cs.student_profile_id <> p_student_profile_id
-    and cs.status in ('trialing', 'active', 'past_due');
-  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
+  v_rank := public.sibling_rank(v_owner, p_student_profile_id);
+  v_pct := public.sibling_discount_percent(v_rank);
 
   select jsonb_agg(jsonb_build_object(
            'subject_id', n.subject_id,
@@ -3872,12 +3961,8 @@ begin
 
   -- Audit H7: recompute the sibling rank NOW (same formula as the quote RPC) so
   -- the previewed and the stored totals always match.
-  select count(distinct cs.student_profile_id) + 1 into v_rank
-  from public.child_subscriptions cs
-  where cs.owner_parent_profile_id = v_owner
-    and cs.student_profile_id <> p_student_profile_id
-    and cs.status in ('trialing', 'active', 'past_due');
-  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
+  v_rank := public.sibling_rank(v_owner, p_student_profile_id);
+  v_pct := public.sibling_discount_percent(v_rank);
 
   -- The percent moves first, then one touch of the subject rows re-fires
   -- trg_sync_subscription_period so base/discount/total are re-derived from the
@@ -3931,12 +4016,8 @@ begin
   where child_subscription_id = v_sub and subject_id = p_subject_id;
 
   -- Audit H7: live sibling rank (see add_subscription_subject).
-  select count(distinct cs.student_profile_id) + 1 into v_rank
-  from public.child_subscriptions cs
-  where cs.owner_parent_profile_id = v_owner
-    and cs.student_profile_id <> p_student_profile_id
-    and cs.status in ('trialing', 'active', 'past_due');
-  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
+  v_rank := public.sibling_rank(v_owner, p_student_profile_id);
+  v_pct := public.sibling_discount_percent(v_rank);
 
   -- Percent first, then one no-op touch of the subject rows so
   -- trg_sync_subscription_period (their single writer) re-derives the amounts
@@ -4157,13 +4238,14 @@ as $$
     when exists (
       select 1 from public.students s
       where s.profile_id = p_student
-        and s.created_by_parent_profile_id = public.current_profile_id()
+        and (s.created_by_parent_profile_id = public.current_profile_id()
+          or public.is_parent_linked_to_student(s.profile_id))
     ) then public.is_free_access_active_for_student(p_student)
     else false
   end;
 $$;
 comment on function public.is_child_free_access_active(uuid) is
-  'Per-child free-access flag, scoped to the caller (own child / self only). Parent subscription gate + display.';
+  'Per-child free-access flag, scoped to the caller (own or actively linked child / self). Read-only gate + display.';
 revoke all on function public.is_child_free_access_active(uuid) from public, anon;
 grant execute on function public.is_child_free_access_active(uuid) to authenticated, service_role;
 
@@ -11234,12 +11316,8 @@ begin
                 and v_sub.trial_ends_at is not null
                 and v_sub.trial_ends_at > now();
 
-  select count(distinct cs.student_profile_id) + 1 into v_rank
-  from public.child_subscriptions cs
-  where cs.owner_parent_profile_id = v_owner
-    and cs.student_profile_id <> p_student_profile_id
-    and cs.status in ('trialing', 'active', 'past_due');
-  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
+  v_rank := public.sibling_rank(v_owner, p_student_profile_id);
+  v_pct := public.sibling_discount_percent(v_rank);
 
   -- CURRENT recurring set = live subjects, each priced on ITS OWN cycle.
   select coalesce(sum(sp.price_amount), 0) into v_cur_base
@@ -11833,6 +11911,237 @@ revoke all on function public.apply_plan_change(uuid, jsonb, text) from public, 
 grant execute on function public.apply_plan_change(uuid, jsonb, text) to service_role;
 
 -- -----------------------------------------------------------------------------
+-- Migration 174: WHO DIES WITH A PARENT, ANSWERED IN EXACTLY ONE PLACE.
+--
+-- parent_student_links has always been a many-to-many table, but nothing ever
+-- created a second row for one child, so every deletion path was written against
+-- an assumption the schema does not enforce: one adult per child, and that
+-- adult's departure is the child's departure. Before a co-parent can be minted,
+-- the three deletion paths (this trigger, deleteParentAccountCore in the web app,
+-- deleteParent in the admin panel) must agree about which children die -- and the
+-- only way they can be made to agree is to stop each of them carrying its own
+-- copy of the predicate. All three now read parent_children_to_delete().
+--
+-- ACTIVE LINKS ONLY, everywhere below. The 098 original kept a child alive if ANY
+-- other link row existed, whatever its status. Under the co-parent invite flow
+-- that becomes a trap: a PENDING invite confers nothing (is_parent_linked_to_
+-- student in 002 requires 'active', and so does every SELECT policy that reads
+-- it), so a child kept alive by an invite nobody ever approves is exactly the
+-- orphaned, still-loginable account 098 was written to abolish.
+-- -----------------------------------------------------------------------------
+create or replace function public.parent_claimed_children(p_parent uuid)
+returns table (child_profile_id uuid)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select distinct c.child
+    from (
+      select s.profile_id as child
+        from public.students s
+       where s.created_by_parent_profile_id = p_parent
+      union
+      select l.student_profile_id as child
+        from public.parent_student_links l
+       where l.parent_profile_id = p_parent
+         and l.status = 'active'
+    ) c
+   where c.child is not null
+     and c.child <> p_parent;
+$$;
+
+comment on function public.parent_claimed_children(uuid) is
+  'Migration 174: every child a parent has a claim on -- they created it OR they '
+  'hold an ACTIVE parent_student_links row for it. The input set for '
+  'parent_children_to_delete and promote_surviving_co_parent; never a decision '
+  'on its own.';
+
+-- THE one rule: a claimed child dies with this parent only if no OTHER adult
+-- holds an active link to them.
+create or replace function public.parent_children_to_delete(p_parent uuid)
+returns table (child_profile_id uuid)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select c.child_profile_id
+    from public.parent_claimed_children(p_parent) as c
+   where not exists (
+     select 1
+       from public.parent_student_links l2
+      where l2.student_profile_id = c.child_profile_id
+        and l2.parent_profile_id <> p_parent
+        and l2.status = 'active'
+   );
+$$;
+
+comment on function public.parent_children_to_delete(uuid) is
+  'Migration 174: the children that must be deleted along with this parent -- '
+  'claimed by them and held by nobody else (no OTHER ACTIVE link). The single '
+  'definition read by the parents BEFORE DELETE trigger and by both application '
+  'deletion paths, so the three can no longer disagree about who dies.';
+
+-- -----------------------------------------------------------------------------
+-- Migration 174: the departing creator hands the account on.
+--
+-- Owner rule: the CREATOR stays the financial owner permanently, with ONE
+-- automatic exception -- if the creator deletes their account and a co-parent
+-- survives, the LONGEST-STANDING active link is promoted to creator. That is
+-- `order by l.created_at asc`; `l.id asc` is only a determinism tie-break.
+--
+-- TWO COLUMNS MOVE, AND BOTH HAVE TO.
+--   students.created_by_parent_profile_id is ON DELETE SET NULL (002), so
+--     without this the surviving family keeps a child NOBODY owns -- and every
+--     purchase surface keys off that column, so the child becomes permanently
+--     unpurchasable rather than merely un-owned.
+--   child_subscriptions.owner_parent_profile_id is NOT NULL ON DELETE CASCADE
+--     (007), so without this the child's live subscription row is DELETED
+--     outright, taking its subscription_changes and sibling_discounts with it.
+--     That column is deliberately NOT moved to SET NULL the way the four history
+--     tables were: a subscription is an ACCESS record for a child who is still
+--     here, and a NULL owner is a subscription nothing can renew, change or
+--     cancel. It must be handed to a real person, which is what this does.
+--
+-- ALL of the child's subscription rows move, not only the live one: a cancelled
+-- row left behind is CASCADE-DELETED seconds later by the very delete this runs
+-- ahead of, and for a child who is still here, keeping the history under the new
+-- owner beats deleting it to preserve a tidier record of who once paid.
+--
+-- The students UPDATE cannot trip trg_protect_student_progress (that guard only
+-- refuses when current_user is anon/authenticated, and inside SECURITY DEFINER
+-- current_user is the owner) and cannot trip trg_student_district_guard (which
+-- is UPDATE OF city_district_id, school_id, district_id -- none of them touched).
+-- -----------------------------------------------------------------------------
+-- Migration 174: financial ownership changes update FUTURE quotes/invoices only.
+-- Past payments, signed checkout intents and subscription_changes are immutable.
+create or replace function public.sibling_rank(p_owner uuid, p_student uuid)
+returns integer language sql stable security definer set search_path = public, pg_temp
+as $fn$
+  select (count(distinct cs.student_profile_id) + 1)::integer
+  from public.child_subscriptions cs
+  where cs.owner_parent_profile_id = p_owner
+    and cs.student_profile_id <> p_student
+    and cs.status in ('trialing', 'active', 'past_due');
+$fn$;
+create or replace function public.sibling_discount_percent(p_rank integer)
+returns numeric language sql immutable set search_path = public, pg_temp
+as $fn$ select case when p_rank <= 1 then 0 when p_rank = 2 then 10 else 15 end::numeric; $fn$;
+revoke all on function public.sibling_rank(uuid,uuid) from public, anon, authenticated;
+grant execute on function public.sibling_rank(uuid,uuid) to service_role;
+revoke all on function public.sibling_discount_percent(integer) from public, anon, authenticated;
+grant execute on function public.sibling_discount_percent(integer) to service_role;
+
+create or replace function public.refresh_household_sibling_discounts(p_owner uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp
+as $fn$
+declare r record; v_pct numeric;
+begin
+  for r in select cs.id, cs.student_profile_id, cs.sibling_discount_percent
+    from public.child_subscriptions cs
+    where cs.owner_parent_profile_id = p_owner
+      and cs.status in ('trialing', 'active', 'past_due')
+    order by cs.id for update
+  loop
+    v_pct := public.sibling_discount_percent(public.sibling_rank(p_owner,r.student_profile_id));
+    if v_pct is distinct from r.sibling_discount_percent then
+      update public.child_subscriptions set sibling_discount_percent=v_pct, updated_at=now()
+        where id=r.id;
+      -- The existing period trigger remains the sole writer of invoice totals.
+      update public.subscription_subjects set currency=currency where child_subscription_id=r.id;
+      insert into public.audit_logs(action,target_table,target_id,before_json,after_json)
+      values('child.sharing.discount_recomputed','child_subscriptions',r.id,
+        jsonb_build_object('discount_percent',r.sibling_discount_percent),
+        jsonb_build_object('discount_percent',v_pct));
+    end if;
+  end loop;
+end;
+$fn$;
+revoke all on function public.refresh_household_sibling_discounts(uuid) from public, anon, authenticated;
+grant execute on function public.refresh_household_sibling_discounts(uuid) to service_role;
+
+create or replace function public.promote_surviving_co_parent(p_parent uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $fn$
+declare
+  v_child uuid;
+  v_heir  uuid;
+  v_count integer := 0;
+  v_heirs uuid[] := array[]::uuid[];
+begin
+  perform pg_advisory_xact_lock(hashtextextended('olympiq-child-links',0));
+  if p_parent is null then
+    return 0;
+  end if;
+
+  -- SURVIVORS = CLAIMED minus TO-DELETE, derived from the two functions above
+  -- rather than re-stated. A second copy of the predicate here is exactly how
+  -- the trigger and the app paths drifted apart in the first place.
+  for v_child in
+    select c.child_profile_id from public.parent_claimed_children(p_parent) as c
+    except
+    select d.child_profile_id from public.parent_children_to_delete(p_parent) as d
+  loop
+    v_heir := null;
+
+    select l.parent_profile_id
+      into v_heir
+      from public.parent_student_links l
+     where l.student_profile_id = v_child
+       and l.parent_profile_id <> p_parent
+       and l.status = 'active'
+     order by l.created_at asc, l.id asc
+     limit 1;
+
+    -- Unreachable by construction (a survivor is a child with another active
+    -- link, which is what this query looks for), so a NULL here means the set
+    -- moved under us. Skipping is the only safe answer: writing NULL into
+    -- created_by_parent_profile_id is the very outcome this function prevents.
+    if v_heir is null then
+      continue;
+    end if;
+
+    update public.students s
+       set created_by_parent_profile_id = v_heir,
+           updated_at = now()
+     where s.profile_id = v_child
+       and s.created_by_parent_profile_id is distinct from v_heir;
+
+    update public.child_subscriptions cs
+       set owner_parent_profile_id = v_heir,
+           updated_at = now()
+     where cs.student_profile_id = v_child
+       and cs.owner_parent_profile_id = p_parent;
+
+    v_heirs := array_append(v_heirs,v_heir);
+    insert into public.audit_logs(action,target_table,target_id,before_json,after_json)
+    values('child.sharing.creator_promoted','students',v_child,
+      jsonb_build_object('creator',p_parent),jsonb_build_object('creator',v_heir));
+    v_count := v_count + 1;
+  end loop;
+
+  -- Recompute after ALL children moved, so no household sees an intermediate tier.
+  perform public.refresh_household_sibling_discounts(p_parent);
+  for v_heir in select distinct x from unnest(v_heirs) x order by x loop
+    perform public.refresh_household_sibling_discounts(v_heir);
+  end loop;
+  return v_count;
+end;
+$fn$;
+
+comment on function public.promote_surviving_co_parent(uuid) is
+  'Migration 174: before a parent row disappears, hands every SURVIVING claimed '
+  'child to the longest-standing other active link -- students.'
+  'created_by_parent_profile_id and any child_subscriptions the departing parent '
+  'owned. Without it created_by goes NULL (ON DELETE SET NULL) and the shared '
+  'child becomes permanently unpurchasable, while the live subscription row is '
+  'CASCADE-DELETED. Returns the number of children promoted.';
+
+-- -----------------------------------------------------------------------------
 -- Migration 098: deleting a parent must not leave orphaned children.
 --
 -- The FK graph cascades everything except the child itself — `parents` cascades
@@ -11849,6 +12158,16 @@ grant execute on function public.apply_plan_change(uuid, jsonb, text) to service
 --
 -- BEFORE DELETE, not AFTER: the link rows are cascaded away by this very delete,
 -- so an AFTER trigger would run with the evidence already gone.
+--
+-- MIGRATION 174 changed exactly two things and nothing else: the inlined "which
+-- children die" query became public.parent_children_to_delete(), and
+-- public.promote_surviving_co_parent() now runs before any delete. The delete set
+-- is computed FIRST (from the pre-promotion state, so it is the same set the
+-- application paths read a moment earlier over PostgREST), promotion runs SECOND
+-- and touches only children NOT in that set, and the deletes run LAST. The two
+-- sets are disjoint by construction, so the order cannot change the outcome; it
+-- is fixed anyway so that a reader comparing this trigger against the app paths
+-- does not have to prove that for themselves.
 -- -----------------------------------------------------------------------------
 create or replace function public.fn_cascade_delete_parent_children()
 returns trigger
@@ -11860,26 +12179,17 @@ declare
   v_children uuid[];
   v_stranded int;
 begin
-  select coalesce(array_agg(distinct child), '{}')
+  perform pg_advisory_xact_lock(hashtextextended('olympiq-child-links',0));
+  -- Migration 174: ONE shared rule, not a fourth copy of the predicate.
+  select coalesce(array_agg(d.child_profile_id), '{}')
     into v_children
-  from (
-    select s.profile_id as child
-      from public.students s
-     where s.created_by_parent_profile_id = old.profile_id
-    union
-    select l.student_profile_id
-      from public.parent_student_links l
-     where l.parent_profile_id = old.profile_id
-  ) q
-  -- Shared children are KEPT and merely unlinked: deleting a live account
-  -- because a co-parent left would be worse than the orphan this fixes.
-  where not exists (
-    select 1
-      from public.parent_student_links l2
-     where l2.student_profile_id = q.child
-       and l2.parent_profile_id <> old.profile_id
-  )
-  and q.child <> old.profile_id;
+    from public.parent_children_to_delete(old.profile_id) as d;
+
+  -- Migration 174: the surviving children change hands BEFORE the parent row
+  -- (and with it students.created_by_parent_profile_id, ON DELETE SET NULL)
+  -- disappears. Never after -- there is no "after" inside a BEFORE trigger that
+  -- still has the old parent to read.
+  perform public.promote_surviving_co_parent(old.profile_id);
 
   if array_length(v_children, 1) is null then
     return old;
@@ -11941,18 +12251,122 @@ end;
 $fn$;
 
 comment on function public.fn_cascade_delete_parent_children() is
-  'Migration 098, hardened by 167: deletes a departing parent''s children '
-  '(profiles + auth users) so no orphan child account survives, whatever route '
-  'deleted the parent. Children still linked to another parent are kept. '
-  'REFUSES rather than deleting a child profile whose auth user survived — that '
-  'combination strands a working c<id>@children.invalid login with no account '
-  'behind it.';
+  'Migration 098, hardened by 167, made co-parent-safe by 174: PROMOTES every '
+  'surviving shared child to the longest-standing other active link, then '
+  'deletes only the children public.parent_children_to_delete() names -- those '
+  'no other adult holds an active link to. REFUSES rather than deleting a child '
+  'profile whose auth user survived, which strands a working '
+  'c<id>@children.invalid login with no account behind it.';
 
 drop trigger if exists trg_parents_cascade_children on public.parents;
 create trigger trg_parents_cascade_children
   before delete on public.parents
   for each row
   execute function public.fn_cascade_delete_parent_children();
+
+-- -----------------------------------------------------------------------------
+-- Migration 174: THE ROW-LEVEL HOLE, CLOSED.
+--
+-- students_write (010) is FOR ALL -- which includes DELETE -- scoped to
+-- created_by_parent_profile_id, `authenticated` holds the table grant, and until
+-- this trigger existed there was no BEFORE DELETE trigger on public.students at
+-- all. A creating parent could `DELETE FROM students` with their own JWT and
+-- destroy a child a second adult still depends on, bypassing every code path and
+-- every trigger in this file.
+--
+-- TWO INDEPENDENT REFUSALS, and they are not one rule said twice:
+--
+--   (i) A child with MORE THAN ONE active link is not deletable by any route, by
+--       any role, ever. The other adults are unlinked first -- a visible act with
+--       an audit trail -- and only then does the child become deletable. The
+--       count INCLUDES the departing adult, so `> 1` means "somebody else is
+--       still here": the parents cascade only ever deletes children with no other
+--       active link, so it always sees exactly 1 and passes.
+--
+--  (ii) NO client token may delete a students row at all, shared or not. No
+--       application path does this -- every one of them deletes the AUTH USER and
+--       lets auth.users -> profiles -> students cascade -- and a direct row
+--       delete leaves profiles and auth.users standing, which is migration 167's
+--       stranded c<id>@children.invalid login arriving through a different door.
+--
+-- SECURITY DEFINER IS THE CONTROL, NOT DECORATION. Under a client token the link
+-- count would be RLS-FILTERED (psl_select shows a parent only their OWN links),
+-- so an invoker-rights guard would count 1 for a child with four adults and wave
+-- the delete through -- an under-count is precisely the failure this exists to
+-- prevent. The cost is that current_user inside the function is the OWNER, so
+-- clause (ii) cannot use current_user the way protect_student_progress_cols
+-- does; it uses auth.uid() instead. A user-scoped JWT always carries `sub`, the
+-- service-role key's JWT does not, and GoTrue's own connection sets no
+-- request.jwt.claims at all, so `auth.uid() is not null` is exactly "a person's
+-- token issued this".
+-- -----------------------------------------------------------------------------
+create or replace function public.fn_student_shared_delete_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $fn$
+declare
+  v_active int;
+begin
+  select count(*)
+    into v_active
+    from public.parent_student_links l
+   where l.student_profile_id = old.profile_id
+     and l.status = 'active';
+
+  if v_active > 1 then
+    raise exception
+      'student % has % active parent links; unlink the other adults first',
+      old.profile_id, v_active
+      using errcode = 'check_violation', hint = 'shared_child_delete';
+  end if;
+
+  if auth.uid() is not null then
+    raise exception
+      'student % is not deletable with a user token; delete the auth user',
+      old.profile_id
+      using errcode = 'insufficient_privilege', hint = 'student_row_delete_forbidden';
+  end if;
+
+  return old;
+end;
+$fn$;
+
+comment on function public.fn_student_shared_delete_guard() is
+  'Migration 174: BEFORE DELETE on students. Refuses to delete a child who still '
+  'has more than one ACTIVE parent link (unlink the other adults first), and '
+  'refuses any students-row delete issued with a user-scoped token at all -- '
+  'students_write is FOR ALL, so the creating parent held DELETE, and a row '
+  'delete strands the child''s auth.users login exactly as migration 167 '
+  'describes. SECURITY DEFINER because the link count must not be RLS-filtered.';
+
+drop trigger if exists trg_student_shared_delete_guard on public.students;
+create trigger trg_student_shared_delete_guard
+  before delete on public.students
+  for each row
+  execute function public.fn_student_shared_delete_guard();
+
+-- Migration 174 grants. Explicit on every function -- Supabase's default
+-- privileges are grantor-scoped and hand EXECUTE to anon/authenticated on
+-- whatever the creating role makes, so `revoke ... from public` alone is not
+-- enough. service_role only: the two application deletion paths call
+-- parent_children_to_delete over PostgREST with the service key, and
+-- parent_claimed_children would otherwise let any signed-in parent enumerate
+-- another family's children by profile id.
+revoke all on function public.parent_claimed_children(uuid) from public, anon, authenticated;
+grant execute on function public.parent_claimed_children(uuid) to service_role;
+
+revoke all on function public.parent_children_to_delete(uuid) from public, anon, authenticated;
+grant execute on function public.parent_children_to_delete(uuid) to service_role;
+
+revoke all on function public.promote_surviving_co_parent(uuid) from public, anon, authenticated;
+grant execute on function public.promote_surviving_co_parent(uuid) to service_role;
+
+-- Trigger functions need no EXECUTE grant to fire; revoking keeps them off the
+-- PostgREST RPC surface, where a bare `returns trigger` call is a 500 at best.
+revoke all on function public.fn_cascade_delete_parent_children() from public, anon, authenticated;
+revoke all on function public.fn_student_shared_delete_guard() from public, anon, authenticated;
 
 -- -----------------------------------------------------------------------------
 -- Migration 099: authoritative "is this email already taken?".
@@ -14044,3 +14458,177 @@ grant execute on function public.azericard_reconcile_kick() to service_role;
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql
 -- =============================================================================
+
+create or replace function public.manage_child_link(
+ p_actor uuid,p_action text,p_student uuid default null,p_invite uuid default null,
+ p_parent uuid default null,p_child_id text default null,p_code text default null)
+returns jsonb language plpgsql security definer set search_path=public,extensions,pg_temp
+as $fn$
+declare v_child public.students%rowtype; v_inv public.parent_link_invites%rowtype;
+ v_admin boolean; v_code text; v_count int; v_actor_parent boolean;
+begin
+ select exists(select 1 from public.parents pa join public.profiles p on p.id=pa.profile_id
+   where p.id=p_actor and p.status='active') into v_actor_parent;
+ select exists(select 1 from public.profiles p join public.profile_roles pr on pr.profile_id=p.id
+   join public.roles r on r.id=pr.role_id where p.id=p_actor and p.status='active' and r.code='administrator') into v_admin;
+ if not v_actor_parent and not (v_admin and p_action='revoke') then
+   return jsonb_build_object('ok',false,'code','forbidden');
+ end if;
+ if p_action not in ('issue','redeem','approve','reject','revokeInvite','revoke','leave') or p_action is null then
+   return jsonb_build_object('ok',false,'code','invalid');
+ end if;
+ -- Serialize relationship changes, caps, and promotion/deletion on one lock.
+ -- These are rare household administration operations, never normal reads.
+ perform pg_advisory_xact_lock(hashtextextended('olympiq-child-links',0));
+ if p_action='redeem' then
+   delete from public.parent_link_redeem_attempts where actor_profile_id=p_actor and attempted_at<now()-interval '1 day';
+   select count(*) into v_count from public.parent_link_redeem_attempts
+     where actor_profile_id=p_actor and attempted_at>now()-interval '1 hour';
+   if v_count>=10 then return jsonb_build_object('ok',false,'code','rate'); end if;
+   insert into public.parent_link_redeem_attempts(actor_profile_id) values(p_actor);
+   v_code:=regexp_replace(upper(coalesce(p_code,'')),'[ -]','','g');
+   if p_child_id is null or p_child_id!~'^[0-9]{8}$' or v_code!~'^[A-F0-9]{20}$' then
+     return jsonb_build_object('ok',false,'code','invalidInvite');
+   end if;
+   select i.* into v_inv from public.parent_link_invites i join public.students s on s.profile_id=i.student_profile_id
+     where s.child_unique_id=p_child_id and i.code_hash=encode(digest(v_code,'sha256'),'hex')
+       and i.status in ('open','pending') and i.expires_at>now() for update of i;
+   if not found then return jsonb_build_object('ok',false,'code','invalidInvite'); end if;
+   p_student:=v_inv.student_profile_id;
+ elsif p_action in ('approve','reject','revokeInvite') then
+   select * into v_inv from public.parent_link_invites where id=p_invite for update;
+   if not found then return jsonb_build_object('ok',false,'code','unavailable'); end if;
+   p_student:=v_inv.student_profile_id;
+ end if;
+ select * into v_child from public.students where profile_id=p_student for update;
+ if not found then return jsonb_build_object('ok',false,'code','unavailable'); end if;
+ if p_action='redeem' then
+   if v_inv.issued_by is distinct from v_child.created_by_parent_profile_id then
+     return jsonb_build_object('ok',false,'code','invalidInvite');
+   end if;
+   if v_child.created_by_parent_profile_id=p_actor or exists(select 1 from public.parent_student_links
+     where student_profile_id=p_student and parent_profile_id=p_actor and status='active') then
+     return jsonb_build_object('ok',false,'code','alreadyLinked');
+   end if;
+   if v_inv.status='pending' then
+     if v_inv.redeemed_by=p_actor then return jsonb_build_object('ok',true,'state','pending'); end if;
+     return jsonb_build_object('ok',false,'code','invalidInvite');
+   end if;
+   update public.parent_link_invites set status='pending',redeemed_by=p_actor where id=v_inv.id;
+ elsif p_action='leave' then
+   if v_child.created_by_parent_profile_id=p_actor then return jsonb_build_object('ok',false,'code','creatorOnly'); end if;
+   update public.parent_student_links set status='revoked',updated_at=now()
+     where student_profile_id=p_student and parent_profile_id=p_actor and status='active';
+   if not found then return jsonb_build_object('ok',false,'code','unavailable'); end if;
+ else
+   if v_child.created_by_parent_profile_id is distinct from p_actor and not(v_admin and p_action='revoke') then
+     return jsonb_build_object('ok',false,'code','forbidden');
+   end if;
+   if p_action in ('issue','approve') then
+     select count(*)+1 into v_count from public.parent_student_links
+       where student_profile_id=p_student and status='active' and parent_profile_id<>v_child.created_by_parent_profile_id;
+     if v_count>=4 then return jsonb_build_object('ok',false,'code','limit'); end if;
+   end if;
+   if p_action='issue' then
+     if v_child.child_unique_id is null then return jsonb_build_object('ok',false,'code','needsId'); end if;
+     select count(*) into v_count from public.parent_link_invites where issued_by=p_actor and created_at>now()-interval '1 day';
+     if v_count>=5 then return jsonb_build_object('ok',false,'code','rate'); end if;
+     update public.parent_link_invites set status='revoked',resolved_at=now()
+       where student_profile_id=p_student and status in ('open','pending');
+     v_code:=upper(encode(gen_random_bytes(10),'hex'));
+     insert into public.parent_link_invites(student_profile_id,issued_by,code_hash)
+       values(p_student,p_actor,encode(digest(v_code,'sha256'),'hex')) returning * into v_inv;
+   elsif p_action='approve' then
+     if v_inv.status<>'pending' or v_inv.expires_at<=now() or v_inv.issued_by<>p_actor
+       or not exists(select 1 from public.parents pa join public.profiles pr on pr.id=pa.profile_id
+         where pa.profile_id=v_inv.redeemed_by and pr.status='active') then
+       return jsonb_build_object('ok',false,'code','unavailable');
+     end if;
+     insert into public.parent_student_links(parent_profile_id,student_profile_id,status,verified_at,created_by)
+       values(v_inv.redeemed_by,p_student,'active',now(),p_actor)
+       on conflict(parent_profile_id,student_profile_id) do update
+         set status='active',verified_at=now(),created_by=p_actor,updated_at=now();
+     update public.parent_link_invites set status='approved',resolved_at=now() where id=v_inv.id;
+   elsif p_action in ('reject','revokeInvite') then
+     if v_inv.issued_by<>p_actor or v_inv.status not in ('open','pending') then
+       return jsonb_build_object('ok',false,'code','unavailable');
+     end if;
+     update public.parent_link_invites set status=case when p_action='reject' and redeemed_by is not null then 'rejected' else 'revoked' end,
+       resolved_at=now() where id=v_inv.id;
+   elsif p_action='revoke' then
+     if p_parent is null or p_parent=v_child.created_by_parent_profile_id then return jsonb_build_object('ok',false,'code','creatorOnly'); end if;
+     update public.parent_student_links set status='revoked',updated_at=now()
+       where student_profile_id=p_student and parent_profile_id=p_parent and status='active';
+     if not found then return jsonb_build_object('ok',false,'code','unavailable'); end if;
+   end if;
+ end if;
+ insert into public.audit_logs(actor_profile_id,action,target_table,target_id,metadata_json)
+ values(p_actor,'child.sharing.'||p_action,'students',p_student,
+   jsonb_build_object('invite_id',v_inv.id,'parent_id',case
+     when p_action in ('redeem','leave') then p_actor
+     when p_action in ('approve','reject') then v_inv.redeemed_by
+     else p_parent end));
+ if p_action='issue' then return jsonb_build_object('ok',true,'code',v_code,'expires_at',v_inv.expires_at,'child_id',v_child.child_unique_id); end if;
+ return jsonb_build_object('ok',true,'state',case when p_action='redeem' then 'pending' else 'saved' end);
+end;
+$fn$;
+revoke all on function public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text) to service_role;
+
+create or replace function public.parent_link_state(p_actor uuid,p_student uuid default null)
+returns jsonb language plpgsql stable security definer set search_path=public,pg_temp
+as $fn$
+declare v_admin boolean;
+begin
+ select exists(select 1 from public.profiles p join public.profile_roles pr on pr.profile_id=p.id
+   join public.roles r on r.id=pr.role_id where p.id=p_actor and p.status='active' and r.code='administrator') into v_admin;
+ if not exists(select 1 from public.parents pa join public.profiles p on p.id=pa.profile_id where p.id=p_actor and p.status='active')
+    and not(v_admin and p_student is not null) then return jsonb_build_object('children','[]'::jsonb,'pending','[]'::jsonb); end if;
+ return jsonb_build_object('children',coalesce((select jsonb_agg(jsonb_build_object(
+   'id',s.profile_id,'name',concat_ws(' ',s.first_name,s.last_name),'child_id',s.child_unique_id,
+   'is_creator',s.created_by_parent_profile_id=p_actor,'creator_name',cp.display_name,
+   'adults',case when s.created_by_parent_profile_id=p_actor or v_admin then coalesce((select jsonb_agg(jsonb_build_object(
+     'parent_id',l.parent_profile_id,'name',p.display_name)) from public.parent_student_links l join public.profiles p on p.id=l.parent_profile_id
+     where l.student_profile_id=s.profile_id and l.status='active' and l.parent_profile_id<>s.created_by_parent_profile_id),'[]'::jsonb) else '[]'::jsonb end,
+   'invitations',case when s.created_by_parent_profile_id=p_actor or v_admin then coalesce((select jsonb_agg(jsonb_build_object(
+     'id',i.id,'status',i.status,'expires_at',i.expires_at,'name',p.display_name,
+     'masked_email',case when p.email is not null then left(p.email::text,1)||'***@'||split_part(p.email::text,'@',2) end))
+     from public.parent_link_invites i left join public.profiles p on p.id=i.redeemed_by
+     where i.student_profile_id=s.profile_id and i.status in ('open','pending') and i.expires_at>now()),'[]'::jsonb) else '[]'::jsonb end
+   ) order by s.created_at) from public.students s left join public.profiles cp on cp.id=s.created_by_parent_profile_id
+   where (p_student is null or s.profile_id=p_student) and (s.created_by_parent_profile_id=p_actor or (v_admin and p_student is not null)
+     or exists(select 1 from public.parent_student_links l where l.student_profile_id=s.profile_id and l.parent_profile_id=p_actor and l.status='active'))),'[]'::jsonb),
+   -- Pending applicants learn only request state: approval is the boundary for child data.
+   'pending',coalesce((select jsonb_agg(jsonb_build_object('id',i.id,'expires_at',i.expires_at))
+     from public.parent_link_invites i where i.redeemed_by=p_actor and i.status='pending' and i.expires_at>now()),'[]'::jsonb));
+end;
+$fn$;
+revoke all on function public.parent_link_state(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.parent_link_state(uuid,uuid) to service_role;
+
+
+create or replace function public.admin_child_link_state(p_student uuid)
+returns jsonb language plpgsql stable security definer set search_path=public,pg_temp
+as $fn$
+declare v_actor uuid;
+begin
+  v_actor:=public.current_profile_id();
+  if v_actor is null or not public.is_admin() then raise exception 'forbidden' using errcode='42501'; end if;
+  return public.parent_link_state(v_actor,p_student);
+end;
+$fn$;
+revoke all on function public.admin_child_link_state(uuid) from public,anon;
+grant execute on function public.admin_child_link_state(uuid) to authenticated,service_role;
+
+create or replace function public.admin_revoke_child_link(p_student uuid,p_parent uuid)
+returns jsonb language plpgsql security definer set search_path=public,pg_temp
+as $fn$
+declare v_actor uuid;
+begin
+  v_actor:=public.current_profile_id();
+  if v_actor is null or not public.is_admin() then raise exception 'forbidden' using errcode='42501'; end if;
+  return public.manage_child_link(v_actor,'revoke',p_student,null,p_parent,null,null);
+end;
+$fn$;
+revoke all on function public.admin_revoke_child_link(uuid,uuid) from public,anon;
+grant execute on function public.admin_revoke_child_link(uuid,uuid) to authenticated,service_role;

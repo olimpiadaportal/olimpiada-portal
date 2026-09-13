@@ -184,19 +184,18 @@ release-note writer home early.)
   from `free_trials.locale`, so its subject names now follow that same locale
   instead of sitting untranslated inside a translated sentence. Migration 172,
   backported into 011, applied to staging and production 2026-09-10.
-- `[internal]` Portrait is declared by ONE key: the top-level `orientation`,
-  from which Expo derives BOTH `android:screenOrientation` and iOS's
-  `UISupportedInterfaceOrientations`. Phones were already locked and still are.
-  On iPad the lock is now DECLARED through `requireFullScreen` — the built plist
-  is portrait-only for iPad, confirmed by reading Expo's own config output rather
-  than assumed — and Apple's TN3192 says the key keeps working until an app is
-  built with the iOS 27 SDK, which Expo 54 is not. Whether it then BINDS on real
-  hardware is unverified: nobody here owns an iPad to test on, so this is a
-  correctly-declared lock, not an observed one. On an ANDROID
-  TABLET nothing app-side binds at all: Android 16 ignores the manifest
-  attribute AND `setRequestedOrientation()` above sw600dp. Filed `[internal]`,
-  not `[store]`: "the app no longer rotates" is only true on phones, so it is
-  deliberately absent from the release notes.
+- `[internal]` Portrait is now enforced at every layer Expo SDK 54 exposes. The
+  existing top-level `orientation` still generates Android's manifest lock and
+  iOS's portrait-only orientation arrays; `expo-screen-orientation ~9.0.9` adds
+  a `PORTRAIT_UP` native initial orientation and reapplies the same lock whenever
+  the app becomes active; iPad keeps `requireFullScreen`. Android 16 ignores
+  app-requested orientation on large screens by default, so the generated
+  application manifest also carries Google's temporary API 36 compatibility
+  property. The property is removed at target API 37, which remains a future
+  platform migration rather than something this binary can solve. Generated
+  native config is asserted for all four declarations; physical iPad and Android
+  tablet rotation still belongs to the release acceptance pass, so no public
+  store promise is made before that observation.
 - `[internal]` Closed an RLS write hole on `parent_student_links`. `psl_insert`
   and `psl_update` constrained only `parent_profile_id`, never
   `student_profile_id` and never `status` — so one INSERT naming an arbitrary
@@ -1402,6 +1401,62 @@ release-note writer home early.)
   SDK initialising and every browser event silently blocked by the CSP until the
   app is redeployed. That cannot be fixed in code; it can be made impossible to
   miss.
+
+- `[store]` Adding a second child no longer means retyping the household. The
+  surname, city, rayon and school arrive already filled in from the child you
+  added most recently, with a notice saying whose details they are and a button
+  that clears all four in one tap. Everything stays editable, and nothing
+  personal to the child is copied — the first name, the class and the optional
+  gender are left blank on purpose, because a school does not imply a class and
+  a preselected gender would record an answer nobody gave. The location is
+  carried as a whole or not at all: where the rayon cannot be read, the city and
+  school are left blank too, so a prefilled form is never one that fails
+  validation on a field the parent never touched. A parent's FIRST child sees
+  exactly the screen they saw before. "Add another child" re-fills from the
+  child just created.
+
+- `[store]` A fresh install now starts with a clear Azerbaijani / English /
+  Russian language choice. Registration and onboarding immediately continue in
+  that language, the choice survives an app restart and signing in, and the
+  existing Settings switch remains available afterwards.
+- `[store]` Two parents or guardians can now follow the SAME child. Add Child
+  offers Create a new child or Link an existing child; the second adult enters
+  the child's 8-digit ID and a one-time code, and the adult who created the child
+  approves the request. The child, results and paid access are reused — no
+  duplicate profile and no second payment — and either side can remove the
+  shared access later.
+- `[web]` The Parent Panel has the same create/link choice and a household access
+  manager. A linked parent can see the child's progress and available content,
+  while subscription, edit and delete controls remain with the child creator.
+- `[admin]` Accounts now links to a child access support view showing the owner
+  and active adults, with an audited administrator revoke action.
+- `[internal]` Migration 176 stores only SHA-256 hashes of 72-hour invite codes,
+  rate-limits issue/redeem attempts, requires owner approval, caps a household
+  at four adults and closes direct table writes. Co-parents can read progress and
+  child entitlements but cannot read subscriptions, checkout sessions, payments,
+  subject purchase rows or change history. Migrations 173–175 close the avatar
+  write boundary, make shared-child deletion promote the surviving adult without
+  deleting financial history, and route every sibling discount through one
+  calculation. Applied to staging and production on 2026-09-12; checks 130–134
+  pass in production.
+- `[store]` Every pushed parent, student and public information screen now has a
+  visible, platform-correct back arrow. The custom-header exam flow includes it
+  in loading, error, closed and active states too; leaving an active exam still
+  requires the existing confirmation, so the new affordance cannot discard an
+  attempt accidentally.
+- `[store]` On iOS, the parent Subscription screen keeps the same shared cards,
+  spacing and information hierarchy as Android. When the administrator's
+  giveaway, scheduled free-access or payment-off state is active, StoreKit
+  prices and purchase buttons disappear and their queries and actions are
+  disabled. The server independently refuses a new purchase intent for a child
+  whose free-access window is active. Restoring an earlier Apple purchase stays
+  available because it does not charge the parent. Android remains
+  purchase-silent.
+- `[internal]` The payment rail rule now distinguishes build-time capability
+  from runtime availability: a store binary may close its approved iOS StoreKit
+  rail while access is free, but runtime config can never reveal a web checkout,
+  another payment rail or any purchase surface on Android. The rule is aligned
+  across `AGENTS.md`, both `CLAUDE.md` files and the compliance runbook.
 
 ---
 

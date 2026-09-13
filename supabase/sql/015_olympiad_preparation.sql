@@ -450,6 +450,70 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 -- -----------------------------------------------------------------------------
+-- iap_products -> olympiad (migration 164). The third FK that could not live in
+-- 007, for the same reason as the two above.
+--
+-- CASCADE here, NOT the RESTRICT fk_entitlements_package carries, and the
+-- divergence is deliberate: entitlements is the ACCESS RECORD, where losing a
+-- row is fail-OPEN, while iap_products is a CATALOGUE, where losing a row is
+-- fail-CLOSED — the purchase endpoint has nothing to sell and the app hides the
+-- product. No grant is harmed, because revocation keys on
+-- (source, external_ref) in entitlements and never reads iap_products. Anything
+-- ever SOLD is unreachable by this cascade anyway: block 4 of
+-- olympiad_package_deletion_blocks() already refuses a package holding an
+-- entitlement, and RESTRICT here would instead abort those deletes with a bare
+-- 23503 carrying no hint — the exact "server error" migration 111 removed from
+-- these screens.
+-- -----------------------------------------------------------------------------
+do $$ begin
+  alter table public.iap_products
+    add constraint fk_iap_products_package foreign key (package_id)
+      references public.olympiad_packages (id) on delete cascade;
+exception when duplicate_object then null; end $$;
+
+-- -----------------------------------------------------------------------------
+-- THE TWO OLYMPIAD STORE PRODUCT IDS, RESERVED BUT INACTIVE (migration 165).
+--
+-- Migration 164 seeded the iOS SUBJECT products (012) and deliberately left the
+-- olympiad ones out, because a store product id is a permanent public name and
+-- naming one is an owner decision rather than something to derive.
+--
+-- NOTHING NEEDS TO BE SOLD HERE YET. Read against production on 2026-09-01:
+-- both live packages carry price_amount = 0.00 and no package is priced above
+-- zero, and Apple requires no In-App Purchase for content that costs nothing.
+-- So these two rows are RESERVATIONS, not offerings: active = false, so the
+-- intent endpoint refuses them exactly as it refuses any unknown product, and
+-- no App Store Connect product should be created for either until the package
+-- is actually priced. Seeding them anyway fixes the NAME now, while the
+-- decision is being made deliberately, instead of leaving it to whoever wires
+-- the first paid package under time pressure.
+--
+-- WHY THESE SLUGS AND NOT THE PACKAGE CODE. The live codes are
+-- `aimo-asiya-beynelxalq-riyaziyyat-olimpiadasi` and
+-- `dunya-riyaziyyat-komanda-cempionati-wmtc-u3fp`. The second ends in a random
+-- disambiguation suffix, which is the whole argument in one string:
+-- olympiad_packages.code is an admin-editable slug minted for URL uniqueness,
+-- whereas an App Store product id can never be renamed and never reused.
+-- `aimo` and `wmtc` are the abbreviations these competitions are known by
+-- internationally, and they survive the package being renamed or re-slugged.
+--
+-- MATCHED BY CODE, NOT BY TITLE OR UUID: a uuid would not exist on a fresh
+-- bootstrap and a title is translated. If a package code is not present the row
+-- is simply not seeded — this never invents a mapping. ON A FROM-ZERO REBUILD
+-- IT THEREFORE SEEDS NOTHING, because this file creates no packages; the two
+-- rows exist only where those two packages do.
+-- -----------------------------------------------------------------------------
+insert into public.iap_products
+  (platform, product_id, scope, package_id, "interval", active)
+select 'ios', v.product_id, 'olympiad_package', p.id, null, false
+from (values
+  ('ai.olympiq.app.oly.aimo', 'aimo-asiya-beynelxalq-riyaziyyat-olimpiadasi'),
+  ('ai.olympiq.app.oly.wmtc', 'dunya-riyaziyyat-komanda-cempionati-wmtc-u3fp')
+) as v(product_id, code)
+join public.olympiad_packages p on p.code = v.code
+on conflict (platform, product_id) do nothing;
+
+-- -----------------------------------------------------------------------------
 -- updated_at + audit triggers
 -- -----------------------------------------------------------------------------
 drop trigger if exists trg_set_updated_at on public.olympiad_packages;

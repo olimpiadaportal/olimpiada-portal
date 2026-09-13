@@ -5,9 +5,8 @@
 //   1. ANDROID STAYS PURCHASE-SILENT. Google's consumption-only test is
 //      app-wide and this single binary serves the parent tabs and the child
 //      tabs alike, so every purchase affordance must sit behind the build-time
-//      platform constant. Not behind a payment mode, not behind a feature flag:
-//      a purchase flow in a store binary switchable from a server is Apple
-//      2.3.1(a), and that penalty is account termination.
+//      platform constant. The iOS surface is additionally closed by the admin
+//      availability state during giveaway/free-access windows.
 //   2. ONE StoreKit SEAM. expo-iap may be imported in exactly one file, so
 //      Android has one thing to exclude and a future Google rail has one place
 //      to live.
@@ -111,14 +110,10 @@ describe("Android shows no purchase affordance at all", () => {
     const code = codeOnly(readFileSync(screen, "utf8"));
 
     it(`${name}: every purchase element sits behind the platform guard`, () => {
-      const uses = (code.match(/<IapPanel|<RestoreAccessButton/g) ?? []).length;
-      // POSITIVE guards only. `!IAP_PLATFORM_SUPPORTED ? (` gates the
-      // Android-only sentence below and contains this same substring, so
-      // without the lookbehind it is counted as if it guarded a purchase
-      // element and the two totals diverge for the wrong reason.
-      const guards = (code.match(/(?<!!)IAP_PLATFORM_SUPPORTED \? \(/g) ?? []).length;
-      // One guard per element. A bare element would make the counts diverge.
-      expect(guards).toBe(uses);
+      expect(code).toMatch(
+        /\{IAP_PLATFORM_SUPPORTED\s*&&\s*purchaseEnabled\s*\?\s*\(\s*<IapPanel/,
+      );
+      expect(code).toMatch(/\{IAP_PLATFORM_SUPPORTED\s*\?\s*\([\s\S]{0,180}<RestoreAccessButton/);
     });
 
     it(`${name}: the "not managed in this app" sentence is ANDROID-ONLY`, () => {
@@ -147,6 +142,12 @@ describe("Android shows no purchase affordance at all", () => {
       // The other half of the same guarantee — a screen that guards nothing
       // because it renders nothing would pass the check above.
       expect(uses(code)).toBeGreaterThan(0);
+    });
+
+    it(`${name}: disables the offer query and panel when free mode is active`, () => {
+      expect(code).toContain("paidAccessAvailable(posture)");
+      expect(code).toMatch(/useIapOffers\([\s\S]*purchaseEnabled,\s*\)/);
+      expect(code).toContain("purchaseEnabled={purchaseEnabled}");
     });
 
     it(`${name}: still carries the unchanging Android sentence`, () => {

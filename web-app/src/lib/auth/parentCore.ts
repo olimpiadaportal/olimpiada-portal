@@ -276,11 +276,65 @@ async function purgeFamilyStorage(
 }
 
 /**
- * Self-serve account deletion: purges the family's stored FILES, then deletes
- * the parent's children (auth users → cascade students/credentials/links), then
- * the parent auth user (cascades profile/parents/links). The caller MUST have
- * authorized the parent first; the web action additionally signs the session
- * out, the BFF's token simply stops verifying once the auth user is gone.
+ * WHICH CHILDREN DIE WITH A PARENT — asked of the database, never re-derived.
+ *
+ * THE BUG THIS REPLACES. Every deletion path in this repository carried its own
+ * copy of the answer: `students where created_by_parent_profile_id = me`. Three
+ * copies (this core, the admin panel's deleteParent, and the BEFORE DELETE
+ * trigger on public.parents) that nothing forced to agree — and on the day a
+ * child can have a second adult they stop agreeing in the worst possible
+ * direction. `created_by` includes a shared child the departing parent merely
+ * created; the trigger deliberately excludes them. Deleting the children FIRST
+ * and the parent second (which is exactly what this function used to do) then
+ * handed the app's answer the last word: every child was already gone by the
+ * time the rule that protects shared ones got to run. The trigger was not
+ * bypassed, it was STARVED.
+ *
+ * Migration 174 put the answer in one place — public.parent_children_to_delete()
+ * — and this reads it. `parent_claimed_children` is the wider set (created OR
+ * actively linked); the difference between the two is how many children this
+ * parent is LEAVING BEHIND to a co-parent, which is worth an audit row.
+ *
+ * Both are SECURITY DEFINER and granted to service_role ONLY, so this runs on
+ * the admin client and is unreachable from any user token.
+ *
+ * Returns null on a failed read — NEVER an empty array. "The rule is
+ * unavailable" and "this parent has no children" are different facts, and
+ * collapsing them would delete a parent while leaving every child of theirs
+ * behind.
+ */
+async function parentChildIds(
+  admin: ReturnType<typeof getAdminClient>,
+  rule: "parent_children_to_delete" | "parent_claimed_children",
+  parentProfileId: string,
+): Promise<string[] | null> {
+  const { data, error } = await admin.rpc(rule, { p_parent: parentProfileId });
+  if (error) {
+    // Never the raw Postgres message — the code is enough to find it in the logs.
+    console.error("[account-delete]", rule, "failed:", error.code ?? "unknown");
+    return null;
+  }
+  const rows = (data ?? []) as { child_profile_id?: string | null }[];
+  return rows
+    .map((row) => row?.child_profile_id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+/**
+ * Self-serve account deletion: deletes the parent auth user — whose BEFORE
+ * DELETE trigger promotes every SHARED child to the surviving co-parent and
+ * deletes only the children nobody else holds — then sweeps any child login the
+ * cascade left standing, then purges the family's stored FILES. The caller MUST
+ * have authorized the parent first; the web action additionally signs the
+ * session out, the BFF's token simply stops verifying once the auth user is gone.
+ *
+ * THE PARENT GOES FIRST, AND THAT IS THE WHOLE FIX. It used to go last, after
+ * the children had already been deleted one by one, which meant
+ * trg_parents_cascade_children fired on an empty set. Every protection living in
+ * that trigger — the shared-child exclusion, the co-parent promotion, migration
+ * 167's refusal to strand a child login — was therefore dead code on this path.
+ * Deleting the parent first is what gives the database the first and only word
+ * about who dies with them.
  *
  * THROWS if anything is left behind. That is the contract the callers depend on
  * — telling somebody their account is gone while a working login survives is
@@ -301,22 +355,43 @@ export async function deleteParentAccountCore(params: {
     throw new Error("account_delete_no_auth_user");
   }
 
-  // Delete the parent's children (auth users → cascade students/credentials/links).
-  const { data: students } = await admin
-    .from("students")
-    .select("profile_id")
-    .eq("created_by_parent_profile_id", params.parentProfileId);
-  const studentIds = (students ?? []).map((s: { profile_id: string }) => s.profile_id);
+  // The shared rule, read before anything is destroyed. A failure here is a
+  // REFUSAL: without it this function cannot know which children are about to
+  // be removed, and therefore cannot purge their files or prove they are gone.
+  const studentIds = await parentChildIds(
+    admin,
+    "parent_children_to_delete",
+    params.parentProfileId,
+  );
+  if (studentIds === null) {
+    throw new Error("account_delete_rule_unavailable");
+  }
+  // Best-effort context only — a failed read must not stop an account deletion.
+  const claimedIds = await parentChildIds(
+    admin,
+    "parent_claimed_children",
+    params.parentProfileId,
+  );
+  const retained =
+    claimedIds === null ? null : Math.max(0, claimedIds.length - studentIds.length);
 
   // Audit BEFORE the destructive cascade starts (the account/children rows
-  // won't exist to reference afterward).
+  // won't exist to reference afterward). `retained` is the number of children
+  // this parent LEFT BEHIND to another adult — zero today, and the first number
+  // anyone will want when that stops being true.
   await writeAuditLog(params.parentProfileId, "parent.account_delete", {
     severity: "critical",
-    metadata: { children: studentIds.length },
+    metadata: {
+      children: studentIds.length,
+      ...(retained === null ? {} : { retained }),
+    },
   });
 
   const failures: string[] = [];
 
+  // Read the child logins BEFORE the cascade removes the rows that name them —
+  // the ids are needed afterwards to PROVE the cascade worked and to sweep the
+  // children's files.
   const childAuthIds: string[] = [];
   if (studentIds.length > 0) {
     const { data: creds } = await admin
@@ -328,7 +403,23 @@ export async function deleteParentAccountCore(params: {
     }
   }
 
-  if (childAuthIds.length > 0) {
+  // Delete the parent auth user. This cascades profile/parents/links, and the
+  // BEFORE DELETE trigger on public.parents does the rest: promote the shared
+  // children, delete the unshared ones, refuse outright rather than strand a
+  // child login (migration 167). A refusal surfaces here as a failed delete.
+  const parentReason = await deleteAuthUserVerified(admin, params.authUserId);
+  if (parentReason) failures.push(`parent:${parentReason}`);
+
+  // A SWEEP, NOT THE MECHANISM — and deliberately skipped when the parent's own
+  // deletion failed. The trigger has already deleted these auth users; each call
+  // below is expected to answer "already gone" (404 → success). It stays because
+  // the trigger's auth.users delete is best-effort by design: it swallows
+  // insufficient_privilege so a rights problem cannot abort a parent's deletion.
+  // If it ever does swallow one, this is what still removes the login.
+  //
+  // Running it when the parent delete FAILED would be the original bug inverted:
+  // the family would keep their account and lose their children.
+  if (!parentReason) {
     for (const childAuthId of childAuthIds) {
       const reason = await deleteAuthUserVerified(admin, childAuthId);
       // A surviving CHILD auth user is its own login: the synthetic
@@ -338,10 +429,6 @@ export async function deleteParentAccountCore(params: {
       if (reason) failures.push(`child:${reason}`);
     }
   }
-
-  // Delete the parent auth user (cascades profile/parents/links).
-  const parentReason = await deleteAuthUserVerified(admin, params.authUserId);
-  if (parentReason) failures.push(`parent:${parentReason}`);
 
   if (failures.length > 0) {
     // Log the detail server-side; the callers answer with a generic message.
@@ -366,6 +453,10 @@ export async function deleteParentAccountCore(params: {
   // a reachable outcome) leaves the family intact but their pictures destroyed.
   // Irreversible work goes after the reversible work has succeeded, never
   // before.
+  //
+  // `studentIds` is the shared rule's answer, so a child handed to a surviving
+  // co-parent is not in it and their photograph is not swept. Purging by
+  // "everyone I created" would have deleted a living child's avatar.
   const storageProblems = await purgeFamilyStorage(admin, {
     studentProfileIds: studentIds,
     authUserIds: [...childAuthIds, params.authUserId],
@@ -390,7 +481,16 @@ export type DeleteChildCoreResult =
       errorKey:
         | "auth.child.err.childNotFound"
         | "auth.child.err.notYourChild"
-        | "auth.child.err.serverError";
+        | "auth.child.err.serverError"
+        | "link.err.sharedDelete";
+      /**
+       * Migration 174: is trying again worth anything? Absent means yes (every
+       * refusal that predates this field). FALSE means the database refused on
+       * a rule that will still hold in a second — today only the shared-child
+       * guard — and a client that retries a permanent refusal retries forever.
+       * The mobile BFF reads it to choose 409-not-retryable over 500-retryable.
+       */
+      retryable?: boolean;
     };
 
 /**
@@ -450,6 +550,30 @@ export async function deleteChildCore(params: {
   if (!student) return { ok: false, errorKey: "auth.child.err.childNotFound" };
   if (student.created_by_parent_profile_id !== parentProfileId) {
     return { ok: false, errorKey: "auth.child.err.notYourChild" };
+  }
+
+  // MIGRATION 174 — A SHARED CHILD IS NOT ONE PARENT’S TO DELETE.
+  //
+  // The creator check above is not sufficient once a child can have a second
+  // adult: the creator is exactly the person who would delete a child their
+  // co-parent still depends on. trg_student_shared_delete_guard refuses that at
+  // the row, so without this pre-check the refusal would arrive as a 500 out of
+  // GoTrue — a permanent condition dressed as a transient one, which the mobile
+  // client then retries forever.
+  //
+  // Asked as "is this child in the set that dies with me?" rather than as its
+  // own link count, so this path and the trigger read the SAME rule
+  // (public.parent_children_to_delete). A child the parent created and nobody
+  // else holds is in it; a shared one is not.
+  const deletable = await parentChildIds(admin, "parent_children_to_delete", parentProfileId);
+  if (deletable === null) {
+    // The rule could not be read. Refuse rather than guess: guessing "yes"
+    // here is the one answer that destroys a living child.
+    return { ok: false, errorKey: "auth.child.err.serverError" };
+  }
+  if (!deletable.includes(studentProfileId)) {
+    console.error("[child-delete] refused: shared child", studentProfileId);
+    return { ok: false, errorKey: "link.err.sharedDelete", retryable: false };
   }
 
   // The child's auth user comes from PROFILES, not child_credentials. Both

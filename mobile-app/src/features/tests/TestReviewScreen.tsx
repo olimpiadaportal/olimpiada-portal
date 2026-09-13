@@ -89,6 +89,11 @@ export function TestReviewScreen({ attemptId }: { attemptId: string }) {
   if (reviewQ.isPending || rowQ.isPending) {
     return (
       <View style={[pad, { flex: 1, backgroundColor: arena.bg, gap: spacing.lg }]}>
+        <BackBar
+          arena={arena}
+          label={t("test.review.backToResult")}
+          onPress={() => backOrTo(router, homeTab)}
+        />
         <Skeleton height={16} width="30%" />
         <Skeleton height={26} width="60%" />
         <Skeleton height={40} />
@@ -101,19 +106,19 @@ export function TestReviewScreen({ attemptId }: { attemptId: string }) {
   // Not graded yet / not the owner → the RPC raises (web bounces home).
   if (reviewQ.isError || !reviewQ.data) {
     return (
-      <View style={{ flex: 1, backgroundColor: arena.bg, justifyContent: "center", gap: spacing.lg }}>
-        <ErrorRetry
-          message={t("test.err.generic")}
-          retryLabel={t("mob.retry")}
-          onRetry={() => void reviewQ.refetch()}
-        />
-        <ArenaButton
+      <View style={[pad, { flex: 1, backgroundColor: arena.bg, gap: spacing.lg }]}>
+        <BackBar
           arena={arena}
-          kind="ghost"
-          title={t("test.run.back")}
+          label={t("test.review.backToResult")}
           onPress={() => backOrTo(router, homeTab)}
-          style={{ marginHorizontal: spacing.xl }}
         />
+        <View style={{ flex: 1, justifyContent: "center", gap: spacing.lg }}>
+          <ErrorRetry
+            message={t("test.err.generic")}
+            retryLabel={t("mob.retry")}
+            onRetry={() => void reviewQ.refetch()}
+          />
+        </View>
       </View>
     );
   }

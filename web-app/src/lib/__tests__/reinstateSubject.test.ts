@@ -120,6 +120,12 @@ const MIGRATION_127 = read(
 const MIGRATION_128 = read(
   "supabase/sql/migrations/2026_08_22_128_reversal_delivery_and_pricing.sql",
 );
+// 175 re-issued quote_plan_change to route sibling position through the shared
+// sibling_rank_for_child helper. The canonical copy must follow that latest
+// writer while preserving the reinstatement rules asserted by this suite.
+const MIGRATION_175 = read(
+  "supabase/sql/migrations/2026_09_12_175_sibling_rank_single_source.sql",
+);
 const CORE = read("web-app/src/lib/auth/subscriptionCore.ts");
 
 /** The body of one `create or replace function public.<name>(` block in 011. */
@@ -280,7 +286,7 @@ describe("migration 120 and its validation check", () => {
       fnBody(MIGRATION_127, "apply_plan_change"),
     );
     expect(SQL_011, "quote_plan_change").toContain(
-      fnBody(MIGRATION_128, "quote_plan_change"),
+      fnBody(MIGRATION_175, "quote_plan_change"),
     );
   });
 

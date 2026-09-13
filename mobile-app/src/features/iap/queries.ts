@@ -1,11 +1,11 @@
 // React Query wiring for the iOS purchase surface.
 //
 // EVERY HOOK HERE IS INERT OFF iOS. `IAP_PLATFORM_SUPPORTED` is a build-time
-// platform constant, not a server flag, and it gates `enabled` on every query in
-// this file — so on Android nothing is fetched, nothing is rendered and the
-// binary behaves exactly as it did before this rail existed. That is a store-policy
-// requirement, not a preference (Google's consumption-only test is app-wide and
-// the parent tabs share the binary with the child).
+// platform constant and it gates `enabled` on every query in this file — so on
+// Android nothing is fetched, nothing is rendered and the binary behaves
+// exactly as it did before this rail existed. The caller supplies a second,
+// runtime availability gate for iOS free-access/payment-off states; that gate
+// can close StoreKit but cannot change which payment rail the binary contains.
 //
 // NEITHER QUERY IS ALLOWED TO LEAVE THE SCREEN IN A SPINNER. Both resolve or
 // fail within react-query's own budget, both report failure as a rendered
@@ -50,17 +50,17 @@ export type IapOffers = {
 };
 
 /** Active iOS catalogue rows (empty and non-failing off iOS). */
-function useIosCatalog() {
+function useIosCatalog(enabled: boolean) {
   return useQuery<IapCatalogRow[]>({
     queryKey: QK.catalog,
     queryFn: fetchIosIapCatalog,
-    enabled: IAP_PLATFORM_SUPPORTED,
+    enabled: IAP_PLATFORM_SUPPORTED && enabled,
     staleTime: 10 * 60_000,
   });
 }
 
 /** StoreKit's answer for those SKUs — connection included, failures contained. */
-function useStoreProducts(productIds: string[]) {
+function useStoreProducts(productIds: string[], enabled: boolean) {
   const key = [...productIds].sort().join(",");
   return useQuery<StoreProduct[]>({
     queryKey: QK.products(key),
@@ -71,7 +71,7 @@ function useStoreProducts(productIds: string[]) {
       await appleStore.connect();
       return appleStore.fetchProducts(key.length > 0 ? key.split(",") : []);
     },
-    enabled: IAP_PLATFORM_SUPPORTED && key.length > 0,
+    enabled: IAP_PLATFORM_SUPPORTED && enabled && key.length > 0,
     staleTime: 10 * 60_000,
     // One retry, not react-query's default three. A device with purchases
     // switched off fails the same way every time, and three rounds of backoff
@@ -90,14 +90,14 @@ function useStoreProducts(productIds: string[]) {
  * error into exactly that null, so this query does not fail and the offers do
  * not vanish because one read hiccuped.
  */
-function useTaughtSubjects(gradeId: string | null) {
+function useTaughtSubjects(gradeId: string | null, enabled: boolean) {
   return useQuery<ReadonlySet<string> | null>({
     queryKey: QK.taught(gradeId ?? "-"),
     queryFn: () => fetchTaughtSubjectIds(gradeId),
     // Off iOS, and for a child with no grade, nothing is fetched: an Android
     // build must issue no request it did not issue yesterday, and a null grade
     // is already the answer.
-    enabled: IAP_PLATFORM_SUPPORTED && gradeId !== null,
+    enabled: IAP_PLATFORM_SUPPORTED && enabled && gradeId !== null,
     staleTime: 10 * 60_000,
   });
 }
@@ -113,21 +113,27 @@ function useTaughtSubjects(gradeId: string | null) {
  * parent pays and the app visibly does nothing. Pass `null` only when the child
  * genuinely has no grade on record.
  */
-export function useIapOffers(coveredSubjectIds: string[], gradeId: string | null): IapOffers {
-  const catalog = useIosCatalog();
+export function useIapOffers(
+  coveredSubjectIds: string[],
+  gradeId: string | null,
+  enabled = true,
+): IapOffers {
+  const active = IAP_PLATFORM_SUPPORTED && enabled;
+  const catalog = useIosCatalog(active);
   const rows = catalog.data ?? [];
   const ids = sellableProductIds(rows);
-  const products = useStoreProducts(ids);
-  const taught = useTaughtSubjects(gradeId);
+  const products = useStoreProducts(ids, active);
+  const taught = useTaughtSubjects(gradeId, active);
 
   const refetch = () => {
+    if (!active) return;
     void catalog.refetch();
-    void products.refetch();
+    if (ids.length > 0) void products.refetch();
     // refetch() ignores `enabled`, so the guard is the same one the query has.
-    if (IAP_PLATFORM_SUPPORTED && gradeId !== null) void taught.refetch();
+    if (gradeId !== null) void taught.refetch();
   };
 
-  if (!IAP_PLATFORM_SUPPORTED) return { state: "off", offers: [], refetch };
+  if (!active) return { state: "off", offers: [], refetch };
 
   if (catalog.isPending) return { state: "loading", offers: [], refetch };
   // A catalogue read that FAILED is treated as "nothing to sell", not as an

@@ -10,7 +10,7 @@
   native konfiqurasiyadır — OTA ilə çatdırıla bilməz.
   Yəni: hər iki mağaza üçün yeni build.
 
-  Mənbə: CHANGELOG.md → 1.16.0 bölməsinin 13 [store] sətri.
+  Mənbə: CHANGELOG.md → 1.16.0 bölməsinin bütün [store] sətirləri.
 
   GÖNDƏRMƏDƏN ƏVVƏL İKİ MƏCBURİ ADDIM:
   1) App Store siyahısı artıq iPad ekran görüntüləri tələb
@@ -37,52 +37,45 @@ SİMVOL SAYI NECƏ HESABLANIR (CRLF-safe)
   Bu fayl LF sətir sonu ilə saxlanılır, amma mətni Play
   Console-a və ya App Store Connect-ə kopyalayanda sətir
   sonu çox vaxt CRLF olur — hər sətir sonu 1 deyil, 2
-  simvol sayılır. Aşağıdakı üç mətnin hər birində 7 sətir
-  sonu var, yəni CRLF-də +7 simvol.
-  Buradakı saylar ARTIQ CRLF ilə hesablanıb və 500 limitinə
-  hər üç dildə ən azı 38 simvol ehtiyat qalır.
+  simvol sayılır. Aşağıdakı saylarda bu fərq nəzərə alınıb.
+  Buradakı saylar ARTIQ CRLF ilə hesablanıb və 500 limitinin
+  içindədir.
 
 
 -----------------------------------------------------------
-RELEASE NOTES — AZƏRBAYCAN  (az-AZ)     433 simvol (CRLF)
+RELEASE NOTES — AZƏRBAYCAN  (az-AZ)     464 simvol (CRLF)
 -----------------------------------------------------------
 
 Bu buraxılışda:
 
-• Planşet dəstəyi: əsas ekranlarda məzmun artıq ortada, rahat oxunan enlikdə yerləşir.
-• Valideyn uşağı tətbiqdən silə bilər — təsdiq soruşulur, nəyin silinəcəyi yazılır.
-• Reytinqdə fənn və rayon siyahılarının sonuncu sətirləri artıq əlçatandır.
-• Sınaq müddətindəki uşaq artıq "Giriş yoxdur" kimi görünmür.
-• Uşaq əlavə edərkən könüllü "Cinsi" sualı var; cavabsız qoymaq olar.
-• Məxfilik siyasəti yeniləndi.
+• İlk açılışda dili seçin; qeydiyyat və tətbiq həmin dildə davam edir.
+• İkinci valideyn eyni uşağı birdəfəlik kodla hesabına qoşa, onun nəticələrini və mövcud girişini görə bilər. Uşağı yaradan valideyn sorğunu təsdiqləyir və girişi istənilən vaxt ləğv edə bilir; təkrar ödəniş tələb olunmur.
+• İkinci uşaq üçün ortaq ailə məlumatları əvvəlcədən doldurulur.
+• Telefon sahəsi, avtomatik doldurma, kiçik ekranlar və tünd rejim yaxşılaşdırıldı.
 
 
 -----------------------------------------------------------
-RELEASE NOTES — ENGLISH  (en-US)        462 characters (CRLF)
+RELEASE NOTES — ENGLISH  (en-US)        461 characters (CRLF)
 -----------------------------------------------------------
 
 In this release:
 
-• Tablet support: on the main screens, content now sits in a centred column of readable width.
-• Parents can delete a child from the app, after a confirmation that says what is removed.
-• The last options in the Ranking subject and district lists are reachable again.
-• A child inside their trial is no longer shown as "No access".
-• Add-Child has an optional gender question; it can be left unanswered.
-• The privacy policy was updated.
+• Choose your language on first launch; registration and the app continue in it.
+• A second parent can link the same child with a one-time code and see their results and existing access. The parent who created the child approves the request and can revoke it at any time; no second payment is needed.
+• Shared family details are prefilled for another child.
+• Phone input, native autofill, small-screen layouts and dark mode are improved.
 
 
 -----------------------------------------------------------
-RELEASE NOTES — РУССКИЙ  (ru-RU)        454 символа (CRLF)
+RELEASE NOTES — РУССКИЙ  (ru-RU)        450 символов (CRLF)
 -----------------------------------------------------------
 
 В этом выпуске:
 
-• Поддержка планшетов: на основных экранах содержимое размещено в центральной колонке удобной ширины.
-• Родитель может удалить ребёнка в приложении — с подтверждением и списком удаляемого.
-• Последние пункты списков предмета и района в рейтинге снова доступны.
-• Ребёнок в пробном периоде больше не отмечен как «Нет доступа».
-• При добавлении ребёнка появился необязательный вопрос о поле.
-• Обновлена политика конфиденциальности.
+• При первом запуске выберите язык; регистрация и приложение продолжат работу на нём.
+• Второй родитель может привязать того же ребёнка одноразовым кодом и видеть его результаты и действующий доступ. Создавший профиль родитель подтверждает запрос и может отозвать доступ; повторная оплата не нужна.
+• Общие семейные данные заполняются для следующего ребёнка.
+• Улучшены ввод телефона, автозаполнение, малые экраны и тёмная тема.
 
 
 ===========================================================
@@ -109,7 +102,7 @@ hesabının bağlanmasıdır.
 
   Limit: hər dil üçün 500 simvol.
   Yuxarıdakı üç mətn CRLF sətir sonu ilə də bu limitin
-  içindədir: 433 / 462 / 454. Bax "SİMVOL SAYI NECƏ
+  içindədir: 464 / 461 / 450. Bax "SİMVOL SAYI NECƏ
   HESABLANIR" bölməsi.
 
 
@@ -150,25 +143,22 @@ görə mağaza qeydlərinə salınmayıb (tam siyahı: CHANGELOG.md
 
 
 ===========================================================
-  QƏSDƏN VƏD EDİLMƏYƏN İKİ ŞEY
+  TEXNİKİ QEYDLƏR VƏ CİHAZ YOXLAMASI
 ===========================================================
 
 Buraxılış qeydi ictimai vəddir: mağaza siyahısında yazılan
-hər cümlə yoxlanıla bilən olmalıdır. Aşağıdakı iki iddia
-əvvəlki qaralamada vardı və çıxarıldı.
+hər cümlə real cihazda yoxlanıla bilən olmalıdır.
 
-1) "Tətbiq yan çevrilmir" — ÇIXARILDI.
-   Telefonda portret kilidi 1.15.0-da da var idi
-   (app.json → orientation: "portrait"), yəni bu, bu
-   buraxılışın YENİLİYİ deyil; "artıq çevrilmir" yazmaq
-   telefon üçün yanlış olardı. Planşet üçün isə kilidin
-   bağladığı SÜBUT EDİLMƏYİB: iPadOS 26-da
-   UIRequiresFullScreen köhnəlmiş sayılır və nəzərə
-   alınmaya bilər, tətbiqdə isə iş vaxtı (runtime)
-   orientasiya kilidi yoxdur — expo-screen-orientation
-   quraşdırılmayıb. android.screenOrientation açarı isə
-   Expo konfiqurasiyasında ümumiyyətlə mövcud deyil və
-   heç nə etmir. Sübut olunana qədər vəd edilmir.
+1) Portret rejimi — KOD VƏ NATIVE KONFİQURASİYADA TAMDIR.
+   app.json portreti elan edir; expo-screen-orientation
+   başlanğıcda və tətbiq yenidən aktiv olanda PORTRAIT_UP
+   kilidini tətbiq edir; iPad UIRequiresFullScreen istifadə
+   edir. Android 16 planşet məhdudiyyəti üçün Google-un
+   müvəqqəti API 36 uyğunluq xüsusiyyəti manifestə əlavə
+   edilir. API 37 hədəfinə keçiddə bu xüsusiyyət silinəcəyi
+   üçün yenidən qiymətləndirmə tələb olunur. Fiziki iPad və
+   Android planşet yoxlaması build qəbul siyahısında qalır;
+   o yoxlama aparılmadan mağaza mətnində ictimai vəd edilmir.
 
 2) "iPad-də məzmun ortada" — DARALDILDI.
    Mərkəzi sütun bir paylaşılan hook-la (useContentGutter)
@@ -176,10 +166,10 @@ hər cümlə yoxlanıla bilən olmalıdır. Aşağıdakı iki iddia
    features/parent/ui.tsx, features/arena/ui.tsx. Bunlara
    valideyn paneli, şagird ana səhifəsi, reytinq, formalar
    və bildiriş qutuları daxildir. Öz kök scroll sahəsini
-   quran ekranlar hələ ALMIR: bütün test axını
-   (TestsHome / Setup / Runner / Result / Review), xəbər
-   siyahısı və məqaləsi, məxfilik ekranı və ictimai
-   marketinq səhifələri. Ona görə mətndə "əsas ekranlarda"
+   quran ekranlar hələ ALMIR: TestsHome, Result və Review,
+   xəbər siyahısı və məqaləsi, məxfilik ekranı və ictimai
+   marketinq səhifələri. Setup və Runner artıq həmin
+   mərkəzi sütunu tətbiq edir. Ona görə mətndə "əsas ekranlarda"
    yazılıb — bu, doğrudur; "hər yerdə" doğru olmazdı.
 
   Qeyd (hər iki mağaza üçün): mətnlərdə "iPad" sözü

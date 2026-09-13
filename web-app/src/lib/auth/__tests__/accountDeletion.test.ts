@@ -41,7 +41,19 @@ const deleteCalls: string[] = [];
 const verifyCalls: string[] = [];
 const audits: { action: string; metadata?: Record<string, unknown> }[] = [];
 
+/**
+ * MIGRATION 174. `studentRows` is now the answer to the SHARED RULE
+ * (public.parent_children_to_delete), not the old
+ * `students where created_by_parent_profile_id = me` query. The difference is
+ * the whole point: a child with a second active link is claimed by this parent
+ * and must NOT be in here.
+ */
 let studentRows: { profile_id: string }[] = [];
+/** Children this parent is LEAVING BEHIND to a co-parent (claimed, not deleted). */
+let retainedRows: { profile_id: string }[] = [];
+/** RPC names that fail, mapped to the Postgres code they fail with. */
+let rpcErrors = new Map<string, string>();
+const rpcCalls: string[] = [];
 let credRows: { auth_user_id: string }[] = [];
 
 vi.mock("@/lib/audit", () => ({
@@ -79,6 +91,26 @@ vi.mock("@/lib/supabase/admin", () => ({
         in: async () => ({ data: table === "child_credentials" ? credRows : [], error: null }),
       }),
     }),
+    // MIGRATION 174: the deletion paths ask the DATABASE which children die
+    // rather than re-deriving it. Both functions are SECURITY DEFINER and
+    // granted to service_role only, so they are only ever reachable from this
+    // admin client — which is why they are mocked here and nowhere else.
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push(fn);
+      if (!args || typeof args.p_parent !== "string") {
+        throw new Error(`rpc ${fn} called without p_parent`);
+      }
+      const code = rpcErrors.get(fn);
+      if (code) return { data: null, error: { code, message: "rpc boom" } };
+      const rows =
+        fn === "parent_children_to_delete"
+          ? studentRows
+          : [...studentRows, ...retainedRows];
+      return {
+        data: rows.map((r) => ({ child_profile_id: r.profile_id })),
+        error: null,
+      };
+    },
     auth: {
       admin: {
         deleteUser: async (id: string) => {
@@ -122,6 +154,9 @@ beforeEach(() => {
   verifyCalls.length = 0;
   audits.length = 0;
   studentRows = [];
+  retainedRows = [];
+  rpcErrors = new Map();
+  rpcCalls.length = 0;
   credRows = [];
   storageTree = new Map();
   storageBroken = false;
@@ -141,14 +176,131 @@ describe("the happy path still works", () => {
     expect(audits[0]?.action).toBe("parent.account_delete");
   });
 
-  it("deletes each child auth user before the parent", async () => {
+  // MIGRATION 174 REVERSED THIS, and the order is the entire fix.
+  //
+  // It used to be children-first, parent-last. That is not a style choice: the
+  // BEFORE DELETE trigger on public.parents is where the shared-child rule, the
+  // co-parent promotion and migration 167's refusal-to-strand all live, and
+  // deleting the children first meant it fired on an EMPTY set. The trigger was
+  // never bypassed — it was starved. The parent going first is what gives the
+  // database the first and only word about who dies alongside them.
+  it("deletes the PARENT first, then sweeps the child logins", async () => {
     studentRows = [{ profile_id: "student-1" }];
     credRows = [{ auth_user_id: CHILD_AUTH }];
     const del = await subject();
 
     await del({ parentProfileId: PARENT_PROFILE, authUserId: PARENT_AUTH });
 
-    expect(deleteCalls).toEqual([CHILD_AUTH, PARENT_AUTH]);
+    expect(deleteCalls).toEqual([PARENT_AUTH, CHILD_AUTH]);
+  });
+
+  it("asks the database which children die, and never re-derives it", async () => {
+    studentRows = [{ profile_id: "student-1" }];
+    credRows = [{ auth_user_id: CHILD_AUTH }];
+    const del = await subject();
+
+    await del({ parentProfileId: PARENT_PROFILE, authUserId: PARENT_AUTH });
+
+    expect(rpcCalls).toContain("parent_children_to_delete");
+  });
+});
+
+// ===========================================================================
+// MIGRATION 174 — the co-parent half. None of this is reachable today (nothing
+// mints a second link yet), and that is precisely why it is pinned now: the
+// day it becomes reachable is the day the first parent to close their account
+// would have destroyed a child who still has a living second parent.
+// ===========================================================================
+describe("a child with another adult is NOT deleted with this parent", () => {
+  it("deletes nothing for a parent whose only child is shared", async () => {
+    // The shared rule returns the EMPTY set: this parent created the child, but
+    // somebody else holds an active link, so the child survives them. The old
+    // code asked `students where created_by = me` and would have deleted it.
+    studentRows = [];
+    retainedRows = [{ profile_id: "shared-child" }];
+    credRows = [{ auth_user_id: CHILD_AUTH }];
+    const del = await subject();
+
+    await del({ parentProfileId: PARENT_PROFILE, authUserId: PARENT_AUTH });
+
+    expect(deleteCalls).toEqual([PARENT_AUTH]);
+    expect(deleteCalls).not.toContain(CHILD_AUTH);
+  });
+
+  it("leaves the surviving child's photographs alone", async () => {
+    // The purge is keyed off the shared rule's answer for exactly this reason.
+    // Sweeping "every child I created" would delete a LIVING child's avatar out
+    // from under the co-parent who still has them.
+    studentRows = [];
+    retainedRows = [{ profile_id: "shared-child" }];
+    storageTree.set("child-avatars/students/shared-child", ["keep-me.jpg"]);
+    const del = await subject();
+
+    await del({ parentProfileId: PARENT_PROFILE, authUserId: PARENT_AUTH });
+
+    expect(removed).not.toContain("child-avatars/students/shared-child/keep-me.jpg");
+  });
+
+  it("still deletes a sole-parent child, alongside a shared sibling", async () => {
+    // The rule is per CHILD, not per family: one sibling goes, one stays.
+    studentRows = [{ profile_id: "only-mine" }];
+    retainedRows = [{ profile_id: "shared-child" }];
+    credRows = [{ auth_user_id: CHILD_AUTH }];
+    const del = await subject();
+
+    await del({ parentProfileId: PARENT_PROFILE, authUserId: PARENT_AUTH });
+
+    expect(deleteCalls).toEqual([PARENT_AUTH, CHILD_AUTH]);
+  });
+
+  it("records how many children were left behind", async () => {
+    studentRows = [{ profile_id: "only-mine" }];
+    retainedRows = [{ profile_id: "shared-child" }];
+    const del = await subject();
+
+    await del({ parentProfileId: PARENT_PROFILE, authUserId: PARENT_AUTH });
+
+    expect(audits[0]?.metadata).toMatchObject({ children: 1, retained: 1 });
+  });
+
+  it("REFUSES when the shared rule cannot be read", async () => {
+    // "The rule is unavailable" and "this parent has no children" are different
+    // facts. Collapsing them deletes the parent and leaves every child behind —
+    // the orphaned, still-loginable account migration 098 exists to abolish.
+    rpcErrors.set("parent_children_to_delete", "57014");
+    const del = await subject();
+
+    await expect(
+      del({ parentProfileId: PARENT_PROFILE, authUserId: PARENT_AUTH }),
+    ).rejects.toThrow(/account_delete_rule_unavailable/);
+    expect(deleteCalls).toEqual([]);
+  });
+
+  it("still deletes when only the CONTEXT read fails", async () => {
+    // parent_claimed_children is audit colour, not a decision. A failure there
+    // must not block somebody closing their account.
+    rpcErrors.set("parent_claimed_children", "57014");
+    const del = await subject();
+
+    await expect(
+      del({ parentProfileId: PARENT_PROFILE, authUserId: PARENT_AUTH }),
+    ).resolves.toBeUndefined();
+    expect(audits[0]?.metadata).toMatchObject({ children: 0 });
+  });
+
+  it("does NOT sweep the child logins when the parent delete failed", async () => {
+    // The original bug, inverted: deleting the children after a failed parent
+    // delete would leave the family with their account and without their
+    // children.
+    studentRows = [{ profile_id: "student-1" }];
+    credRows = [{ auth_user_id: CHILD_AUTH }];
+    surviving.add(PARENT_AUTH);
+    const del = await subject();
+
+    await expect(
+      del({ parentProfileId: PARENT_PROFILE, authUserId: PARENT_AUTH }),
+    ).rejects.toThrow(/account_delete_incomplete/);
+    expect(deleteCalls).toEqual([PARENT_AUTH]);
   });
 });
 

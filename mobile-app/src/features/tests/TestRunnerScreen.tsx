@@ -94,7 +94,7 @@ import type { AttemptMeta, AttemptRowMeta, TestAttemptData } from "./types";
 import { ConfirmModal } from "./ConfirmModal";
 import { QuestionImage } from "./QuestionImage";
 import { OptionImage } from "@/features/tests/OptionImage";
-import { ArenaButton, Notice, Panel, tint, useArena } from "./ui";
+import { ArenaButton, BackBar, Notice, Panel, tint, useArena } from "./ui";
 
 const TESTS_TAB = "/(student)/(tabs)/tests" as const;
 const OLYMPIADS_TAB = "/(student)/(tabs)/olympiads" as const;
@@ -325,6 +325,11 @@ export function TestRunnerScreen({
   if (q.isPending || isGraded) {
     return (
       <View style={[pad, { flex: 1, backgroundColor: arena.bg, gap: spacing.lg }]}>
+        <BackBar
+          arena={arena}
+          label={t("test.run.back")}
+          onPress={() => backOrTo(router, homeTab)}
+        />
         <Skeleton height={26} />
         <Skeleton height={240} />
         <Skeleton height={48} />
@@ -338,12 +343,19 @@ export function TestRunnerScreen({
   // error state is only reachable when there is nothing to play.
   if (!attempt) {
     return (
-      <View style={{ flex: 1, backgroundColor: arena.bg, justifyContent: "center" }}>
-        <ErrorRetry
-          message={t("test.err.generic")}
-          retryLabel={t("mob.retry")}
-          onRetry={() => void q.refetch()}
+      <View style={[pad, { flex: 1, backgroundColor: arena.bg }]}>
+        <BackBar
+          arena={arena}
+          label={t("test.run.back")}
+          onPress={() => backOrTo(router, homeTab)}
         />
+        <View style={{ flex: 1, justifyContent: "center" }}>
+          <ErrorRetry
+            message={t("test.err.generic")}
+            retryLabel={t("mob.retry")}
+            onRetry={() => void q.refetch()}
+          />
+        </View>
       </View>
     );
   }
@@ -351,6 +363,11 @@ export function TestRunnerScreen({
   if (isClosed) {
     return (
       <View style={[pad, { flex: 1, backgroundColor: arena.bg, gap: spacing.lg }]}>
+        <BackBar
+          arena={arena}
+          label={t("test.run.back")}
+          onPress={() => backOrTo(router, homeTab)}
+        />
         <Notice arena={arena} warn>
           {t("test.home.noticeClosed")}
         </Notice>
@@ -904,6 +921,11 @@ function RunnerActive({
       style={{ flex: 1, backgroundColor: arena.bg }}
       contentContainerStyle={[scrollPad, { gap: spacing.lg }]}
     >
+      <BackBar
+        arena={arena}
+        label={t("test.run.back")}
+        onPress={() => backOrTo(router, homeTab)}
+      />
       {/* ---- Top bar: title + timer, answered progress, counter + save state ----
            WRAPS on a narrow phone. This row holds a title, a rated/practice
            badge and the timer pill; at 360dp with Azerbaijani copy they do not

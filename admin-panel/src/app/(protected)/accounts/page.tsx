@@ -403,6 +403,9 @@ export default async function AccountsPage({
                           </span>
                         </td>
                         <td className="row-actions nowrap">
+                          <Link className="btn-ghost" href={`/accounts/children/${c.profile_id}/access`}>
+                            {la("accounts.access.manage")}
+                          </Link>
                           {serviceReady && (
                             <ChildEditForm
                               studentProfileId={c.profile_id}

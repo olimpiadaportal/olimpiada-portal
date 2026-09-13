@@ -306,12 +306,47 @@ export async function findIosProduct(productId: string): Promise<IapProductRow |
 
 type IntentRow = {
   id: string;
-  owner_parent_profile_id: string;
+  // NULLABLE since migration 174: the owner FK moved to ON DELETE SET NULL so
+  // that closing an account stops destroying the only row that ties an Apple
+  // transaction id back to a family. A paid intent whose buyer has left is
+  // exactly the row a refund request needs, and CASCADE meant it did not exist.
+  owner_parent_profile_id: string | null;
   student_profile_id: string | null;
   product_id: string;
   consumed_at: string | null;
   original_transaction_id: string | null;
 };
+
+/**
+ * Does this parent hold an ACTIVE link to this child?
+ *
+ * The admin client on purpose: this is an authorization FACT, and reading it
+ * through the caller's own RLS view would make the answer depend on what the
+ * caller can see rather than on what is true. A missing student id is not a
+ * link — an intent whose child has been deleted belongs to nobody.
+ *
+ * FAILS CLOSED. A read error answers false and is logged by code only; the
+ * caller turns that into the same generic refusal an unknown intent gets.
+ */
+async function parentHoldsActiveLink(
+  admin: ReturnType<typeof getAdminClient>,
+  parentProfileId: string,
+  studentProfileId: string | null,
+): Promise<boolean> {
+  if (!studentProfileId) return false;
+  const { data, error } = await admin
+    .from("parent_student_links")
+    .select("id")
+    .eq("parent_profile_id", parentProfileId)
+    .eq("student_profile_id", studentProfileId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (error) {
+    console.error("[apple] link check failed:", error.code ?? "unknown");
+    return false;
+  }
+  return Boolean(data);
+}
 
 /**
  * Turn a re-queried, verified Apple transaction into access — or say why not.
@@ -424,14 +459,53 @@ export async function grantAppleEntitlement(params: {
     console.error("[apple] the payment names a different product than the request:", productId);
   }
 
+  // WHO MAY REDEEM THIS INTENT — the CHILD it was opened for, not the adult who
+  // opened it.
+  //
+  // This used to be `intent.owner_parent_profile_id !== requireParentProfileId`
+  // and nothing else, which reads as "only the buyer may redeem their own
+  // purchase" and is right exactly as long as a child has one adult. Two things
+  // break it, and both arrive with co-parent linking:
+  //
+  //   * A CO-PARENT RESTORING. Restore is a per-DEVICE operation: the second
+  //     adult signs in on their own phone, StoreKit hands back the family's
+  //     purchase, and the intent names the OTHER parent. Refusing there means a
+  //     paid-for child loses access on one of their parents' devices, which is
+  //     indistinguishable from a purchase that did not work.
+  //
+  //   * A DEPARTED BUYER. Migration 174 moved this FK to ON DELETE SET NULL so
+  //     the record of the money survives the person. After the buyer closes
+  //     their account the column is NULL, so an owner-only comparison can never
+  //     match again — the surviving family holds a genuine Apple transaction
+  //     that nothing will ever honour.
+  //
+  // So the question becomes "is this transaction's CHILD one you hold an active
+  // link to?". That is the same fact every other read of this child is gated on
+  // (is_parent_linked_to_student, ~20 SELECT policies), it cannot be widened by
+  // anything a client sends, and it still refuses a stranger: the check runs
+  // against parent_student_links on the admin client, which is not the caller's
+  // RLS view, so a forged row is the only way in and migration 170 closed that.
+  //
+  // ORDER MATTERS AND IS UNCHANGED. The link probe is only reached when the
+  // owner comparison fails, and a NULL student short-circuits it to "not
+  // linked" — so an intent that belongs to somebody else still answers
+  // `intent_not_yours` rather than leaking `child_missing`, which would confirm
+  // to a stranger that the intent exists.
   if (
     requireParentProfileId !== undefined &&
     intent.owner_parent_profile_id !== requireParentProfileId
   ) {
-    // Deliberately the same shape of refusal an unknown id gets; the caller
-    // maps both onto one message so this cannot be used to probe for ids.
-    console.error("[apple] a parent named a request that is not theirs");
-    return refuse("intent_not_yours");
+    const linked = await parentHoldsActiveLink(
+      admin,
+      requireParentProfileId,
+      intent.student_profile_id,
+    );
+    if (!linked) {
+      // Deliberately the same shape of refusal an unknown id gets; the caller
+      // maps both onto one message so this cannot be used to probe for ids.
+      console.error("[apple] a parent named a request that is not theirs");
+      return refuse("intent_not_yours");
+    }
   }
 
   const studentProfileId = intent.student_profile_id;

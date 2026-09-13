@@ -31,6 +31,7 @@ import { useOwnProfile } from "@/features/profile/useOwnProfile";
 import { accessPill, groupChildId } from "@/features/parent/commerce";
 import { InfoCarousel } from "@/features/parent/InfoCarousel";
 import {
+  useAccountId,
   useChildren,
   useEntitledSubjectsByChild,
   useFreeTrialsByChild,
@@ -80,6 +81,7 @@ function ChildCard({
   freeAccessActive,
   leaderboardOn,
   lb,
+  isCreator,
 }: {
   child: ChildRow;
   /** This child holds at least one LIVE subject entitlement (migration 168).
@@ -93,6 +95,7 @@ function ChildCard({
   freeAccessActive: boolean;
   leaderboardOn: boolean;
   lb: LbSummary | null;
+  isCreator: boolean;
 }) {
   const { tokens } = useTheme();
   const { t, locale } = useT();
@@ -223,7 +226,7 @@ function ChildCard({
         </Pressable>
       ) : null}
 
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+      {isCreator ? <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <Button
           title={child.child_unique_id ? t("parent.dash.manage") : t("parent.dash.choosePlan")}
           variant={child.child_unique_id ? "ghost" : "primary"}
@@ -246,7 +249,7 @@ function ChildCard({
             })
           }
         />
-      </View>
+      </View> : <AppText variant="muted">{t("link.linked")}</AppText>}
     </Card>
   );
 }
@@ -300,6 +303,7 @@ export default function ParentHome() {
   const router = useRouter();
   const config = useMobileConfig();
   const children = useChildren();
+  const accountId = useAccountId();
   const freeAccess = useParentFreeAccess();
   // GreetingHeader RENDERS this one (the name and the header avatar), but the
   // pull lives here and can only refetch the sources it is handed — so the
@@ -473,6 +477,7 @@ export default function ParentHome() {
               freeAccessActive={freeActive}
               leaderboardOn={leaderboardOn}
               lb={lbByChild.get(c.profile_id) ?? null}
+              isCreator={c.created_by_parent_profile_id === accountId}
             />
           ))}
           <Button
@@ -480,6 +485,11 @@ export default function ParentHome() {
             variant="ghost"
             icon={<Plus size={18} color={tokens.accent} strokeWidth={2} />}
             onPress={() => router.push("/(parent)/add-child")}
+          />
+          <Button
+            title={t("link.manage")}
+            variant="ghost"
+            onPress={() => router.push("/(parent)/link-child" as never)}
           />
         </View>
       )}

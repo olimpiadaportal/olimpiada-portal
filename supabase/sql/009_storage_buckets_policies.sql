@@ -158,13 +158,36 @@ create policy "admin manage sticker-assets"
   with check (bucket_id = 'sticker-assets' and public.is_admin());
 
 -- ===== child-avatars: PRIVATE — family-only access, no anon path =============
--- Backported from migrations/2026_07_18_071_child_avatars.sql. ONE DEFINER
+-- Backported from migrations/2026_07_18_071_child_avatars.sql, write arm
+-- narrowed by migrations/2026_09_11_173_link_grants_narrowed.sql. ONE DEFINER
 -- helper gates all four policies (the students/parent_student_links lookups
 -- must not depend on those tables' RLS — same reason is_parent_linked_to_student
 -- is DEFINER). Path is validated structurally (students/<uuid>/<file>) before
 -- any lookup.
---   write (p_for_write=true) : creator parent | active linked parent | admin
---   read  (p_for_write=false): the same set PLUS the student themself
+--   write (p_for_write=true) : creator parent | admin
+--   read  (p_for_write=false): that set PLUS an active linked parent PLUS the
+--                              student themself
+--
+-- THE ASYMMETRY IS THE POINT (migration 173). Co-parent linking lets up to four
+-- adults hold an ACTIVE parent_student_links row for one child. A link is a
+-- READ grant: a co-parent sees the child's face on their own dashboard. It is
+-- not a write grant, because the app really DELETES the replaced object, so a
+-- linked write is one adult destroying the other's photograph of their child —
+-- and the design's named adversary is an estranged ex-partner holding a
+-- perfectly valid link. Changing what a child IS stays with the creator.
+--
+-- MIRRORED IN THE APP, which is not redundancy: web-app childAvatarCore refuses
+-- a non-creator parent before Storage is reached, so the refusal is a
+-- translated message instead of an opaque RLS failure. This is the durable half.
+--
+-- KNOWN DIVERGENCE, TRACKED, NOT CLOSED HERE: migration 096
+-- (child_avatar_privacy) also rewrote this body — admitting the student
+-- themself to the WRITE branch so a child's own avatar can live in this private
+-- bucket — and its backport is still pending (its helper for 002 and its
+-- media_assets guard for 011 are absent too). A database that ran 096 therefore
+-- carries a self-branch this file does not describe. Migration 173 patches the
+-- INSTALLED definition rather than retyping it, precisely so that it narrows
+-- the link on both shapes without reverting 096 on the one that has it.
 create or replace function public.can_access_child_avatar(
   p_object_name text,
   p_for_write   boolean
@@ -185,17 +208,19 @@ as $$
           where s.profile_id::text = split_part(p_object_name, '/', 2)
             and (
               s.created_by_parent_profile_id = public.current_profile_id()
-              or public.is_parent_linked_to_student(s.profile_id)
+              or (not p_for_write and public.is_parent_linked_to_student(s.profile_id))
               or (not p_for_write and s.profile_id = public.current_profile_id())
             )
         )
       )
 $$;
 comment on function public.can_access_child_avatar(text, boolean) is
-  'storage.objects gate for the PRIVATE child-avatars bucket (migration 071). '
-  'Object path students/<student_profile_id>/<file>. Write: the creator parent, '
-  'an ACTIVE linked parent, or an admin. Read: the same set plus the student '
-  'themself. anon never has a path (policies are TO authenticated).';
+  'storage.objects gate for the PRIVATE child-avatars bucket (migration 071; write arm '
+  'narrowed to the CREATING parent by migration 173). Object path '
+  'students/<student_profile_id>/<file>. WRITE: the parent who created the child, or an '
+  'admin -- an ACTIVE linked co-parent may NOT write. READ: that set plus an active '
+  'linked parent and the student themself. anon never has a path (policies are TO '
+  'authenticated).';
 revoke all on function public.can_access_child_avatar(text, boolean) from public, anon;
 grant execute on function public.can_access_child_avatar(text, boolean) to authenticated, service_role;
 

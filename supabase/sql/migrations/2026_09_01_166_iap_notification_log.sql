@@ -63,6 +63,10 @@
 -- belongs in 016 as a cron job with a horizon measured in years, not here.
 --
 -- BACKPORT: public.iap_notifications belongs in 007 alongside the 164 tables.
+-- Backport status: DONE (2026-09-11). Table + comments + constraints -> 007;
+--   RLS enable, iap_notifications_select and the grants -> 010; the two indexes
+--   -> 011. The table comment is transcribed verbatim, mis-numbered opening
+--   ("Migration 165.") included, so canonical and the live databases agree.
 -- =============================================================================
 begin;
 

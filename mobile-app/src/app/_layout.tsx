@@ -8,6 +8,7 @@ import { ThemeProvider, useTheme } from "@/theme/ThemeProvider";
 import { ToastHost } from "@/components/Toast";
 import { RootGate } from "@/features/boot/RootGate";
 import { initSentry } from "@/lib/sentry";
+import { usePortraitOrientation } from "@/lib/usePortraitOrientation";
 
 // MODULE SCOPE, not an effect. Under `expo-router/entry` this file is the
 // earliest application code that runs, and an error thrown during the first
@@ -23,6 +24,10 @@ function ThemedStatusBar() {
 }
 
 export default function RootLayout() {
+  // Native config locks the launch orientation; reassert it whenever the app
+  // returns from system UI so every phone and tablet stays portrait-up.
+  usePortraitOrientation();
+
   // Drive React Query's focus manager from AppState. Installed ONCE here, at
   // the only component guaranteed to outlive every screen — a per-screen
   // listener would fire one refetch per mounted tab on every foreground.

@@ -5,6 +5,7 @@ import { GroupRedirect } from "@/lib/TabRedirect";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
+import { backOrTo } from "@/lib/navigation";
 
 // Signed-in users are bounced only off the AUTH surfaces — the info screens
 // (about/subjects/faq/contact/pricing/news) stay reachable in-session (profile
@@ -18,6 +19,12 @@ export default function PublicLayout() {
   const router = useRouter();
   const { tokens } = useTheme();
   const { t } = useT();
+  const fallback =
+    status === "signedIn" && role === "parent"
+      ? "/(parent)/(tabs)/home"
+      : status === "signedIn" && role === "student"
+        ? "/(student)/(tabs)/home"
+        : "/(public)/login";
 
   // segments = ["(public)", "<screen>", ...]; treat unknown as an auth surface.
   const screen: string = segments[1] ?? "";
@@ -56,15 +63,14 @@ export default function PublicLayout() {
         // A cross-group push (e.g. parent profile → FAQ) starts a fresh
         // (public) stack, so the native back button would not render; keep it
         // for in-stack pushes and fall back to a root-stack back arrow.
-        headerBackVisible: true,
-        headerLeft: ({ canGoBack, tintColor }) =>
-          !canGoBack && router.canGoBack() ? (
-            <BackButton
-              label={t("nav.back")}
-              onPress={() => router.back()}
-              color={tintColor ?? tokens.accent}
-            />
-          ) : null,
+        headerBackVisible: false,
+        headerLeft: ({ tintColor }) => (
+          <BackButton
+            label={t("nav.back")}
+            onPress={() => backOrTo(router, fallback)}
+            color={tintColor ?? tokens.accent}
+          />
+        ),
       }}
     />
   );

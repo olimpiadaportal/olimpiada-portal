@@ -49,6 +49,7 @@ import {
 } from "@/lib/mobile/http";
 import {
   PRODUCT_ID_MAX,
+  freeAccessClosedKey,
   packageUnsellableKey,
   paymentsClosedKey,
   subjectUnsellableKey,
@@ -96,6 +97,17 @@ export async function POST(request: Request): Promise<Response> {
     // 4. The same gate every other paid mutation runs first.
     const closed = await paymentsClosedKey();
     if (closed) return errorResponse(closed, closed === "gate.paymentsOff" ? 409 : 500, true);
+
+    // 4b. A scheduled free-access interval can coexist with payment mode
+    //     `real`. Do not sell access the admin has already opened for free.
+    const freeAccessClosed = await freeAccessClosedKey(studentProfileId);
+    if (freeAccessClosed) {
+      return errorResponse(
+        freeAccessClosed,
+        freeAccessClosed === "gate.freeAccess" ? 409 : 500,
+        freeAccessClosed !== "gate.freeAccess",
+      );
+    }
 
     // 5. A product we actually sell, on iOS, and live. `active` is required
     //    HERE and deliberately not required on the grant path: selling

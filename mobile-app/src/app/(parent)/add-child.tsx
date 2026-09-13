@@ -15,7 +15,7 @@
 // and kept across retries — a failed free activation or an abandoned plan
 // never duplicates the child. Every money step is re-validated by the BFF;
 // this flow is presentation only.
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { PartyPopper } from "lucide-react-native";
@@ -47,8 +47,17 @@ import {
   applyChildAvatarChoice,
   type ChildAvatarChoice,
 } from "@/features/parent/ChildAvatarPicker";
+import {
+  clearPrefilledFields,
+  decidePrefill,
+  isPristineChildInfo,
+  pickPrefillSource,
+} from "@/features/parent/childPrefill";
 import { extractChildUniqueId, groupChildId, resolvePosture } from "@/features/parent/commerce";
 import {
+  useAccountId,
+  useChildRayon,
+  useChildren,
   useCities,
   useCityDistricts,
   useGrades,
@@ -56,7 +65,7 @@ import {
   useParentFreeAccess,
   useSchools,
 } from "@/features/parent/queries";
-import { KeyRow, ScreenScroll } from "@/features/parent/ui";
+import { KeyRow, ScreenScroll, childDisplayName } from "@/features/parent/ui";
 
 type Phase = "info" | "done";
 
@@ -106,10 +115,93 @@ export default function AddChildScreen() {
   const [phase, setPhase] = useState<Phase>("info");
   const [doneId, setDoneId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [entryChoice, setEntryChoice] = useState<"choose" | "create">("choose");
 
   const schools = useSchools(info.cityId);
   const mode = config.data?.payment.mode ?? "off";
   const posture = resolvePosture(mode, freeAccess.data?.active === true);
+
+  // ---- SECOND CHILD: SEED THE SHARED HOUSEHOLD FIELDS ----------------------
+  // The rule itself is pure and lives in features/parent/childPrefill.ts (which
+  // field is shared, which child is the source, and when it is too late to
+  // seed); this is only the wiring. Nothing here runs for a parent's FIRST
+  // child: pickPrefillSource returns null and the decision is "skip", so that
+  // screen behaves exactly as it did before this feature existed.
+  const accountId = useAccountId();
+  const childrenQ = useChildren();
+  const prefillSource = pickPrefillSource(childrenQ.data, accountId);
+  const rayonQ = useChildRayon(prefillSource?.profile_id ?? null);
+  const sourceSchools = useSchools(prefillSource?.district_id ?? "");
+  // `decided` is FINAL and is what makes a cleared field STAY cleared: after
+  // the parent empties the prefilled fields the form is pristine again, and
+  // only this flag stops the seed from helpfully refilling it. `from` is the
+  // source child's name while the notice is on screen.
+  const [prefill, setPrefill] = useState<{ decided: boolean; from: string | null }>({
+    decided: false,
+    from: null,
+  });
+
+  // Whether the SOURCE child's city has rayons — i.e. whether this form will
+  // render the rayon field and require it for the seeded city.
+  const sourceCityHasRayons =
+    rayonsOfCity(districts.data, prefillSource?.district_id ?? "").length > 0;
+  const sourceCityActive = (cities.data ?? []).some((c) => c.id === prefillSource?.district_id);
+  const sourceRayonValid = !sourceCityHasRayons || rayonsOfCity(
+    districts.data,
+    prefillSource?.district_id ?? "",
+  ).some((r) => r.id === (rayonQ.data ?? ""));
+  const sourceSchoolValid = (sourceSchools.data ?? []).some(
+    (s) => s.id === prefillSource?.school_id && (!sourceCityHasRayons || s.city_district_id === rayonQ.data),
+  );
+
+  useEffect(() => {
+    if (prefill.decided) return;
+    const decision = decidePrefill({
+      childrenReady: childrenQ.isSuccess && !childrenQ.isFetching,
+      source: prefillSource,
+      catalogReady: cities.isSuccess && districts.isSuccess && sourceSchools.isSuccess,
+      rayon: {
+        status: rayonQ.isPending ? "pending" : rayonQ.isError ? "error" : "ready",
+        id: rayonQ.data ?? "",
+      },
+      cityHasRayons: sourceCityHasRayons,
+      sourceCatalogValid: sourceCityActive && sourceRayonValid && sourceSchoolValid,
+      // The reads land after the first render, so the parent can already be
+      // typing. Their input wins — and the seed is settled for good rather
+      // than left armed, so nothing appears under their fingers later.
+      pristine: isPristineChildInfo(info),
+    });
+    if (decision.kind === "wait") return;
+    if (decision.kind === "skip") {
+      setPrefill({ decided: true, from: null });
+      return;
+    }
+    // All four fields in ONE update: the cascade effect inside ChildInfoForm
+    // drops a school that does not belong to the current city + rayon, so a
+    // school seeded without its city would be wiped the moment the school list
+    // for that city arrives. Seeding them together also hands the prefilled
+    // pair to that same check, which is what keeps a stale school (archived, or
+    // narrowed away by the rayon) from surviving into the payload.
+    setInfo((prev) => ({ ...prev, ...decision.patch }));
+    setPrefill({ decided: true, from: childDisplayName(decision.from) });
+  }, [
+    prefill.decided,
+    childrenQ.isSuccess,
+    childrenQ.isFetching,
+    prefillSource,
+    cities.isSuccess,
+    districts.isSuccess,
+    districts.data,
+    rayonQ.isPending,
+    rayonQ.isError,
+    rayonQ.data,
+    sourceCityHasRayons,
+    sourceCityActive,
+    sourceRayonValid,
+    sourceSchoolValid,
+    sourceSchools.isSuccess,
+    info,
+  ]);
 
   // Every select on this screen reads an ADMIN-MANAGED catalog cached for ten
   // minutes, and the screen had no refresh affordance of any kind: when an
@@ -124,6 +216,13 @@ export default function AddChildScreen() {
     cities,
     districts,
     info.cityId ? schools : null,
+    // The prefill's two reads. They matter on a pull for the same reason the
+    // catalogs do: a parent who just corrected a sibling's school in
+    // Edit-Child, then came here, is holding the only gesture that can bring
+    // the corrected value into the suggestion.
+    childrenQ,
+    prefillSource ? rayonQ : null,
+    prefillSource ? sourceSchools : null,
   ]);
 
   // Rayon requirement of the chosen city (drives validation + the summary).
@@ -222,7 +321,8 @@ export default function AddChildScreen() {
     }
   }
 
-  function resetForAnother() {
+  async function resetForAnother() {
+    await invalidate();
     setInfo(EMPTY_CHILD_INFO);
     setAvatar({ kind: "default" });
     setErrors({});
@@ -231,9 +331,31 @@ export default function AddChildScreen() {
     setStudentProfileId(null);
     setDoneId(null);
     setPhase("info");
+    // Re-arm the prefill. "Add another child" is precisely the case Item 7
+    // exists for, and the child just created — already in the refreshed list —
+    // is the newest household state, so it becomes the next source.
+    setPrefill({ decided: false, from: null });
   }
 
   const configLoading = config.isPending || freeAccess.isPending;
+
+  if (entryChoice === "choose") {
+    return (
+      <ScreenScroll>
+        <AppText variant="title">{t("link.choice.title")}</AppText>
+        <Card style={{ gap: spacing.md }}>
+          <AppText variant="heading">{t("link.choice.create")}</AppText>
+          <AppText variant="muted">{t("link.choice.createBody")}</AppText>
+          <Button title={t("link.choice.create")} onPress={() => setEntryChoice("create")} />
+        </Card>
+        <Card style={{ gap: spacing.md }}>
+          <AppText variant="heading">{t("link.choice.existing")}</AppText>
+          <AppText variant="muted">{t("link.choice.existingBody")}</AppText>
+          <Button title={t("link.choice.existing")} variant="ghost" onPress={() => router.push("/(parent)/link-child" as never)} />
+        </Card>
+      </ScreenScroll>
+    );
+  }
 
   return (
     <ScreenScroll refreshing={refreshing} onRefresh={onRefresh}>
@@ -282,6 +404,51 @@ export default function AddChildScreen() {
           {phase === "info" ? (
             <>
               <AppText variant="muted">{t("parent.child.intro")}</AppText>
+
+              {/* A FORM THAT ARRIVES FULL HAS TO SAY SO.
+                  Silence here is the failure mode: a parent who does not notice
+                  the seeded city, rayon and school submits a second child into
+                  the first one's school without ever deciding to. So the notice
+                  names the child the values came from — which is also how the
+                  "most recently created sibling wins" rule becomes visible when
+                  two children disagree — and says the values can be changed.
+
+                  ONE CLEAR CONTROL, NOT FOUR. Every prefilled field is
+                  required, so a per-field clear could only produce an invalid
+                  form; and the city, rayon and school are SelectFields whose
+                  sheets carry no "clear" row on purpose. Without this button
+                  the "delete a prefilled value" half of the requirement would
+                  not exist for three of the four fields. It empties exactly the
+                  seeded fields — a first name, grade, gender or password the
+                  parent has already entered survives — and retires the notice,
+                  which is also what stops the seed running again. */}
+              {prefill.from ? (
+                <Card
+                  variant="flat"
+                  style={{ gap: spacing.sm, borderColor: tokens.accent }}
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="polite"
+                >
+                  <AppText variant="eyebrow">{t("mob.addchild.prefill.title")}</AppText>
+                  <AppText variant="muted">
+                    {t("mob.addchild.prefill.body").replace("{name}", prefill.from)}
+                  </AppText>
+                  {/* Stretched, not content-width: the az and ru labels are
+                      long enough to overflow a 320pt card otherwise. */}
+                  <Button
+                    title={t("mob.addchild.prefill.clear")}
+                    variant="ghost"
+                    disabled={pending}
+                    style={{ alignSelf: "stretch" }}
+                    onPress={() => {
+                      setInfo(clearPrefilledFields);
+                      setPrefill({ decided: true, from: null });
+                      setServerError(null);
+                    }}
+                  />
+                </Card>
+              ) : null}
+
               <ChildInfoForm
                 value={info}
                 onChange={(patch) => {
@@ -417,7 +584,7 @@ export default function AddChildScreen() {
                 title={t("parent.child.another")}
                 variant="ghost"
                 style={{ alignSelf: "stretch" }}
-                onPress={resetForAnother}
+                onPress={() => void resetForAnother()}
               />
             </Card>
           ) : null}

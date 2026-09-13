@@ -57,9 +57,8 @@ export default async function ParentDashboard() {
   const { data: children } = await supabase
     .from("students")
     .select(
-      "profile_id, first_name, last_name, child_unique_id, access_status, class_grade, avatar_kind, avatar_key, avatar_media_path",
+      "profile_id, first_name, last_name, child_unique_id, access_status, class_grade, created_by_parent_profile_id, avatar_kind, avatar_key, avatar_media_path",
     )
-    .eq("created_by_parent_profile_id", parent.profileId)
     .order("created_at", { ascending: true });
   const list = (children ?? []) as any[];
 
@@ -158,6 +157,9 @@ export default async function ParentDashboard() {
           <Link className="btn" href="/children/new">
             {t("parent.dash.addChild")}
           </Link>
+          <Link className="btn secondary" href="/children/link">
+            {t("link.manage")}
+          </Link>
         </div>
 
         {list.length === 0 ? (
@@ -170,6 +172,7 @@ export default async function ParentDashboard() {
               const lbProvisional = !!lb && !lbRanked && !!lb.provisional_month;
               const childName = [c.first_name, c.last_name].filter(Boolean).join(" ");
               const grants = grantsByChild.get(c.profile_id);
+              const isCreator = c.created_by_parent_profile_id === parent.profileId;
               return (
               <div className="card" key={c.profile_id}>
                 <div className="child-card-head">
@@ -227,23 +230,22 @@ export default async function ParentDashboard() {
                     )}
                   </div>
                 )}
-                <p style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Link
-                    className={c.child_unique_id ? "btn-ghost" : "btn"}
-                    href={`/children/${c.profile_id}/subscribe`}
-                  >
-                    {c.child_unique_id ? t("parent.dash.manage") : t("parent.dash.choosePlan")}
-                  </Link>
-                  <Link className="btn-ghost" href={`/children/${c.profile_id}/edit`}>
-                    {t("parent.dash.editInfo")}
-                  </Link>
-                  {olympiadOn && (
-                    <Link className="btn-ghost" href={`/children/${c.profile_id}/olympiads`}>
-                      {t("parent.dash.olympiads")}
-                    </Link>
-                  )}
-                </p>
-                <ChildCardActions studentProfileId={c.profile_id} dict={childDict} />
+                {isCreator ? (
+                  <>
+                    <p style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <Link className={c.child_unique_id ? "btn-ghost" : "btn"} href={`/children/${c.profile_id}/subscribe`}>
+                        {c.child_unique_id ? t("parent.dash.manage") : t("parent.dash.choosePlan")}
+                      </Link>
+                      <Link className="btn-ghost" href={`/children/${c.profile_id}/edit`}>
+                        {t("parent.dash.editInfo")}
+                      </Link>
+                      {olympiadOn && <Link className="btn-ghost" href={`/children/${c.profile_id}/olympiads`}>{t("parent.dash.olympiads")}</Link>}
+                    </p>
+                    <ChildCardActions studentProfileId={c.profile_id} dict={childDict} />
+                  </>
+                ) : (
+                  <p style={{ marginTop: 8 }}><span className="pill">{t("link.linked")}</span></p>
+                )}
               </div>
               );
             })}

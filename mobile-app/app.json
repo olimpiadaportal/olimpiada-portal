@@ -81,6 +81,13 @@
           "microphonePermission": false
         }
       ],
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "PORTRAIT_UP"
+        }
+      ],
+      "./plugins/withAndroidPortraitCompatibility",
       "./plugins/withIosPermissionStringDefaults",
       "expo-iap",
       "@sentry/react-native"

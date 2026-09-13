@@ -97,8 +97,13 @@ function GlyphChip({ children }: { children: React.ReactNode }) {
  * So the message scrolls (centred while it still fits, so nothing changes on
  * the screens that always fitted) and the action goes in the shared ActionArea
  * below it. Same contract as every other screen: components/actionAreaLayout.ts.
+ *
+ * EXPORTED for the first-launch language picker, which is a gate of exactly
+ * this kind — it returns INSTEAD of the navigator, so it owns its own insets
+ * and its own pinned action. A second copy of this shell beside it would be a
+ * second place for the safe-area handling to rot.
  */
-function CenteredShell({
+export function CenteredShell({
   children,
   actions,
 }: {

@@ -19,9 +19,11 @@
 // iOS ADDS THE APPLE RAIL (src/features/iap) AND TAKES NOTHING AWAY. Apple
 // rejected the 2026-08-31 submission under Guideline 3.1.1; on that storefront
 // the answer is in-app purchase, not silence. The panel and the Restore control
-// sit behind IAP_PLATFORM_SUPPORTED — a BUILD-TIME constant, never a server
-// flag — so an Android build renders precisely what it rendered yesterday.
-// The mob.pay.notInApp sentence is still here and is still what Android says.
+// sit behind IAP_PLATFORM_SUPPORTED — a BUILD-TIME platform constant — so an
+// Android build renders precisely what it rendered yesterday. On iOS the
+// admin control plane may close the approved StoreKit rail during free access;
+// it can never reveal a different payment mechanism. The mob.pay.notInApp
+// sentence is still here and is still what Android says.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
@@ -47,6 +49,7 @@ import { subjectLabel } from "@/lib/subjectLabel";
 import {
   fmtDate,
   isCancellable,
+  paidAccessAvailable,
   resolvePosture,
   subStatusKey,
 } from "@/features/parent/commerce";
@@ -62,6 +65,7 @@ import { ManageSubjectsEditor } from "@/features/parent/ManageSubjectsEditor";
 import {
   QK,
   fetchEntitledSubjects,
+  useAccountId,
   useChildSubscriptions,
   useChildren,
   useInvalidateParentData,
@@ -81,6 +85,7 @@ export default function ParentSubscription() {
   const { tokens } = useTheme();
   const { t, locale } = useT();
   const router = useRouter();
+  const accountId = useAccountId();
 
   const config = useMobileConfig();
   const freeAccess = useParentFreeAccess();
@@ -101,8 +106,11 @@ export default function ParentSubscription() {
     config.data?.payment.mode ?? "off",
     freeAccess.data?.active === true,
   );
+  const purchaseEnabled = paidAccessAvailable(posture);
 
-  const list = children.data ?? [];
+  const list = (children.data ?? []).filter(
+    (child) => child.created_by_parent_profile_id === accountId,
+  );
   const selected = list.find((c) => c.profile_id === selectedId) ?? list[0] ?? null;
   const liveSub = selected
     ? (subs.data ?? []).find(
@@ -173,6 +181,7 @@ export default function ParentSubscription() {
     // A paid purchase that changes nothing on screen is the Guideline 3.1.1
     // reading this rail exists to remove.
     selected?.grade_id ?? null,
+    purchaseEnabled,
   );
   // THE OFFERS WAIT FOR THE ENTITLEMENT READ — on iOS only. The two reads
   // race: the StoreKit catalogue is cached for ten minutes while `entitled`
@@ -193,8 +202,9 @@ export default function ParentSubscription() {
   // inside IapPanel, which drops the subject it just sold from its own offer
   // list and lets this read confirm it afterwards.
   const iapState: IapSurfaceState =
-    IAP_PLATFORM_SUPPORTED && entitled.isPending ? "loading" : iap.state;
-  const iapVisible = IAP_PLATFORM_SUPPORTED && iapState !== "off" && iapState !== "none";
+    purchaseEnabled && IAP_PLATFORM_SUPPORTED && entitled.isPending ? "loading" : iap.state;
+  const iapVisible =
+    purchaseEnabled && IAP_PLATFORM_SUPPORTED && iapState !== "off" && iapState !== "none";
 
   const intervalName = (iv: string | null) =>
     iv === "week" ? t("pricing.weekly") : iv === "year" ? t("pricing.yearly") : t("pricing.monthly");
@@ -403,15 +413,17 @@ export default function ParentSubscription() {
                   manageBlock(!posture.freeFlow)
                 : null}
 
-              {/* iOS ONLY. Renders null unless there is something priced to
-                  offer, so it never shows a heading over an empty box. */}
-              {IAP_PLATFORM_SUPPORTED ? (
+              {/* iOS ONLY, and only while the admin control plane says paid
+                  access is available. Free mode intentionally renders the same
+                  subscription layout Android uses. */}
+              {IAP_PLATFORM_SUPPORTED && purchaseEnabled ? (
                 <IapPanel
                   studentProfileId={selected.profile_id}
                   state={iapState}
                   offers={iap.offers}
                   refetch={iap.refetch}
                   onSettled={invalidate}
+                  purchaseEnabled={purchaseEnabled}
                 />
               ) : null}
 

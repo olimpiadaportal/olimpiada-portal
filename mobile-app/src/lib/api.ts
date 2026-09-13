@@ -274,6 +274,37 @@ export function bffAuthedPost<T>(
   return bffJsonPost<T>(path, body, fallbackErrorKey, true, extraHeaders, timeoutMs);
 }
 
+export type ChildLinkState = {
+  children: {
+    id: string;
+    name: string;
+    child_id: string | null;
+    is_creator: boolean;
+    creator_name: string | null;
+    adults: { parent_id: string; name: string | null }[];
+    invitations: {
+      id: string;
+      status: "open" | "pending";
+      expires_at: string;
+      name?: string | null;
+      masked_email?: string | null;
+    }[];
+  }[];
+  pending: { id: string; expires_at: string }[];
+};
+
+export type ChildLinkResult =
+  | { state: "pending" | "saved" }
+  | { code: string; expiresAt: string; childId: string };
+
+export function bffChildLink(body: Record<string, unknown>) {
+  return bffAuthedPost<ChildLinkState | ChildLinkResult>(
+    "/api/mobile/v1/children/link",
+    body,
+    "link.err.generic",
+  );
+}
+
 /**
  * Repair a parent account whose provisioning never finished.
  *

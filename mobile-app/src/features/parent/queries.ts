@@ -110,6 +110,12 @@ export const QK = {
   // is what makes one family's row unaddressable by another ----
   entitled: (studentId: string) =>
     accountScoped([...SUBSCRIPTIONS_KEY, "entitled"] as const, studentId),
+  // One child's saved rayon, for the Add-Child prefill. Nested UNDER the
+  // children root so useInvalidateParentData() and every `QK.childrenRoot`
+  // invalidation already reach it — a parent who moves a child to another
+  // rayon in Edit-Child must not have the old one offered to the next sibling.
+  childRayon: (studentId: string | null) =>
+    accountScoped([...CHILDREN_KEY, "rayon"] as const, studentId),
   // Under the SAME prefix, for the same reason: a trial is a grant, and every
   // parent write that can change one already invalidates by this prefix.
   trial: (studentId: string) =>
@@ -138,6 +144,48 @@ export function useAccountId(): string | null {
 export function useChildren() {
   const accountId = useAccountId();
   return useQuery({ queryKey: QK.children(accountId), queryFn: fetchChildren });
+}
+
+/**
+ * One child's saved rayon (students.city_district_id).
+ *
+ * WHY IT IS NOT ON `fetchChildren`. The children list is the parent's
+ * whole-session cache behind the Home cards, the subject sheets and the
+ * leaderboard headers; per-child fields that exactly one screen needs stay off
+ * it (see the same reasoning on the Edit-Child screen, which reads this column
+ * and gender together for its own preselection). The Add-Child prefill needs
+ * the rayon for ONE child — the source it copies from — so it asks for that one
+ * child, and for nothing else.
+ *
+ * AND IT DELIBERATELY DOES NOT REUSE THE EDIT SCREEN'S KEY. That query selects
+ * `city_district_id, gender`; sharing a key with a narrower select would let
+ * whichever screen mounted first decide the cached SHAPE, and Add-Child filling
+ * the cache would then blank the gender the Edit screen preselects from. Gender
+ * is a minor's personal data that Add-Child has no business reading, so the two
+ * reads stay separate rather than being widened to match.
+ *
+ * "" covers both a NULL column and a city that has no rayons at all; the
+ * prefill treats the pair as one all-or-nothing location (childPrefill.ts).
+ */
+async function fetchChildRayon(studentProfileId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("students")
+    .select("city_district_id")
+    .eq("profile_id", studentProfileId)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as { city_district_id?: string | null } | null;
+  return typeof row?.city_district_id === "string" ? row.city_district_id : "";
+}
+
+/** The saved rayon of one child; disabled until there is a child to ask about. */
+export function useChildRayon(studentProfileId: string | null) {
+  return useQuery({
+    queryKey: QK.childRayon(studentProfileId),
+    queryFn: () => fetchChildRayon(studentProfileId as string),
+    enabled: !!studentProfileId,
+    staleTime: 10 * 60_000,
+  });
 }
 
 export function useParentFreeAccess() {
@@ -389,10 +437,10 @@ export function useFreeTrialsByChild(children: ChildRow[] | undefined, enabled: 
 /** Invalidate everything a successful money/provisioning write can change. */
 export function useInvalidateParentData() {
   const qc = useQueryClient();
-  return () => {
-    void qc.invalidateQueries({ queryKey: QK.childrenRoot });
-    void qc.invalidateQueries({ queryKey: QK.subscriptionsRoot });
-    void qc.invalidateQueries({ queryKey: QK.purchasesRoot });
-    void qc.invalidateQueries({ queryKey: QK.freeAccessRoot });
-  };
+  return () => Promise.all([
+    qc.invalidateQueries({ queryKey: QK.childrenRoot }),
+    qc.invalidateQueries({ queryKey: QK.subscriptionsRoot }),
+    qc.invalidateQueries({ queryKey: QK.purchasesRoot }),
+    qc.invalidateQueries({ queryKey: QK.freeAccessRoot }),
+  ]).then(() => undefined);
 }

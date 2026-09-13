@@ -4,7 +4,11 @@
 //
 // Plus accessPill: the parent Home card's label, which read "No access" over a
 // child their parent had just paid for.
-import { accessPill, resolvePosture } from "@/features/parent/commerce";
+import {
+  accessPill,
+  paidAccessAvailable,
+  resolvePosture,
+} from "@/features/parent/commerce";
 import { buildOlympiadDetailRows } from "@/features/olympiads/details";
 import type { OlympiadPackageRow } from "@/lib/data";
 import { readFileSync } from "node:fs";
@@ -32,6 +36,13 @@ describe("resolvePosture", () => {
 
   it("carries no demo flag any more", () => {
     expect(Object.keys(resolvePosture("real", false))).not.toContain("demoPay");
+  });
+
+  it("offers paid iOS access only in real mode outside every free window", () => {
+    expect(paidAccessAvailable(resolvePosture("real", false))).toBe(true);
+    expect(paidAccessAvailable(resolvePosture("real", true))).toBe(false);
+    expect(paidAccessAvailable(resolvePosture("giveaway", false))).toBe(false);
+    expect(paidAccessAvailable(resolvePosture("off", false))).toBe(false);
   });
 });
 

@@ -99,6 +99,7 @@ export default async function NewChildPage({
     plan?: string | string[];
     subjects?: string | string[];
     interval?: string | string[];
+    flow?: string | string[];
   }>;
 }) {
   await requireParent();
@@ -106,6 +107,26 @@ export default async function NewChildPage({
   const locale = await getLocale();
   const supabase = await createClient();
   const search = await searchParams;
+
+  if (search.flow !== "create" && !search.plan && !search.subjects) {
+    return (
+      <section className="page stack" style={{ gap: 20 }}>
+        <h1>{t("link.choice.title")}</h1>
+        <div className="grid2">
+          <div className="card stack" style={{ gap: 12 }}>
+            <h2>{t("link.choice.create")}</h2>
+            <p className="muted">{t("link.choice.createBody")}</p>
+            <Link className="btn" href="/children/new?flow=create">{t("link.choice.create")}</Link>
+          </div>
+          <div className="card stack" style={{ gap: 12 }}>
+            <h2>{t("link.choice.existing")}</h2>
+            <p className="muted">{t("link.choice.existingBody")}</p>
+            <Link className="btn secondary" href="/children/link">{t("link.choice.existing")}</Link>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   // R11: the payment mode decides which wizard steps exist (server-resolved;
   // the wizard client only receives the string, never the flags themselves).

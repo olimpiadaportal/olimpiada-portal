@@ -2,10 +2,12 @@
 // flows (notifications, profile, add-child wizard, per-child screens) can push
 // OVER the tabs (web parity: these pages are not tabs).
 import React from "react";
-import { Redirect, Stack } from "expo-router";
+import { Redirect, Stack, useRouter } from "expo-router";
+import { BackButton } from "@/components/BackButton";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
+import { backOrTo } from "@/lib/navigation";
 
 // Anchor the stack on the tabs: a cold deep link (push tap, OS link) straight
 // into a secondary screen otherwise mounts it as the stack ROOT — no native
@@ -16,12 +18,25 @@ export const unstable_settings = { anchor: "(tabs)" };
 export default function ParentLayout() {
   const status = useAuthStore((s) => s.status);
   const role = useAuthStore((s) => s.role);
+  const router = useRouter();
   const { tokens } = useTheme();
   const { t } = useT();
 
   if (status !== "signedIn") return <Redirect href="/(public)/welcome" />;
   if (role === "student") return <Redirect href="/(student)/(tabs)/home" />;
   if (role !== "parent") return <Redirect href="/" />;
+
+  const secondary = (title: string) => ({
+    title,
+    headerBackVisible: false,
+    headerLeft: () => (
+      <BackButton
+        label={t("nav.back")}
+        color={tokens.accent}
+        onPress={() => backOrTo(router, "/(parent)/(tabs)/home")}
+      />
+    ),
+  });
 
   return (
     <Stack
@@ -37,13 +52,14 @@ export default function ParentLayout() {
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="notifications" options={{ title: t("notif.title") }} />
-      <Stack.Screen name="leaderboard" options={{ title: t("lb.title") }} />
-      <Stack.Screen name="profile" options={{ title: t("nav.profile") }} />
-      <Stack.Screen name="news/[slug]" options={{ title: t("nav.news") }} />
-      <Stack.Screen name="add-child" options={{ title: t("parent.dash.addChild") }} />
-      <Stack.Screen name="children/[id]/edit" options={{ title: t("childedit.title") }} />
-      <Stack.Screen name="children/[id]/subscribe" options={{ title: t("sub.title") }} />
+      <Stack.Screen name="notifications" options={secondary(t("notif.title"))} />
+      <Stack.Screen name="leaderboard" options={secondary(t("lb.title"))} />
+      <Stack.Screen name="profile" options={secondary(t("nav.profile"))} />
+      <Stack.Screen name="news/[slug]" options={secondary(t("nav.news"))} />
+      <Stack.Screen name="add-child" options={secondary(t("parent.dash.addChild"))} />
+      <Stack.Screen name="link-child" options={secondary(t("link.title"))} />
+      <Stack.Screen name="children/[id]/edit" options={secondary(t("childedit.title"))} />
+      <Stack.Screen name="children/[id]/subscribe" options={secondary(t("sub.title"))} />
     </Stack>
   );
 }

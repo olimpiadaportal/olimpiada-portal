@@ -109,7 +109,6 @@ export default async function ParentAnalytics({
     const { data: children } = await supabase
       .from("students")
       .select("profile_id, first_name, last_name")
-      .eq("created_by_parent_profile_id", parent.profileId)
       .order("created_at", { ascending: true });
     const list = (children ?? []) as any[];
     const childIds = list.map((c) => c.profile_id);

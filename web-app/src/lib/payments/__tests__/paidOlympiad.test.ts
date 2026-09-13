@@ -69,6 +69,15 @@ const MIGRATION_128 = join(
 const MIGRATION_137 = join(
   SQL, "migrations", "2026_08_25_137_paid_subscription_provenance.sql",
 );
+// 174 made checkout ownership nullable during safe parent deletion and therefore
+// re-issued the intent immutability trigger with the explicit null carveout.
+const MIGRATION_174 = join(
+  SQL, "migrations", "2026_09_11_174_shared_child_deletion_safety.sql",
+);
+// 175 centralized the sibling rank calculation used by both plan quotations.
+const MIGRATION_175 = join(
+  SQL, "migrations", "2026_09_12_175_sibling_rank_single_source.sql",
+);
 
 function read(abs: string): string {
   return readFileSync(abs, "utf8").split("\r\n").join("\n");
@@ -780,6 +789,8 @@ describe("the payment migrations and their backport", () => {
   const migration = read(MIGRATION_127);
   const migration128 = read(MIGRATION_128);
   const migration137 = read(MIGRATION_137);
+  const migration174 = read(MIGRATION_174);
+  const migration175 = read(MIGRATION_175);
   const canonical = read(CANONICAL_011);
 
   /**
@@ -793,10 +804,10 @@ describe("the payment migrations and their backport", () => {
    * moved five of these onto 128; the rest are still 127's.
    */
   const FUNCTIONS: Record<string, string> = {
-    fn_checkout_intent_immutable: migration,
+    fn_checkout_intent_immutable: migration174,
     plan_change_delta: migration,
     plan_delta_project: migration,
-    quote_plan_change: migration128,
+    quote_plan_change: migration175,
     apply_plan_change: migration,
     quote_olympiad_purchase: migration,
     purchase_olympiad: migration,

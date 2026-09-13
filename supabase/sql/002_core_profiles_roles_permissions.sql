@@ -399,3 +399,28 @@ comment on column public.students.avatar_media_path is
 -- =============================================================================
 -- End of 002_core_profiles_roles_permissions.sql
 -- =============================================================================
+
+-- Shared-child invitations are nominations, not login credentials. A pending
+-- nomination grants nothing; the current creator must approve a named adult.
+create table if not exists public.parent_link_invites (
+  id uuid primary key default gen_random_uuid(),
+  student_profile_id uuid not null references public.students(profile_id) on delete cascade,
+  issued_by uuid not null references public.parents(profile_id) on delete cascade,
+  code_hash text not null unique,
+  status text not null default 'open' check(status in ('open','pending','approved','rejected','revoked')),
+  redeemed_by uuid references public.parents(profile_id) on delete cascade,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now()+interval '72 hours'),
+  resolved_at timestamptz,
+  check(expires_at>created_at),
+  check((status in ('pending','approved','rejected')) is false or redeemed_by is not null)
+);
+create unique index if not exists parent_link_invites_one_open on public.parent_link_invites(student_profile_id)
+  where status in ('open','pending');
+create index if not exists parent_link_invites_issuer_time on public.parent_link_invites(issued_by,created_at);
+create table if not exists public.parent_link_redeem_attempts (
+  id bigint generated always as identity primary key,
+  actor_profile_id uuid not null references public.parents(profile_id) on delete cascade,
+  attempted_at timestamptz not null default now()
+);
+create index if not exists parent_link_attempts_actor_time on public.parent_link_redeem_attempts(actor_profile_id,attempted_at);

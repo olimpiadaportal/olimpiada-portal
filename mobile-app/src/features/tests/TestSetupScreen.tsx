@@ -97,6 +97,7 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
   if (accessQ.isPending || topicsQ.isPending) {
     return (
       <View style={[pad, { flex: 1, backgroundColor: arena.bg }]}>
+        <BackBar arena={arena} label={t("test.run.back")} onPress={goBack} />
         <Skeleton height={16} width="30%" />
         <Skeleton height={26} width="60%" />
         <Skeleton height={130} />
@@ -107,15 +108,18 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
 
   if (accessQ.isError || topicsQ.isError) {
     return (
-      <View style={{ flex: 1, backgroundColor: arena.bg, justifyContent: "center" }}>
-        <ErrorRetry
-          message={t("test.err.generic")}
-          retryLabel={t("mob.retry")}
-          onRetry={() => {
-            void accessQ.refetch();
-            void topicsQ.refetch();
-          }}
-        />
+      <View style={[pad, { flex: 1, backgroundColor: arena.bg }]}>
+        <BackBar arena={arena} label={t("test.run.back")} onPress={goBack} />
+        <View style={{ flex: 1, justifyContent: "center" }}>
+          <ErrorRetry
+            message={t("test.err.generic")}
+            retryLabel={t("mob.retry")}
+            onRetry={() => {
+              void accessQ.refetch();
+              void topicsQ.refetch();
+            }}
+          />
+        </View>
       </View>
     );
   }

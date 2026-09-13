@@ -10,10 +10,11 @@
 //   transaction already rolled back its DB writes). What CANNOT fail the call —
 //   the optional gender, written after the transaction — comes back as a
 //   `warnings` key instead of a log line nobody reads.
-// resetChildPassword: parent restores their child's ability to sign in
-//   (ownership-checked): refuse an id-less account, reconcile the synthetic
-//   login email, set the password, void the failed-login lockout. See the
-//   comment above the function for why all four are one operation.
+// resetChildPassword: THE CREATING parent restores their child's ability to
+//   sign in: refuse an id-less account, reconcile the synthetic login email,
+//   set the password, void the failed-login lockout. See the comment above the
+//   function for why all four are one operation — and parentChildRelation at
+//   the bottom of this file for why a mere LINK is no longer enough.
 //
 // Callers (Stage 10 parent server actions) MUST authorize the parent first; this
 // client bypasses RLS.
@@ -242,9 +243,37 @@ export async function resetChildPassword(params: {
     .single();
   if (credErr || !cred) return { ok: false, errors: ["auth.child.err.childNotFound"] };
 
-  // Authorize: the requesting parent must be the creator OR have an active link.
-  const ownsChild = await parentOwnsChild(parentProfileId, studentProfileId);
-  if (!ownsChild) return { ok: false, errors: ["auth.child.err.notYourChild"] };
+  // Authorize: ONLY the parent who CREATED this account may set its password.
+  //
+  // This used to accept an active parent_student_links row as ownership, which
+  // was indistinguishable from creator-only for as long as every link belonged
+  // to the creator. Co-parent linking ends that, and a child's password is the
+  // one thing that must not travel with a link: whoever can set it can sign in
+  // AS the child (the 8-digit id is readable through the same link), lock the
+  // child out of their own account, and do both without the creating parent
+  // ever seeing a prompt. The adversary named in the design is an estranged
+  // ex-partner holding a perfectly valid link.
+  //
+  // Two refusals, deliberately different. A stranger is told the child is not
+  // theirs; a real co-parent is told the truth — this specific action belongs
+  // to the account's creator. Telling them apart leaks nothing: the co-parent
+  // already knows the child, and the stranger learns nothing they did not post.
+  const relation = await parentChildRelation(parentProfileId, studentProfileId);
+  if (relation === "none") return { ok: false, errors: ["auth.child.err.notYourChild"] };
+  if (relation === "linked") {
+    // A co-parent reaching for a child's LOGIN is a security event, not a
+    // validation slip, so it leaves a trail even though nothing changed.
+    // Best-effort by construction (writeAuditLog never throws) — an audit
+    // failure must not turn a refusal into something else.
+    await writeAuditLog(parentProfileId, "parent.child_password_reset_refused", {
+      severity: "warning",
+      targetTable: "students",
+      targetId: studentProfileId,
+      success: false,
+      metadata: { reason: "not_creator" },
+    });
+    return { ok: false, errors: ["auth.child.err.creatorOnly"] };
+  }
 
   // A child with no 8-digit id has no username: there is no password that would
   // let them in, so "password updated" would be a lie. Refused with its own key
@@ -376,15 +405,39 @@ export async function applyAllocatedChildEmail(params: {
   return res.ok ? { ok: true } : { ok: false, detail: res.detail };
 }
 
-/** True if the parent created the child or has an active parent_student_links row. */
-async function parentOwnsChild(parentProfileId: string, studentProfileId: string): Promise<boolean> {
+/**
+ * How one parent stands to one child: they CREATED the account, they merely
+ * hold an ACTIVE parent_student_links row, or neither.
+ *
+ * WHY THIS IS THREE-VALUED AND NOT A BOOLEAN. Until co-parent linking, every
+ * link belonged to the creator, so "created OR linked" and "created" returned
+ * the same answer for every row in the database — which is exactly why the
+ * difference went unnoticed while it was being relied upon as ownership. The
+ * moment a second adult can hold a link, the two stop agreeing, and every
+ * caller has to say which of the two it actually meant. Callers that mean
+ * "may look at this child" take creator|linked; callers that mean "may change
+ * what this child is" take creator alone.
+ *
+ * The creator is permanent by owner decision, with one automatic exception
+ * (creator deletes their account → the longest-standing active link is
+ * promoted), so "creator" is a stable fact about the row, not a race.
+ *
+ * A FAILED READ IS "none", not a fallthrough: this function's answer is an
+ * authorization decision, and the safe answer to "I could not tell" is no.
+ */
+type ParentChildRelation = "creator" | "linked" | "none";
+
+async function parentChildRelation(
+  parentProfileId: string,
+  studentProfileId: string,
+): Promise<ParentChildRelation> {
   const admin = getAdminClient();
   const { data: student } = await admin
     .from("students")
     .select("created_by_parent_profile_id")
     .eq("profile_id", studentProfileId)
     .single();
-  if (student?.created_by_parent_profile_id === parentProfileId) return true;
+  if (student?.created_by_parent_profile_id === parentProfileId) return "creator";
 
   const { data: link } = await admin
     .from("parent_student_links")
@@ -393,5 +446,5 @@ async function parentOwnsChild(parentProfileId: string, studentProfileId: string
     .eq("student_profile_id", studentProfileId)
     .eq("status", "active")
     .maybeSingle();
-  return !!link;
+  return link ? "linked" : "none";
 }

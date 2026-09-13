@@ -105,6 +105,8 @@ vi.mock("@/lib/payments/apple/grantEntitlement", () => ({
 // A minimal admin client: only what the ROUTES themselves reach for.
 type Row = Record<string, unknown>;
 let paymentsDisabled = false;
+let freeAccessActive = false;
+let freeAccessUnreadable = false;
 let packageOnSale = true;
 let packageTargetsGrade = true;
 /** What `subject_taught_to_grade` answers. `null` = the RPC could not answer. */
@@ -160,6 +162,11 @@ vi.mock("@/lib/supabase/admin", () => ({
           ? { data: null, error: { code: "23514", hint: "payments_disabled" } }
           : { data: null, error: null };
       }
+      if (fn === "is_free_access_active_for_student") {
+        return freeAccessUnreadable
+          ? { data: null, error: { code: "57014", hint: null } }
+          : { data: freeAccessActive, error: null };
+      }
       if (fn === "olympiad_package_on_sale") return { data: packageOnSale, error: null };
       // Migration 155's single-subject form. `null` here stands for the RPC
       // failing, which the route must treat as a refusal rather than a yes.
@@ -208,6 +215,8 @@ beforeEach(() => {
   owns = true;
   rateAllowed = true;
   paymentsDisabled = false;
+  freeAccessActive = false;
+  freeAccessUnreadable = false;
   packageOnSale = true;
   packageTargetsGrade = true;
   subjectTaught = true;
@@ -347,6 +356,24 @@ describe("opening a purchase intent", () => {
     expect(res.status).toBe(409);
     expect((await payload(res)).error).toBe("gate.paymentsOff");
     // ...and it stopped there: no catalogue read, no row.
+    expect(productLookups).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("refuses a new purchase while this child already has scheduled free access", async () => {
+    freeAccessActive = true;
+    const res = await intentPost(req(body));
+    expect(res.status).toBe(409);
+    expect((await payload(res)).error).toBe("gate.freeAccess");
+    expect(productLookups).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("fails closed when the child's free-access state cannot be read", async () => {
+    freeAccessUnreadable = true;
+    const res = await intentPost(req(body));
+    expect(res.status).toBe(500);
+    expect((await payload(res)).error).toBe("iap.err.generic");
     expect(productLookups).toHaveLength(0);
     expect(inserts).toHaveLength(0);
   });

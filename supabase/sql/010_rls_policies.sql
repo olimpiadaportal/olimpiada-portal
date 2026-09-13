@@ -399,9 +399,9 @@ drop policy if exists "questions_select" on public.questions;
 create policy "questions_select" on public.questions for select to authenticated
   using (
     status = 'published'
-    or created_by = public.(select current_profile_id())
-    or public.(select is_admin())
-    or public.(select has_permission('content.review'))
+    or created_by = (select public.current_profile_id())
+    or (select public.is_admin())
+    or (select public.has_permission('content.review'))
   );
 
 drop policy if exists "questions_insert" on public.questions;
@@ -437,16 +437,16 @@ drop policy if exists "qtrans_select" on public.question_translations;
 create policy "qtrans_select" on public.question_translations for select to authenticated
   using (exists (
     select 1 from public.questions q where q.id = question_id
-      and (q.status = 'published' or q.created_by = public.(select current_profile_id())
-           or public.(select is_admin()) or public.(select has_permission('content.review')))));
+      and (q.status = 'published' or q.created_by = (select public.current_profile_id())
+           or (select public.is_admin()) or (select public.has_permission('content.review')))));
 -- Child content writes are scoped to the OWNER of the parent question
 -- (backported from migrations/2026_06_27_005_tighten_content_child_rls.sql).
 drop policy if exists "qtrans_write" on public.question_translations;
 create policy "qtrans_write" on public.question_translations for all to authenticated
-  using (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())))
-  with check (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())));
+  using ((select public.is_admin()) or (select public.has_permission('content.review')) or (select public.has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = (select public.current_profile_id())))
+  with check ((select public.is_admin()) or (select public.has_permission('content.review')) or (select public.has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = (select public.current_profile_id())));
 
 -- Audit H3 (migration 035): answer_options carries is_correct (the answer key),
 -- so learners must NEVER read rows directly — options reach students only via
@@ -457,30 +457,30 @@ drop policy if exists "aopt_select" on public.answer_options;
 create policy "aopt_select" on public.answer_options for select to authenticated
   using (exists (
     select 1 from public.questions q where q.id = question_id
-      and (q.created_by = public.(select current_profile_id())
-           or public.(select is_admin()) or public.(select has_permission('content.review')))));
+      and (q.created_by = (select public.current_profile_id())
+           or (select public.is_admin()) or (select public.has_permission('content.review')))));
 drop policy if exists "aopt_write" on public.answer_options;
 create policy "aopt_write" on public.answer_options for all to authenticated
-  using (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())))
-  with check (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())));
+  using ((select public.is_admin()) or (select public.has_permission('content.review')) or (select public.has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = (select public.current_profile_id())))
+  with check ((select public.is_admin()) or (select public.has_permission('content.review')) or (select public.has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = (select public.current_profile_id())));
 
 drop policy if exists "aopttrans_select" on public.answer_option_translations;
 create policy "aopttrans_select" on public.answer_option_translations for select to authenticated
   using (exists (
     select 1 from public.answer_options o join public.questions q on q.id = o.question_id
     where o.id = option_id
-      and (q.status = 'published' or q.created_by = public.(select current_profile_id())
-           or public.(select is_admin()) or public.(select has_permission('content.review')))));
+      and (q.status = 'published' or q.created_by = (select public.current_profile_id())
+           or (select public.is_admin()) or (select public.has_permission('content.review')))));
 drop policy if exists "aopttrans_write" on public.answer_option_translations;
 create policy "aopttrans_write" on public.answer_option_translations for all to authenticated
-  using (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
+  using ((select public.is_admin()) or (select public.has_permission('content.review')) or (select public.has_permission('content.publish'))
          or exists (select 1 from public.answer_options o join public.questions q on q.id = o.question_id
-                    where o.id = option_id and q.created_by = public.(select current_profile_id())))
-  with check (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
+                    where o.id = option_id and q.created_by = (select public.current_profile_id())))
+  with check ((select public.is_admin()) or (select public.has_permission('content.review')) or (select public.has_permission('content.publish'))
          or exists (select 1 from public.answer_options o join public.questions q on q.id = o.question_id
-                    where o.id = option_id and q.created_by = public.(select current_profile_id())));
+                    where o.id = option_id and q.created_by = (select public.current_profile_id())));
 
 -- explanations: a solution is visible only to a reader who EARNED it (migration
 -- 132). The previous comment here said "app should reveal only after result;
@@ -494,9 +494,9 @@ create policy "qexpl_select" on public.question_explanations for select to authe
     exists (
       select 1 from public.questions q
       where q.id = question_explanations.question_id
-        and (q.created_by = public.(select current_profile_id())
-             or public.(select is_admin())
-             or public.(select has_permission('content.review'))))
+        and (q.created_by = (select public.current_profile_id())
+             or (select public.is_admin())
+             or (select public.has_permission('content.review'))))
     -- ...or the reader ANSWERED this question in an attempt of their own that
     -- has been graded. `status = 'graded'` and not 'submitted', to match
     -- get_test_review exactly: a child whose attempt is still being graded gets
@@ -506,16 +506,16 @@ create policy "qexpl_select" on public.question_explanations for select to authe
       from public.test_attempt_answers a
       join public.test_attempts t on t.id = a.attempt_id
       where a.question_id = question_explanations.question_id
-        and t.student_profile_id = public.(select current_profile_id())
+        and t.student_profile_id = (select public.current_profile_id())
         and t.status = 'graded')
   );
 
 drop policy if exists "qexpl_write" on public.question_explanations;
 create policy "qexpl_write" on public.question_explanations for all to authenticated
-  using (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())))
-  with check (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())));
+  using ((select public.is_admin()) or (select public.has_permission('content.review')) or (select public.has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = (select public.current_profile_id())))
+  with check ((select public.is_admin()) or (select public.has_permission('content.review')) or (select public.has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = (select public.current_profile_id())));
 
 -- tests: published readable; managed by admin/content.
 drop policy if exists "tests_select" on public.tests;
@@ -661,12 +661,11 @@ drop policy if exists "plans_write" on public.subscription_plans;
 create policy "plans_write" on public.subscription_plans for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
--- subscriptions: owner / linked-student / admin read; admin+service write.
+-- subscriptions: paying owner / student / admin read; admin+service write.
 drop policy if exists "subs_select" on public.subscriptions;
 create policy "subs_select" on public.subscriptions for select to authenticated
   using (owner_profile_id = public.current_profile_id()
          or student_profile_id = public.current_profile_id()
-         or (student_profile_id is not null and public.is_parent_linked_to_student(student_profile_id))
          or public.is_admin()
          or public.has_permission('subscriptions.manage'));
 drop policy if exists "subs_write" on public.subscriptions;
@@ -721,14 +720,15 @@ drop policy if exists "launch_promo_write" on public.launch_promo_config;
 create policy "launch_promo_write" on public.launch_promo_config for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
--- child_subscriptions: owner parent + the child read; writes ADMIN/SERVICE ONLY
+-- child_subscriptions: paying owner + the child read; writes ADMIN/SERVICE ONLY.
+-- A linked co-parent sees effective access through entitlements/free-trial RPCs,
+-- not prices, invoice dates, provider ids, or the payer's subscription ledger.
 -- (activation is webhook/service-role; clients never set price/discount/status).
 drop policy if exists "child_subs_select" on public.child_subscriptions;
 create policy "child_subs_select" on public.child_subscriptions for select to authenticated
   using (
     owner_parent_profile_id = public.current_profile_id()
     or student_profile_id = public.current_profile_id()
-    or public.is_parent_linked_to_student(student_profile_id)
     or public.is_admin()
     or public.has_permission('subscriptions.manage')
   );
@@ -744,7 +744,6 @@ create policy "sub_subjects_select" on public.subscription_subjects for select t
     select 1 from public.child_subscriptions cs where cs.id = child_subscription_id
       and (cs.owner_parent_profile_id = public.current_profile_id()
            or cs.student_profile_id = public.current_profile_id()
-           or public.is_parent_linked_to_student(cs.student_profile_id)
            or public.is_admin())));
 drop policy if exists "sub_subjects_write" on public.subscription_subjects;
 create policy "sub_subjects_write" on public.subscription_subjects for all to authenticated
@@ -795,6 +794,108 @@ create policy "free_trials_select" on public.free_trials for select to authentic
 revoke all on public.free_trials from anon, authenticated;
 grant select on public.free_trials to authenticated;
 
+-- THE APPLE IN-APP PURCHASE RAIL (migrations 164 and 166). RLS is enabled here
+-- rather than in the array at the top of this file, following free_trials
+-- immediately above: the array is the original 001-009 table list, and a table
+-- added later enables its own alongside its policies so the two never drift.
+--
+-- iap_products: READABLE by authenticated, restricted to `active` rows for
+-- everyone who is not staff — the shape subjects_pricing_select already uses.
+-- Why this and not the entitlements posture of "nobody, ever": this is a
+-- CATALOGUE, not a grant. The app has to list what it can sell, and serving
+-- only active rows makes the client's list correct by construction instead of
+-- making the endpoint re-filter what it was told.
+--
+-- NOT readable by anon, unlike subjects_pricing. Nothing logged-out needs the
+-- store id list, and the store ids are the exact catalogue a scraper would want
+-- in order to enumerate our products in App Store Connect.
+--
+-- WRITE is admin/payments.manage, not service-role-only. Somebody has to enter
+-- the product rows and flip `active` on release day, and a mis-typed row is bad
+-- but recoverable and audited (trg_audit_iap_products, 011) — unlike an
+-- entitlement, where a hand-written row is free lifetime access with no
+-- producer behind it.
+--
+-- iap_purchase_intents: SELECT for the owning parent (plus staff, who need
+-- exactly this row when a parent reports "I paid on my iPhone and got
+-- nothing"); NO write policy for anyone, ever, following entitlements and
+-- free_trials. Writes are service_role from the purchase endpoint.
+--
+-- iap_notifications: staff only. A parent has no question this table answers
+-- that their own intent row does not, and the rows carry Apple's message
+-- vocabulary rather than anything about their family. NO write policy either —
+-- a hand-written row here is a claim that a message was consumed, which is
+-- precisely how a real REFUND gets dismissed as a replay.
+--
+-- Every predicate is wrapped as `(select fn())` — the migration-149 hoisting
+-- rule. A bare call inside a policy is re-evaluated per row.
+alter table public.iap_products         enable row level security;
+alter table public.iap_purchase_intents enable row level security;
+alter table public.iap_notifications    enable row level security;
+
+drop policy if exists "iap_products_select" on public.iap_products;
+create policy "iap_products_select" on public.iap_products for select to authenticated
+  using (
+    active
+    or (select public.is_admin())
+    or (select public.has_permission('payments.manage'))
+  );
+
+drop policy if exists "iap_products_write" on public.iap_products;
+create policy "iap_products_write" on public.iap_products for all to authenticated
+  using (
+    (select public.is_admin())
+    or (select public.has_permission('payments.manage'))
+  )
+  with check (
+    (select public.is_admin())
+    or (select public.has_permission('payments.manage'))
+  );
+
+drop policy if exists "iap_intents_select" on public.iap_purchase_intents;
+create policy "iap_intents_select" on public.iap_purchase_intents for select to authenticated
+  using (
+    owner_parent_profile_id = (select public.current_profile_id())
+    or (select public.is_admin())
+    or (select public.has_permission('payments.manage'))
+  );
+-- NO insert/update/delete policy on iap_purchase_intents, for anyone, ever.
+-- Not even admins. A hand-written intent is a claim about which child a real
+-- payment was for.
+
+drop policy if exists "iap_notifications_select" on public.iap_notifications;
+create policy "iap_notifications_select" on public.iap_notifications for select to authenticated
+  using (
+    (select public.is_admin())
+    or (select public.has_permission('payments.manage'))
+  );
+-- NO write policy on iap_notifications either, for anyone, ever.
+
+-- Table grants. The `alter default privileges` block at the top of this file
+-- hands new tables SELECT to anon and INSERT/UPDATE/DELETE to authenticated, so
+-- both have to be taken back explicitly; RLS alone would not stop anon reading
+-- iap_products.
+revoke all on public.iap_products         from anon, authenticated;
+revoke all on public.iap_purchase_intents from anon, authenticated;
+revoke all on public.iap_notifications    from anon, authenticated;
+grant select                 on public.iap_products         to authenticated;
+grant insert, update, delete on public.iap_products         to authenticated;  -- gated by iap_products_write
+grant select                 on public.iap_purchase_intents to authenticated;  -- gated by iap_intents_select
+grant select                 on public.iap_notifications    to authenticated;  -- gated by iap_notifications_select
+
+-- service_role EXPLICITLY, not by inheritance. The `grant all on ALL tables`
+-- above is a one-time statement that cannot reach a table created afterwards,
+-- and `alter default privileges` only fires for tables created by the role that
+-- set it — which is not guaranteed to be the role applying a migration.
+-- service_role is the ONLY writer of iap_purchase_intents and iap_notifications
+-- and the only caller of entitlement_grant(); a silently missing grant here is
+-- the whole rail failing in production on the first purchase, and every Apple
+-- notification answered 500 and retried forever.
+grant all on public.iap_products         to service_role;
+grant all on public.iap_purchase_intents to service_role;
+grant all on public.iap_notifications    to service_role;
+
+
 
 -- checkout_sessions + sibling_discounts: owner reads; writes admin/service only.
 drop policy if exists "checkout_select" on public.checkout_sessions;
@@ -814,7 +915,6 @@ create policy "sub_changes_select" on public.subscription_changes for select to 
   using (
     owner_parent_profile_id = public.current_profile_id()
     or student_profile_id = public.current_profile_id()
-    or public.is_parent_linked_to_student(student_profile_id)
     or public.is_admin()
     or public.has_permission('subscriptions.manage')
   );
@@ -1095,3 +1195,14 @@ end $$;
 -- =============================================================================
 -- End of 010_rls_policies.sql
 -- =============================================================================
+
+alter table public.parent_link_invites enable row level security;
+alter table public.parent_link_redeem_attempts enable row level security;
+-- There is deliberately no direct client read/write policy: even a hash or a
+-- pending child's identifier must not become a credential/discovery surface.
+revoke all on public.parent_link_invites,public.parent_link_redeem_attempts from public,anon,authenticated;
+grant all on public.parent_link_invites,public.parent_link_redeem_attempts to service_role;
+grant usage,select on sequence public.parent_link_redeem_attempts_id_seq to service_role;
+-- All relationship changes go through the audited service. No PostgREST path
+-- may repoint a relationship, forge approval, or bypass caps and revocation.
+revoke insert,update,delete on public.parent_student_links from anon,authenticated;

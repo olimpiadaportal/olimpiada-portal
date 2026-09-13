@@ -7,8 +7,9 @@
 //
 // Contract (students table + PRIVATE `child-avatars` bucket):
 //   photo  → upload `students/<student_profile_id>/<uuid>.<ext>` with the
-//            REQUESTER'S OWN client (storage RLS: creator/linked parent, or the
-//            student themself, may write), then students
+//            REQUESTER'S OWN client (storage RLS since migration 173: the
+//            CREATING parent or the student themself may write; a linked
+//            co-parent may only READ), then students
 //            {avatar_kind:'photo', avatar_media_path, key:null}
 //   preset → students {avatar_kind:'preset', avatar_key:'boy'|'girl',
 //            avatar_media_path:null}   (parent-only — a child sets no preset)
@@ -24,7 +25,8 @@
 // (png/jpeg/webp only). Errors are i18n KEYS, never localized text.
 //
 // The two authorization models differ only in WHO the caller proved to be:
-// the parent variants re-verify parentOwnsChild(); the `…Own…` variants are
+// the parent variants re-verify that the caller CREATED the child (a linked
+// co-parent sees the photo and cannot change it — requireCreator); the `…Own…` variants are
 // called with the AUTHENTICATED CHILD'S OWN profile id (requireChild /
 // resolveBearerStudent), which is the authorization. Everything after that —
 // bucket, path, byte sniffing, row write, object deletion — is shared code, so
@@ -59,26 +61,36 @@ export type ChildAvatarCoreResult =
       errorKey:
         | "childedit.err.generic"
         | "childedit.err.notYourChild"
+        | "childedit.err.creatorOnly"
         | "profile.err.fileType"
         | "profile.err.fileTooLarge"
         | "profile.err.uploadFailed"
         | "profile.err.updateFailed";
     };
 
-/** True when the parent created the child OR holds an active link (mirrors
- *  childAccountService.parentOwnsChild — the same families storage RLS trusts). */
-async function parentOwnsChild(
+/**
+ * How this parent stands to this child — creator, merely linked, or neither.
+ * Mirrors childAccountService.parentChildRelation, and mirrors what storage RLS
+ * decides for the same request (migration 173 splits can_access_child_avatar
+ * into a link-scoped READ arm and a creator-scoped WRITE arm).
+ *
+ * A failed/absent read answers "none": the safe answer to "I could not tell"
+ * is no.
+ */
+type ParentChildRelation = "creator" | "linked" | "none";
+
+async function parentChildRelation(
   parentProfileId: string,
   studentProfileId: string,
-): Promise<boolean> {
+): Promise<ParentChildRelation> {
   const admin = getAdminClient();
   const { data: student } = await admin
     .from("students")
     .select("created_by_parent_profile_id")
     .eq("profile_id", studentProfileId)
     .maybeSingle();
-  if (!student) return false;
-  if (student.created_by_parent_profile_id === parentProfileId) return true;
+  if (!student) return "none";
+  if (student.created_by_parent_profile_id === parentProfileId) return "creator";
   const { data: link } = await admin
     .from("parent_student_links")
     .select("id")
@@ -86,7 +98,36 @@ async function parentOwnsChild(
     .eq("student_profile_id", studentProfileId)
     .eq("status", "active")
     .maybeSingle();
-  return !!link;
+  return link ? "linked" : "none";
+}
+
+/**
+ * WRITE guard for the three parent-managed cores: the CREATING parent only.
+ *
+ * A co-parent's link is a READ grant. It buys the photo on the dashboard and
+ * nothing else here — replacing a child's picture with one of the co-parent's
+ * choosing, or deleting the one the other parent uploaded, is a change to what
+ * the child IS, and those stay with the account's creator. The picture is also
+ * the least abstract thing in this file: it is a photograph of a minor, and the
+ * object is really DELETED on replace, so a widened write is not recoverable by
+ * asking nicely.
+ *
+ * Returns the core error to hand straight back, or null when the caller may
+ * proceed — so every call site is two lines and cannot forget the refusal.
+ * The two refusals differ on purpose: a real co-parent is told which parent
+ * this belongs to, a stranger is told only that the child is not theirs.
+ */
+async function requireCreator(
+  parentProfileId: string,
+  studentProfileId: string,
+): Promise<CoreError | null> {
+  const relation = await parentChildRelation(parentProfileId, studentProfileId);
+  if (relation === "creator") return null;
+  return {
+    ok: false,
+    errorKey:
+      relation === "linked" ? "childedit.err.creatorOnly" : "childedit.err.notYourChild",
+  };
 }
 
 async function currentMediaPath(studentProfileId: string): Promise<string | null> {
@@ -171,7 +212,7 @@ async function preparePhoto(
 }
 
 /** Upload → students-row write → delete the replaced object. AUTHORIZATION
- *  ALREADY DONE by the caller (parentOwnsChild, or "this IS the student"). */
+ *  ALREADY DONE by the caller (requireCreator, or "this IS the student"). */
 async function commitPhoto(
   userClient: SupabaseClient,
   studentProfileId: string,
@@ -236,7 +277,8 @@ async function commitRemove(
  * Set/replace the child's PHOTO avatar. `userClient` must be the requesting
  * PARENT'S own client (cookie session on the web, bearer on the BFF) so the
  * private-bucket storage RLS applies to the upload. The caller MUST have
- * authenticated the parent first; ownership of the student is re-verified here.
+ * authenticated the parent first; that the parent CREATED this student is
+ * re-verified here (a linked co-parent is refused — requireCreator).
  */
 export async function setChildAvatarPhotoCore(
   userClient: SupabaseClient,
@@ -251,9 +293,8 @@ export async function setChildAvatarPhotoCore(
   const prepared = await preparePhoto(studentProfileId, file);
   if (!prepared.ok) return prepared;
 
-  if (!(await parentOwnsChild(parentProfileId, studentProfileId))) {
-    return { ok: false, errorKey: "childedit.err.notYourChild" };
-  }
+  const denied = await requireCreator(parentProfileId, studentProfileId);
+  if (denied) return denied;
 
   return commitPhoto(userClient, studentProfileId, prepared, params.revalidate);
 }
@@ -263,7 +304,7 @@ export async function setChildAvatarPhotoCore(
  *
  * `studentProfileId` must be the profile id the caller ALREADY authenticated
  * (requireChild() on the web, resolveBearerStudent()/role==="student" on the
- * BFF) — being that student IS the authorization, so there is no ownership
+ * BFF) — being that student IS the authorization, so there is no relation
  * lookup and no client-supplied id to re-verify. `userClient` is the CHILD'S
  * own client, so the private-bucket storage RLS (student-self write branch)
  * governs the upload; the service role is never the uploader.
@@ -323,9 +364,8 @@ export async function setChildAvatarPresetCore(
   if (preset !== "boy" && preset !== "girl") {
     return { ok: false, errorKey: "childedit.err.generic" };
   }
-  if (!(await parentOwnsChild(parentProfileId, studentProfileId))) {
-    return { ok: false, errorKey: "childedit.err.notYourChild" };
-  }
+  const denied = await requireCreator(parentProfileId, studentProfileId);
+  if (denied) return denied;
 
   const oldPath = await currentMediaPath(studentProfileId);
   const wrote = await writeAvatarRow(studentProfileId, {
@@ -357,9 +397,8 @@ export async function removeChildAvatarCore(
 ): Promise<ChildAvatarCoreResult> {
   const { parentProfileId, studentProfileId } = params;
   if (!isUuid(studentProfileId)) return { ok: false, errorKey: "childedit.err.generic" };
-  if (!(await parentOwnsChild(parentProfileId, studentProfileId))) {
-    return { ok: false, errorKey: "childedit.err.notYourChild" };
-  }
+  const denied = await requireCreator(parentProfileId, studentProfileId);
+  if (denied) return denied;
 
   return commitRemove(userClient, studentProfileId, params.revalidate);
 }

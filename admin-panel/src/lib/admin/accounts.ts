@@ -993,6 +993,32 @@ export async function deleteChild(
     .maybeSingle();
   if (!student) return { error: t("accounts.delete.err.failed") };
 
+  // MIGRATION 174 — A CHILD WITH A SECOND ADULT IS NOT DELETABLE BY ROW.
+  //
+  // trg_student_shared_delete_guard refuses it at the database, so without this
+  // pre-check the refusal reaches the administrator as an opaque
+  // `delete_failed:500` out of GoTrue. Checking here costs one query and turns
+  // that into a log line naming the actual reason. The remedy is to unlink the
+  // other adults first — a visible act with an audit trail — and only then
+  // delete the child.
+  const { count: activeLinks, error: linkError } = await admin
+    .from("parent_student_links")
+    .select("id", { count: "exact", head: true })
+    .eq("student_profile_id", studentProfileId)
+    .eq("status", "active");
+  if (linkError) {
+    console.error("[admin] child delete link read failed", studentProfileId, linkError.code);
+    return { error: t("accounts.delete.err.failed") };
+  }
+  if ((activeLinks ?? 0) > 1) {
+    console.error(
+      "[admin] child delete refused: shared child",
+      studentProfileId,
+      `active_links:${activeLinks}`,
+    );
+    return { error: t("accounts.delete.err.failed") };
+  }
+
   // Delete the child auth user (cascades student/credentials/links via FK).
   const { data: cred } = await admin
     .from("child_credentials")
@@ -1023,8 +1049,15 @@ export async function deleteChild(
 }
 
 // =====================================================================
-// DELETE PARENT — mirrors web-app deleteParentAccount: delete the parent's
-// children first, then the parent auth user (cascades profile/parents/links).
+// DELETE PARENT — mirrors web-app deleteParentAccountCore: delete the PARENT
+// auth user first (cascades profile/parents/links, and the BEFORE DELETE
+// trigger on public.parents promotes every shared child to the surviving
+// co-parent and deletes only the children nobody else holds), then sweep any
+// child login the cascade left standing.
+//
+// MIGRATION 174 REVERSED THE ORDER, and the order was the bug: deleting the
+// children first meant the trigger fired on an empty set, so every protection
+// living in it was dead code on this path.
 // =====================================================================
 export async function deleteParent(
   _prev: DeleteState,
@@ -1065,30 +1098,74 @@ export async function deleteParent(
   // behind than continuing does.
   const failures: string[] = [];
 
-  // 1) Delete this parent's children (auth delete cascades their rows).
-  const { data: students } = await admin
-    .from("students")
-    .select("profile_id")
-    .eq("created_by_parent_profile_id", parentProfileId);
-  const studentIds = (students ?? []).map(
-    (s: { profile_id: string }) => s.profile_id,
+  // 1) WHICH CHILDREN DIE — asked of the database, not re-derived here.
+  //
+  // This used to be `students where created_by_parent_profile_id = the parent`,
+  // the same query the web app's deleteParentAccountCore carried and the same
+  // one the BEFORE DELETE trigger on public.parents carried. Three copies that
+  // nothing forced to agree, and the day a child can have a SECOND adult they
+  // stop agreeing in the worst direction: `created_by` includes a shared child
+  // this parent merely created, and the trigger deliberately excludes them.
+  //
+  // Migration 174 put the answer in one place — public.parent_children_to_delete
+  // — and both application paths now read it. SECURITY DEFINER, granted to
+  // service_role only, so it is unreachable from any user token.
+  //
+  // A FAILED READ IS A REFUSAL, never an empty list: "the rule is unavailable"
+  // and "this parent has no children" are different facts, and collapsing them
+  // deletes the parent while leaving every child of theirs behind.
+  const { data: toDelete, error: ruleError } = await admin.rpc(
+    "parent_children_to_delete",
+    { p_parent: parentProfileId },
   );
+  if (ruleError) {
+    // Never the raw Postgres message — the code is enough to find it in the logs.
+    console.error("[admin] parent delete rule unavailable", parentProfileId, ruleError.code);
+    return { error: t("accounts.delete.err.failed") };
+  }
+  const studentIds = ((toDelete ?? []) as { child_profile_id?: string | null }[])
+    .map((row) => row?.child_profile_id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  // Read the child logins BEFORE the cascade removes the rows that name them.
+  const childAuthIds: string[] = [];
   if (studentIds.length > 0) {
     const { data: creds } = await admin
       .from("child_credentials")
       .select("auth_user_id")
       .in("student_profile_id", studentIds);
     for (const c of (creds ?? []) as { auth_user_id: string }[]) {
-      if (c.auth_user_id) {
-        const reason = await deleteAuthUserVerified(admin, c.auth_user_id);
-        if (reason) failures.push(`child:${reason}`);
-      }
+      if (c.auth_user_id) childAuthIds.push(c.auth_user_id);
     }
   }
 
-  // 2) Delete the parent auth user (cascades profile/parents/links via FK).
+  // 2) THE PARENT GOES FIRST, AND THAT IS THE FIX.
+  //
+  // The children used to be deleted one by one first and the parent last, which
+  // meant trg_parents_cascade_children fired on an EMPTY set: every protection
+  // living in that trigger — the shared-child exclusion, the co-parent
+  // promotion, migration 167's refusal to strand a child login — was dead code
+  // on this path. Deleting the parent first gives the database the first and
+  // only word about who dies with them. The cascade also promotes every
+  // surviving shared child to the longest-standing other adult before the
+  // parent row (and with it created_by_parent_profile_id) disappears.
   const parentReason = await deleteAuthUserVerified(admin, parentProfile.auth_user_id);
   if (parentReason) failures.push(`parent:${parentReason}`);
+
+  // 3) A SWEEP, NOT THE MECHANISM — and skipped entirely when the parent's own
+  // deletion failed, because deleting the children after a failed parent delete
+  // is the original bug inverted: the family keeps their account and loses their
+  // children. The trigger has already removed these auth users, so each call is
+  // expected to answer "already gone" (404 → success). It stays because the
+  // trigger's auth.users delete is best-effort by design (it swallows
+  // insufficient_privilege so a rights problem cannot abort a deletion); if it
+  // ever does swallow one, this is what still removes the login.
+  if (!parentReason) {
+    for (const childAuthId of childAuthIds) {
+      const reason = await deleteAuthUserVerified(admin, childAuthId);
+      if (reason) failures.push(`child:${reason}`);
+    }
+  }
 
   if (failures.length > 0) {
     // Report the failure instead of auditing a deletion that did not happen.

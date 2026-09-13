@@ -13,6 +13,24 @@ export type { Locale };
 export const locales: Locale[] = ["az", "en", "ru"];
 export const defaultLocale: Locale = "az";
 
+/**
+ * Each language written IN ITS OWN LANGUAGE, and deliberately never translated
+ * (web localeNames parity) — so it stays readable to someone who cannot read
+ * the language the app is currently in. That is the whole point on the
+ * first-launch picker, where the UI is still in the DEVICE language: a Russian
+ * speaker handed an Azerbaijani screen has to be able to find their own row.
+ *
+ * Lives here rather than beside either switcher because there are now three
+ * surfaces that name a language (LocaleSwitcher, the first-launch picker, and
+ * the AccountSheet segmented control, which shows the codes), and a second copy
+ * of this map is a second place for a spelling to drift.
+ */
+export const LOCALE_NAMES: Record<Locale, string> = {
+  az: "Azərbaycan",
+  en: "English",
+  ru: "Русский",
+};
+
 export function isLocale(v: unknown): v is Locale {
   return v === "az" || v === "en" || v === "ru";
 }

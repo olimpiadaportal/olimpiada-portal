@@ -23,7 +23,7 @@
 **What this does NOT change — every one of these still binds:**
 - Azerbaijan gets **no** anti-steering relief (§2). The Epic carve-out is US-only, the DMA is EEA-only.
 - **Android stays purchase-silent.** There is no IAP on that binary, and Google's consumption-only test is app-wide, so parent tabs included.
-- Payment posture is a **build-time constant, never a server flag** (§4.1). A remotely-switchable checkout in a store binary is still Apple 2.3.1(a).
+- The payment **rail** is a build-time constant (§4.1). Runtime config may close the approved iOS StoreKit rail while access is free, but can never reveal a web/non-IAP checkout or make Android sell. A remotely-switchable non-IAP checkout in a store binary is still Apple 2.3.1(a).
 - **Never cite 3.1.3(b)** as a reason to avoid IAP — its proviso *requires* matching in-app purchases (§5).
 - Entitlement stays **provider-agnostic** (§4.3). That design is why answering the rejection took days rather than a rewrite.
 

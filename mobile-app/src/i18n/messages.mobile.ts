@@ -47,6 +47,16 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a7": "Valideyn bir hesabdan bir neçə uşaq əlavə edə bilər. Hər uşağın öz 8 rəqəmli ID-si və öz fənn girişi olur.",
     "mob.welcome.tagline": "Olimpiadalara hazırlaşmağın ən əyləncəli yolu",
     "mob.welcome.studentLogin": "Şagird girişi",
+    // ---- FIRST-LAUNCH LANGUAGE PICKER ----------------------------------
+    // The screen a fresh install opens on, ahead of the onboarding carousel
+    // (features/boot/LanguageChoiceScreen.tsx). The three language NAMES are
+    // deliberately not translated — they live in LOCALE_NAMES (src/i18n/
+    // index.ts), each written in its own language, so someone who cannot read
+    // this copy can still find their own row. The title reuses lang.select.
+    "mob.lang.body":
+      "Tətbiqi hansı dildə istifadə edəcəksiniz? Dili sonra istənilən vaxt dəyişə bilərsiniz.",
+    "mob.lang.continue": "Davam et",
+    "mob.lang.selected": "seçilib",
     "mob.update.title": "Yeniləmə tələb olunur",
     "mob.update.body":
       "Tətbiqin bu versiyası artıq dəstəklənmir. Davam etmək üçün mağazadan yeniləyin.",
@@ -102,6 +112,13 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.pay.notInApp": "Abunəliklər bu tətbiqdə idarə olunmur. Burada yalnız cari vəziyyət göstərilir.",
     "mob.gate.allOpen": "Hazırda bütün fənlər övladlarınız üçün açıqdır.",
     "mob.addchild.idReady": "Övladınız bu ID ilə indi daxil ola bilər. Fənnlərə giriş isə hələ aktiv deyil.",
+    // Second-child prefill (Item 7). The notice NAMES the child the values came
+    // from: that is what makes the "most recent sibling wins" rule visible when
+    // two children live at different addresses or go to different schools.
+    "mob.addchild.prefill.title": "Əvvəlcədən dolduruldu",
+    "mob.addchild.prefill.body":
+      "Ailəyə aid məlumatlar — soyad, yaşayış yeri və məktəb — {name} üçün yazdıqlarınızdan götürüldü. İstənilən sahəni dəyişə və ya təmizləyə bilərsiniz.",
+    "mob.addchild.prefill.clear": "Doldurulanları təmizlə",
     // ---- deleting a child (parent) --------------------------------------
     // The button label and the question itself are NOT here: they reuse the
     // web catalogue's child.deleteChild / child.deleteConfirm so the two
@@ -304,6 +321,9 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a7": "A parent can add several children from one account. Each child gets their own 8-digit ID and their own subject access.",
     "mob.welcome.tagline": "The most fun way to prepare for olympiads",
     "mob.welcome.studentLogin": "Student sign-in",
+    "mob.lang.body": "Which language should the app use? You can change it any time later.",
+    "mob.lang.continue": "Continue",
+    "mob.lang.selected": "selected",
     "mob.update.title": "Update required",
     "mob.update.body":
       "This version of the app is no longer supported. Update from the store to continue.",
@@ -343,6 +363,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.pay.notInApp": "Subscriptions are not managed in this app. This screen only shows your current status.",
     "mob.gate.allOpen": "All subjects are open for your children right now.",
     "mob.addchild.idReady": "Your child can sign in with this ID right away. Access to subjects is not active yet.",
+    "mob.addchild.prefill.title": "Prefilled",
+    "mob.addchild.prefill.body":
+      "The details a family shares — surname, location and school — were taken from what you entered for {name}. You can change or clear any of them.",
+    "mob.addchild.prefill.clear": "Clear the prefilled fields",
     "mob.child.delete.hint":
       "This permanently deletes the child's account: their profile, their 8-digit login ID, their access, and all of their results and history. It cannot be undone.",
     "mob.child.delete.pending": "Deleting…",
@@ -511,6 +535,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a7": "Родитель может добавить нескольких детей из одного аккаунта. У каждого ребёнка свой 8-значный ID и свой доступ к предметам.",
     "mob.welcome.tagline": "Самый увлекательный способ готовиться к олимпиадам",
     "mob.welcome.studentLogin": "Вход для ученика",
+    "mob.lang.body":
+      "На каком языке использовать приложение? Язык можно изменить в любой момент.",
+    "mob.lang.continue": "Продолжить",
+    "mob.lang.selected": "выбрано",
     "mob.update.title": "Требуется обновление",
     "mob.update.body":
       "Эта версия приложения больше не поддерживается. Обновите её в магазине, чтобы продолжить.",
@@ -550,6 +578,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.pay.notInApp": "Подписки не управляются в этом приложении. Здесь показано только текущее состояние.",
     "mob.gate.allOpen": "Сейчас все предметы открыты для ваших детей.",
     "mob.addchild.idReady": "Ребёнок уже может войти по этому ID. Доступ к предметам пока не активен.",
+    "mob.addchild.prefill.title": "Заполнено заранее",
+    "mob.addchild.prefill.body":
+      "Общие данные семьи — фамилия, местоположение и школа — взяты из того, что вы указали для {name}. Любое поле можно изменить или очистить.",
+    "mob.addchild.prefill.clear": "Очистить заполненные поля",
     "mob.child.delete.hint":
       "Аккаунт ребёнка удаляется навсегда: профиль, 8-значный ID для входа, доступ и все результаты обучения вместе с историей. Отменить это действие нельзя.",
     "mob.child.delete.pending": "Удаление…",

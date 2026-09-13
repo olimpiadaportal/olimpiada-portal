@@ -14,18 +14,11 @@ import { Check, ChevronDown, Globe } from "lucide-react-native";
 import { AppText } from "./AppText";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, shadow, spacing, tint } from "@/theme/tokens";
-import { isLocale, useLocaleStore, type Locale } from "@/i18n";
+// LOCALE_NAMES lives in @/i18n: the first-launch picker names the same three
+// languages, and one map is one place for a spelling to drift.
+import { isLocale, LOCALE_NAMES, useLocaleStore, type Locale } from "@/i18n";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
-
-// Each language is written in its own language and is deliberately never
-// translated (web localeNames parity) — so it stays readable to someone who
-// cannot read the language the app is currently in.
-const LOCALE_NAMES: Record<Locale, string> = {
-  az: "Azərbaycan",
-  en: "English",
-  ru: "Русский",
-};
 
 const ALL_LOCALES: Locale[] = ["az", "en", "ru"];
 

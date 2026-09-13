@@ -23,7 +23,7 @@ the proof.
 | 1 | **EU data region** | Chosen when the ORGANISATION is created, and **not changeable afterwards** — moving regions means a new organisation and new DSNs. The privacy policy states "servers in the EU region" in az/en/ru (A7 / B7 / C7). Getting this wrong makes a published legal document false. |
 | 2 | **Three separate projects** | A DSN belongs to a project. Merging the three apps into one project later means re-issuing DSNs and redeploying everything. |
 | 3 | **Prevent Storing of IP Addresses** | Organisation-level setting. The SDKs already withhold the IP from the payload, but Sentry's ingest sees the connection like any server does, so it can store one unless this is on. The policy row now discloses the IP **and states that this setting is on** — so turning it on is what makes that sentence true. |
-| 4 | **Spike protection + per-project rate limits** | The free plan is **5,000 error occurrences a month, org-wide, and it cannot be topped up**. One bad afternoon with no limits empties the month for all three apps. |
+| 4 | **Spike protection** (rate limits are NOT on the free plan — see §5) | The free plan is **5,000 error occurrences a month, org-wide, and it cannot be topped up**. Over-quota events are dropped, never billed — but they are also never seen. The in-app budget is the only ceiling this plan gives you. |
 | 5 | **Data-safety declarations** | Play *Data safety* and App Store *App Privacy* must carry the crash/diagnostics types **before the build carrying a live DSN is submitted**. Inventory: `docs/STORE_LISTING_COPY.md` §8.1 and `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2.6. |
 
 ---
@@ -80,24 +80,50 @@ credentials — but they must still never be typed into a file in this repositor
 Skip every "add this code to your app" instruction the wizard shows: all three
 apps are already instrumented.
 
-## 5. Set a per-project rate limit
+## 5. Per-project rate limits — NOT AVAILABLE ON THE FREE PLAN
 
-**For each project: Settings → Projects → the project → Client Keys (DSN) → the
-key's Rate Limit → Configure.**
+**Do not look for this control. It is Business/Enterprise-only, and its absence
+is how you can tell the org is on Developer.**
 
-The apps already cap themselves per browser tab, per server instance and per app
-launch. This is the hard ceiling above that, and it is what enforces the split of
-the org-wide 5,000/month:
+Earlier drafts of this document told you to set a per-key rate limit at
+*Settings → Projects → [project] → Client Keys (DSN) → Rate Limit*. That was
+wrong for a free org: the control is not offered on the Developer plan. You may
+see it **during the 14-day Business trial** and find it gone afterwards — that is
+expected, not a fault, and it is the reason you must not build a habit on it.
 
-| Project | Rate limit to set | Monthly share it protects |
+**What protects the quota instead is code, and it is already written.** Each app
+caps itself per browser tab, per server instance and per app launch, with a
+reserve so a never-before-seen fault still reports during a busy hour:
+`web-app/src/lib/observability/sentryBudget.ts`, the admin twin, and
+`mobile-app/src/lib/sentryQuota.ts`. The intended split of the org-wide
+5,000/month is:
+
+| Project | Code-side share | Why |
 |---|---|---|
-| `olympiq-web` | **80 events per hour** | ~2,400/month — the families are in this app |
-| `olympiq-mobile` | **35 events per hour** | ~1,000/month — 12 closed testers today |
-| `olympiq-admin` | **20 events per hour** | ~600/month — one operator at a keyboard |
+| `olympiq-web` | ~2,400/month | the families are in this app |
+| `olympiq-mobile` | ~1,000/month | 12 closed testers today |
+| `olympiq-admin` | ~600/month | one operator at a keyboard |
 
-The remaining ~1,000/month is deliberate headroom for a real incident. The
-arithmetic and the reasoning are in `web-app/src/lib/observability/sentryBudget.ts`
-and `mobile-app/src/lib/sentryQuota.ts`.
+The remaining ~1,000/month is deliberate headroom for a real incident.
+
+**Because the server-side ceiling does not exist on this plan, the code-side
+budget is the ONLY ceiling.** That is a reason to leave it alone rather than tune
+it down: if a future change removes it, nothing else is watching.
+
+### What IS available free, and you should turn on
+
+**Spike Protection — Settings → Spike Protection → enable for all three
+projects.** It is on the free plan and on by default, but confirm it. Note it
+does nothing during the trial, because trial quotas are unlimited.
+
+### Use the trial to measure, not to enjoy
+
+Quotas are **unlimited during the 14 days** and spike protection does not apply,
+so this is the one window where a runaway loop costs nothing. Open
+**Settings → Subscription → Usage** twice during the trial and read the accepted
+**errors** count for the last 30 days. That number decides whether 5,000/month is
+genuinely enough. A few hundred is fine. If it reads in the thousands, say so
+before day 15 and the SDK config changes before the cap becomes real.
 
 ---
 

@@ -22,7 +22,7 @@
 //     requirement (ITMS-90474). So `supportsTablet: true` on its own does not
 //     merely fail to lock an iPad; it actively declares every orientation.
 //
-// NEITHER IS PERMANENT. A passing test here is not a guarantee on a tablet:
+// THE NATIVE DECLARATIONS ARE BACKED BY TWO MORE LAYERS:
 //
 //   * Apple deprecated `UIRequiresFullScreen` in iPadOS 26 — "deprecated and
 //     will be ignored in a future release" — and it stops working "starting in
@@ -32,14 +32,11 @@
 //     replacement, `prefersInterfaceOrientationLocked`, is one Apple says the
 //     system "does not guarantee" it will honor.
 //
-//   * Android 16 ignores `screenOrientation` on displays sw600dp and wider for
-//     apps targeting SDK 36, which Expo 54 does. An Android TABLET rotates and
-//     no app.json key prevents it. A runtime lock is not the way out either:
-//     Google's own table of ignored APIs lists `setRequestedOrientation()` —
-//     the exact call `expo-screen-orientation` makes — beside the manifest
-//     attribute, which is why that dependency was NOT added. The only supported
-//     opt-out is the `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` manifest
-//     property; it is an owner decision, and Google removes it at API 37.
+//   * expo-screen-orientation locks PORTRAIT_UP at startup and foreground.
+//   * Android 16 ignores both manifest and runtime orientation restrictions on
+//     sw600dp+ displays unless the API-36 compatibility property is present.
+//     The local config plugin writes that property. Android removes the opt-out
+//     at target API 37, so the target-SDK upgrade must revisit this contract.
 //
 // The gutter is pinned in the same file because it is the same class of thing:
 // a phone layout on a 1024pt-wide window does not crash or clip, it just looks
@@ -95,6 +92,31 @@ describe("orientation is declared through the keys Expo actually reads", () => {
     if (app.ios?.supportsTablet === true) {
       expect(app.ios?.requireFullScreen).toBe(true);
     }
+  });
+
+  it("sets the native iOS module's initial orientation to portrait-up", () => {
+    expect(app.plugins).toContainEqual([
+      "expo-screen-orientation",
+      { initialOrientation: "PORTRAIT_UP" },
+    ]);
+  });
+
+  it("reasserts portrait-up at runtime", () => {
+    const src = code("lib/usePortraitOrientation.ts");
+    expect(src).toContain("ScreenOrientation.OrientationLock.PORTRAIT_UP");
+    expect(src).toContain("ScreenOrientation.lockAsync");
+    expect(src).toContain('state === "active"');
+    expect(code("app/_layout.tsx")).toContain("usePortraitOrientation()");
+  });
+
+  it("opts Android 16 tablets into the temporary portrait compatibility mode", () => {
+    expect(app.plugins).toContain("./plugins/withAndroidPortraitCompatibility");
+    const plugin = readFileSync(
+      resolve(ROOT, "plugins", "withAndroidPortraitCompatibility.js"),
+      "utf8",
+    );
+    expect(plugin).toContain("PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY");
+    expect(plugin).toContain('"android:value": "true"');
   });
 });
 

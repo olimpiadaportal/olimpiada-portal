@@ -170,7 +170,12 @@
 --   self-transacts is what destroyed production on 2026-07-29 (root CLAUDE.md):
 --   migration 095's inner `commit` committed the rebuild's OUTER transaction,
 --   `drop schema public cascade` included, and every row was lost.
--- Backport status: pending
+-- Backport status: DONE (2026-09-11). Tables + comments + inline constraints ->
+--   007 (package_id as a bare uuid, per the note above); policies, RLS enable and
+--   grants -> 010; indexes, the trg_set_updated_at array entry and
+--   trg_audit_iap_products -> 011; the inactive iOS subject catalogue -> 012;
+--   fk_iap_products_package -> 015. No 013 check was added, because this file
+--   added none (see the 013 note below, still an open recommendation).
 --
 -- 013 validation: no check is added here. RECOMMENDED as the next free check
 --   number (the highest present today is [125]): assert that

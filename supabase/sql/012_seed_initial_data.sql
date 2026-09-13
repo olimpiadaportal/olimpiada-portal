@@ -897,6 +897,54 @@ insert into public.mobile_app_versions (platform)
 values ('ios'), ('android')
 on conflict (platform) do nothing;
 
+-- -----------------------------------------------------------------------------
+-- THE iOS SUBJECT CATALOGUE, SEEDED INACTIVE (migration 164).
+--
+-- One store product per active subject per interval. Every one is active =
+-- false: nothing is sellable until its App Store Connect product exists, is
+-- approved, and an owner turns it on. Joined by subjects.code so no uuid is
+-- hardcoded, and `on conflict do nothing` so a re-run is a no-op.
+--
+-- THE SLUG IS DELIBERATELY NOT subjects.code, and getting two of them the wrong
+-- way round is PERMANENT — App Store Connect never renames a product id and
+-- never lets one be reused. The subject coded `az_language` is named "Məntiq"
+-- (Logic): the owner repurposed the row and kept the legacy code so no FK or
+-- pricing row would move. The real Azerbaijani-language subject is
+-- `azerbaycan_dili`. A code-derived id would sell Logic under the name of a
+-- language, forever, in every Apple financial report.
+--
+-- ROW COUNT: production has 7 active subjects and therefore 21 rows. A
+-- from-zero bootstrap seeds 18, because `azerbaycan_dili` arrives only via
+-- migration 151, which is not backported into this file.
+--
+-- The OLYMPIAD product rows are NOT here: olympiad_packages does not exist yet
+-- at this point in the run order. They are seeded in 015 (migration 165).
+-- -----------------------------------------------------------------------------
+insert into public.iap_products (platform, product_id, scope, subject_id, "interval", active)
+select 'ios',
+       'ai.olympiq.app.sub.' || m.slug || '.' || i.iv,
+       'subject',
+       s.id,
+       i.iv::public.plan_interval,
+       false
+from (values
+        ('math',            'math'),
+        ('az_language',     'logic'),        -- the row NAMED "Məntiq"
+        ('english',         'english'),
+        ('informatics',     'informatics'),
+        ('elm',             'science'),
+        ('fizika',          'physics'),
+        ('azerbaycan_dili', 'azerbaijani')   -- the actual language subject
+      ) as m(code, slug)
+join public.subjects s on s.code = m.code and s.status = 'active'
+cross join (values ('week'), ('month'), ('year')) as i(iv)
+on conflict (platform, product_id) do nothing;
+
+-- NO ANDROID ROWS, EVER, until an owner decision says otherwise. The Play build
+-- is consumption-only (docs/STORE_PAYMENTS_COMPLIANCE.md) and the emptiness of
+-- `platform = 'android'` in iap_products is what makes that structural rather
+-- than a flag somebody can flip.
+
 -- =============================================================================
 -- End of 012_seed_initial_data.sql
 -- =============================================================================

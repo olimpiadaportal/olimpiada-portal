@@ -66,6 +66,9 @@ create table if not exists public.payments (
   -- profile FK anonymizes (SET NULL) instead of cascading the row away.
   profile_id      uuid references public.profiles (id) on delete set null,
   subscription_id uuid references public.subscriptions (id) on delete set null,
+  -- FK is added in 015 after olympiad_purchases exists; the nullable column is
+  -- declared here so canonical 011 can create its support index in run order.
+  olympiad_purchase_id uuid,
   provider        text not null default 'stripe',
   provider_ref    text,                          -- e.g. payment intent / charge id
   amount          numeric(12,2) not null,
@@ -196,6 +199,16 @@ create table if not exists public.launch_promo_config (
 create table if not exists public.child_subscriptions (
   id                       uuid primary key default gen_random_uuid(),
   student_profile_id       uuid not null references public.students (profile_id) on delete cascade,
+  -- DELIBERATELY STILL NOT NULL / ON DELETE CASCADE, unlike checkout_sessions,
+  -- sibling_discounts, free_trials and iap_purchase_intents, which migration 174
+  -- moved to nullable SET NULL. A subscription is an ACCESS record for a child
+  -- who is still here, not a receipt: a NULL owner would be a subscription no
+  -- surface could renew, change or cancel. So when the owner leaves a child who
+  -- SURVIVES (a co-parent still holds an active link), the row is HANDED OVER --
+  -- promote_surviving_co_parent (011) re-points it before the parent row goes --
+  -- and when the child does not survive it cascades away with the child anyway.
+  -- Do not "harmonise" this with the four history tables; the promotion is the
+  -- reason it does not need to be.
   owner_parent_profile_id  uuid not null references public.profiles (id) on delete cascade,
   interval                 public.plan_interval not null,
   status                   public.subscription_status not null default 'incomplete',
@@ -327,7 +340,12 @@ create unique index if not exists uq_sub_changes_idem
 -- it exactly once (checkout_redeem_plan, 011).
 create table if not exists public.checkout_sessions (
   id                       uuid primary key default gen_random_uuid(),
-  owner_parent_profile_id  uuid not null references public.profiles (id) on delete cascade,
+  -- Migration 174: NULLABLE, ON DELETE SET NULL -- the same rule
+  -- student_profile_id below already carries, and for the same reason. Deleting
+  -- the PARENT used to CASCADE this row away, so a family that closed their
+  -- account took the record of every basket they had ever authorised with them.
+  -- Required at CREATION time by the endpoint, which is where it is enforceable.
+  owner_parent_profile_id  uuid references public.profiles (id) on delete set null,
   kind                     text not null check (kind in ('subscription', 'olympiad', 'protocol_test')),
   child_subscription_id    uuid references public.child_subscriptions (id) on delete set null,
   amount                   numeric(12,2),
@@ -474,7 +492,9 @@ comment on column public.checkout_sessions.redemption_note is
 -- -----------------------------------------------------------------------------
 create table if not exists public.sibling_discounts (
   id                       uuid primary key default gen_random_uuid(),
-  owner_parent_profile_id  uuid not null references public.profiles (id) on delete cascade,
+  -- Migration 174: NULLABLE, ON DELETE SET NULL -- the audit of a discount that
+  -- was actually applied outlives the person it was applied for.
+  owner_parent_profile_id  uuid references public.profiles (id) on delete set null,
   child_subscription_id    uuid references public.child_subscriptions (id) on delete cascade,
   child_rank               integer not null,           -- 1, 2, 3, ...
   discount_percent         numeric(5,2) not null,       -- 0 / 15 / 20
@@ -616,7 +636,10 @@ comment on column public.entitlements.source is
 create table if not exists public.free_trials (
   id                       uuid primary key default gen_random_uuid(),
   student_profile_id       uuid not null references public.students(profile_id) on delete cascade,
-  owner_parent_profile_id  uuid not null references public.profiles(id) on delete cascade,
+  -- Migration 174: NULLABLE, ON DELETE SET NULL. The ledger is per CHILD
+  -- (uq_free_trials_student below); this column records WHO activated it and
+  -- must not take the ledger row with them when their account closes.
+  owner_parent_profile_id  uuid references public.profiles(id) on delete set null,
   subject_ids              uuid[] not null,
   activated_at             timestamptz not null default now(),
   ends_at                  timestamptz not null,
@@ -720,3 +743,438 @@ begin
   end loop;
 end;
 $$;
+
+
+-- ---------------------------------------------------------------------------
+-- THE APPLE IN-APP PURCHASE RAIL (migrations 164 and 166).
+--
+-- Apple rejected the iOS build on 2026-08-31 under Guideline 3.1.1 — the app
+-- read content the family bought on the web without offering an in-app
+-- purchase, and the Azerbaijan storefront gets no relief (the Epic v. Apple
+-- carve-out is US-only, the DMA is EEA-only; docs/STORE_PAYMENTS_COMPLIANCE.md).
+-- The owner decided to build IAP.
+--
+-- THE ACCESS HALF NEEDED NOTHING. entitlements above is already
+-- provider-agnostic, public.entitlement_source (001) already carries
+-- 'apple_iap', external_ref's own comment already names Apple's
+-- originalTransactionId as the key this rail uses, and entitlement_grant()
+-- (011) is already the service_role-only writer. What was missing is the three
+-- facts Apple cannot tell us:
+--     WHAT a store product id sells          -> iap_products
+--     WHICH CHILD a transaction was for      -> iap_purchase_intents
+--     WHETHER a message was already acted on -> iap_notifications
+--
+-- The rest of the rail is spread across the run order, where each piece can
+-- actually be created: policies + grants in 010, indexes and the two triggers
+-- in 011, the INACTIVE iOS product catalogue in 012, and the package FK plus
+-- the two olympiad product reservations in 015 (olympiad_packages does not
+-- exist yet at this point).
+-- ---------------------------------------------------------------------------
+
+-- iap_products : what a store product id actually sells.
+--
+-- Apple's transaction payload carries a productId and nothing else about our
+-- catalogue. This is the lookup that turns it into a target the platform can
+-- grant, and it is the ONLY place that mapping is written down.
+--
+-- NON-RENEWING subscriptions, not auto-renewable: Apple allows ONE active
+-- subscription per group per Apple ID and this product is PER CHILD, so a
+-- parent with three children needs three concurrent grants. The consequence a
+-- reader will otherwise "simplify" away is that Apple's subscription-status
+-- endpoints cover AUTO-RENEWABLE products only — there is no status to poll,
+-- and OUR server computes ends_at as purchase date + `interval`.
+create table if not exists public.iap_products (
+  id           uuid primary key default gen_random_uuid(),
+
+  -- THE ANDROID PURCHASE-SILENCE GUARD. See the column comment below before
+  -- adding a single 'android' row.
+  platform     text not null,
+
+  -- The App Store Connect / Play Console identifier. Permanent and public.
+  product_id   text not null,
+
+  -- WHAT IS SOLD — the same vocabulary entitlements uses, so the mapping into
+  -- entitlement_grant() is a copy rather than a translation.
+  scope        public.entitlement_scope not null,
+
+  -- BOTH TARGET FKs ARE ON DELETE CASCADE, AND THAT DIVERGES FROM entitlements
+  -- ON PURPOSE. entitlements is the ACCESS RECORD, where losing a row is
+  -- fail-OPEN and RESTRICT is right; iap_products is a CATALOGUE, where losing
+  -- a row is fail-CLOSED — the purchase endpoint has nothing to sell and the
+  -- app hides the product, which is exactly what a subject with no live iOS
+  -- product must do. No grant is harmed: revocation keys on
+  -- (source, external_ref) in entitlements and never reads this table.
+  -- Anything ever SOLD is unreachable by this cascade anyway —
+  -- subject_deletion_blocks() block 10 and olympiad_package_deletion_blocks()
+  -- block 4 already refuse a target holding an entitlement.
+  subject_id   uuid references public.subjects (id) on delete cascade,
+
+  -- NO INLINE FK, exactly as entitlements.package_id above: olympiad_packages
+  -- does not exist yet in the canonical run order. fk_iap_products_package is
+  -- added in 015.
+  package_id   uuid,
+
+  grade_id     uuid references public.grades (id) on delete set null,
+
+  -- NOT NULL for a subject product, and load-bearing rather than decorative:
+  -- non-renewing subscriptions produce no renewal event, so this is the only
+  -- place the length of what was bought is recorded.
+  interval     public.plan_interval,
+
+  -- FALSE by default. A row is not sellable until somebody has created the
+  -- matching product in App Store Connect, had it approved, and deliberately
+  -- turned it on: a subject with no LIVE iOS product must be neither
+  -- purchasable NOR accessible on iOS.
+  active       boolean not null default false,
+
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+
+  constraint uq_iap_product unique (platform, product_id),
+
+  constraint ck_iap_product_platform check (platform in ('ios', 'android')),
+
+  -- MIRRORS ck_entitlement_target exactly. A row can never name both a subject
+  -- and a package, because the row that did would grant one and charge for the
+  -- other.
+  constraint ck_iap_product_target check (
+       (scope = 'subject'          and subject_id is not null and package_id is null)
+    or (scope = 'olympiad_package' and package_id is not null and subject_id is null)),
+
+  -- A subject product is a PERIOD and must say which one; a package product is
+  -- LIFETIME (ck_entitlement_lifetime) and must not carry one at all.
+  constraint ck_iap_product_interval check (
+       (scope = 'subject'          and "interval" is not null)
+    or (scope = 'olympiad_package' and "interval" is null)),
+
+  -- Mirrors ck_entitlement_grade.
+  constraint ck_iap_product_grade check (scope = 'olympiad_package' or grade_id is null),
+
+  -- The naming convention as a constraint, not as a convention. A store id is
+  -- permanent and public; the moment it is wrong it is wrong forever.
+  constraint ck_iap_product_id_shape check (
+    product_id ~ '^ai\.olympiq\.app\.(sub\.[a-z0-9]+\.(week|month|year)|oly\.[a-z0-9]+)$'),
+
+  -- THE ID AND THE ROW MUST AGREE ABOUT THE PERIOD. Written as three literal
+  -- branches rather than `product_id like '%.' || "interval"::text` because an
+  -- enum-to-text I/O cast is not dependably immutable and a CHECK is not the
+  -- place to find out. A row whose id ends `.month` while it grants a year is a
+  -- billing defect, and it is now rejected at INSERT.
+  constraint ck_iap_product_id_interval check (
+    scope <> 'subject'
+    or (   ("interval" = 'week'  and product_id like '%.week')
+        or ("interval" = 'month' and product_id like '%.month')
+        or ("interval" = 'year'  and product_id like '%.year'))
+  )
+);
+
+comment on table public.iap_products is
+  'Migration 164. Maps a STORE product id (App Store Connect / Play Console) to '
+  'something this platform sells, so an Apple transaction — which carries a '
+  'productId and nothing else about our catalogue — can be resolved into an '
+  'entitlement target. The ONLY place that mapping exists. Carries NO price: '
+  'Apple owns the price (per-storefront tiers, changed in App Store Connect), '
+  'and a copy here would be a second source of truth that is wrong the first '
+  'time a tier moves. iOS is dearer than web by owner decision (it preserves '
+  'our net after commission) and the web-only sibling discount is never '
+  'reflected here — nor may any surface tell an iOS user the web is cheaper, '
+  'which is the anti-steering rule we were rejected under on 2026-08-31.';
+
+comment on column public.iap_products.platform is
+  'ios | android. THIS COLUMN IS THE ANDROID PURCHASE-SILENCE GUARD. The Play '
+  'build is consumption-only on purpose (docs/STORE_PAYMENTS_COMPLIANCE.md): '
+  'with NO google_play rows here the purchase endpoint has literally nothing to '
+  'sell on Android, so the silence is structural instead of being a flag '
+  'somebody can flip. DO NOT SEED ANDROID ROWS to "prepare" for Play billing, '
+  'and do not add them because the check constraint allows the value — the '
+  'value exists so that the day Google forces IAP is a data change and not a '
+  'schema change. Until an owner decision says otherwise, every row is ios.';
+
+comment on column public.iap_products.product_id is
+  'The permanent, public store identifier. ai.olympiq.app.sub.<slug>.<interval> '
+  'for a subject, ai.olympiq.app.oly.<slug> for an olympiad package. The slug is '
+  'DELIBERATELY NOT subjects.code: the subject coded az_language is named '
+  '"Məntiq" (Logic) and a different subject, azerbaycan_dili, is the real '
+  'Azerbaijani-language one, so a code-derived id would sell Logic under the '
+  'name of a language forever. It is also not olympiad_packages.code, which an '
+  'admin can edit. App Store Connect never renames a product id and never lets '
+  'one be reused; this row is the mapping, so the id does not need to encode it.';
+
+comment on column public.iap_products.interval is
+  'The PERIOD a subject product grants. NOT NULL for scope = subject and NULL '
+  'for a package (packages are lifetime). Load-bearing: these are NON-RENEWING '
+  'subscriptions, so Apple sends no renewal event and its subscription-status '
+  'endpoints do not cover them at all — our server computes ends_at as purchase '
+  'date + this interval. There is no status to poll and no grace period to '
+  'model; only REFUND/REVOKE arrives, and that revokes.';
+
+comment on column public.iap_products.active is
+  'FALSE until the matching store product exists, is approved, and an owner '
+  'turns it on. Decision (4), 2026-08-31: a subject with no LIVE iOS product '
+  'must be neither purchasable NOR accessible on iOS — offering access to '
+  'something the store cannot sell is the Guideline 3.1.3(b) shape that got the '
+  'app rejected. Flipping this is the go-live step, and it is audited.';
+
+comment on column public.iap_products.grade_id is
+  'NULL in the normal case: the entitled grade is resolved from the CHILD named '
+  'in the purchase intent, exactly as olympiad_purchases already records it. A '
+  'non-NULL value pins ONE grade to ONE store product, which is how a package '
+  'would be sold per grade if that is ever wanted. Package rows only '
+  '(ck_iap_product_grade), mirroring ck_entitlement_grade.';
+
+
+-- iap_purchase_intents : which CHILD a transaction was for.
+--
+-- One row per tap on Buy, written BEFORE the store sheet opens. Its `id` IS the
+-- value passed to StoreKit as appAccountToken (Apple requires a UUID), and
+-- Apple echoes it back in the signed transaction.
+--
+-- THIS IS THE ONLY THING THAT KNOWS WHICH CHILD A PURCHASE WAS FOR. An Apple
+-- subscription attaches to an APPLE ID; this platform sells per CHILD, and a
+-- parent with three children buys the same product three times from the same
+-- Apple ID. Without this row the three transactions are indistinguishable and
+-- the money cannot be turned into the right grant.
+create table if not exists public.iap_purchase_intents (
+  -- THE appAccountToken. Not a surrogate key that happens to be a uuid — the
+  -- value leaves this database, travels through StoreKit, and comes back inside
+  -- Apple's signed payload. Never recycle one, never expose another family's.
+  id                      uuid primary key default gen_random_uuid(),
+
+  -- Migration 174: NULLABLE, ON DELETE SET NULL. This row is the only link from
+  -- an Apple transaction id back to a family, and the comment on
+  -- student_profile_id below promises a surviving row "still carries the parent,
+  -- the product and the transaction id -- which is what support needs to
+  -- refund". Under the original CASCADE there was no surviving row: deleting the
+  -- parent deleted the evidence the refund would be resolved from.
+  owner_parent_profile_id uuid references public.profiles (id) on delete set null,
+
+  -- ON DELETE SET NULL, never CASCADE, and deliberately NOT NULL-CONSTRAINED —
+  -- the same reasoning checkout_sessions.student_profile_id carries verbatim:
+  -- deleting a child must not delete the record of money that was taken. It is
+  -- required at CREATION time by the endpoint, which is where it is
+  -- enforceable. A surviving row with a NULL child still carries the parent,
+  -- the product and the transaction id — which is what support needs to refund.
+  student_profile_id      uuid references public.students (profile_id) on delete set null,
+
+  -- The store product tapped. FK on (platform, product_id) rather than on the
+  -- product row's uuid so that an intent naming an ios product while claiming
+  -- android is unrepresentable, and so the recorded id is the literal string
+  -- Apple will send back.
+  platform                text not null,
+  product_id              text not null,
+
+  created_at              timestamptz not null default now(),
+
+  -- STALENESS, NOT A GATE. Read this before writing any code against it.
+  -- expires_at bounds how long an unconsumed intent is treated as "the pending
+  -- tap", so abandoned rows can be pruned and support can triage. It must NEVER
+  -- be a reason to refuse a grant for a transaction Apple actually reports:
+  -- StoreKit delivers interrupted purchases, Ask-to-Buy approvals and
+  -- offline-queued transactions hours or days later, and refusing one would
+  -- take the family's money and hand back nothing.
+  expires_at              timestamptz not null default (now() + '7 days'::interval),
+
+  -- Set when a transaction has actually been tied to this intent.
+  consumed_at             timestamptz,
+
+  -- Apple's originalTransactionId, once known. This becomes
+  -- entitlements.external_ref for the grant.
+  original_transaction_id text,
+
+  constraint ck_iap_intent_platform check (platform in ('ios', 'android')),
+
+  -- ON DELETE RESTRICT, and the consequence is stated rather than discovered:
+  -- because iap_products.subject_id CASCADEs from subjects, an intent pins the
+  -- product row, which pins the SUBJECT. Hard-deleting a subject that anyone
+  -- ever tapped Buy on will therefore fail. That is the outcome we want — an
+  -- abandoned intent is the record of a purchase ATTEMPT, it is money-adjacent,
+  -- and cascading it away to make an admin delete succeed destroys evidence.
+  constraint fk_iap_intent_product
+    foreign key (platform, product_id)
+    references public.iap_products (platform, product_id)
+    on update cascade on delete restrict,
+
+  constraint ck_iap_intent_window check (expires_at > created_at),
+  constraint ck_iap_intent_consumed check (consumed_at is null or consumed_at >= created_at),
+  constraint ck_iap_intent_txn check (
+    original_transaction_id is null
+    or length(original_transaction_id) between 1 and 100),
+
+  -- ONE-DIRECTIONAL ON PURPOSE, and this is where it departs from
+  -- ck_checkout_redemption, which couples its two columns exactly. Consumed
+  -- implies a transaction id; a transaction id does NOT imply consumed. The
+  -- asymmetry exists so the id can be recorded the instant it is known, even if
+  -- the grant then fails: originalTransactionId is the only key that can later
+  -- revoke or refund this purchase, and losing it is worse than any
+  -- inconsistency coupling would have prevented.
+  constraint ck_iap_intent_txn_required check (
+    consumed_at is null or original_transaction_id is not null)
+);
+
+comment on table public.iap_purchase_intents is
+  'Migration 164. One row per tap on Buy, written BEFORE the store sheet opens. '
+  'Its id IS the appAccountToken handed to StoreKit and echoed back in Apple''s '
+  'signed transaction, and it is THE ONLY THING THAT KNOWS WHICH CHILD A '
+  'PURCHASE WAS FOR — an Apple subscription attaches to an Apple ID while this '
+  'platform sells per child, so a parent buying the same product for three '
+  'children produces three otherwise indistinguishable transactions. Written by '
+  'service_role only; read by the owning parent and by support.';
+
+comment on column public.iap_purchase_intents.id is
+  'THE appAccountToken. Leaves the database, travels through StoreKit, returns '
+  'inside Apple''s signed payload. Apple requires a UUID. Never recycled.';
+
+comment on column public.iap_purchase_intents.expires_at is
+  'A STALENESS MARKER, NOT AN ACCESS GATE. It bounds how long an unconsumed '
+  'intent counts as the pending tap, for pruning and for support triage. A '
+  'transaction Apple actually reports MUST still be granted after it passes: '
+  'interrupted purchases, Ask-to-Buy approvals and offline-queued transactions '
+  'arrive hours or days late, and refusing one takes the money and delivers '
+  'nothing. Late arrival raises a flag for a human; it never denies access.';
+
+comment on column public.iap_purchase_intents.student_profile_id is
+  'The child this purchase was for. NULLABLE only because the FK is ON DELETE '
+  'SET NULL — deleting a child must not delete the record of money that was '
+  'taken (the reasoning checkout_sessions.student_profile_id already carries). '
+  'Required at creation time by the endpoint, which is where it is enforceable; '
+  'a NOT NULL here would make deleting a child fail on an old intent.';
+
+comment on column public.iap_purchase_intents.original_transaction_id is
+  'Apple''s originalTransactionId, once known. Becomes entitlements.external_ref '
+  'for the grant — entitlement_grant() is the writer and is service_role-only. '
+  'Recorded as soon as it is known, even if the grant then fails: it is the only '
+  'key that can later revoke or refund this purchase.';
+
+-- NO audit trigger on iap_purchase_intents, deliberately. Every row is written
+-- by service_role from the purchase endpoint, one per tap on Buy, and the row
+-- IS its own record — append-then-stamp, never edited by a person. iap_products,
+-- which humans DO edit, is audited in 011.
+
+
+-- iap_notifications (migration 166) : one App Store Server Notification, one
+-- consumption.
+--
+-- Apple retries a notification on any non-2xx and re-delivers besides, so a
+-- message we already acted on WILL arrive again. Every write underneath the
+-- endpoint is already idempotent, so a replay could never produce a SECOND
+-- grant — what it would produce without this table is a second re-query against
+-- Apple's API, a second RPC round trip, and a log line indistinguishable from a
+-- real event.
+--
+-- THE KEY IS THE NOTIFICATION UUID, NOT THE TRANSACTION ID. notificationUUID is
+-- the identity of the MESSAGE and is repeated verbatim on every retry;
+-- transactionId is the identity of the SUBJECT, and several genuinely different
+-- messages legitimately concern one transaction — a CONSUMPTION_REQUEST today
+-- and a REFUND tomorrow — so keying on it would swallow the REFUND, which is
+-- the one message that must never be missed.
+--
+-- CLAIM-THEN-SETTLE: the endpoint INSERTs the row before doing any work and
+-- stamps processed_at + outcome after it.
+--     row absent             -> never seen; process it
+--     row present, unstamped -> a previous attempt died mid-flight; process it
+--                               again (every underlying write is idempotent)
+--     row present, stamped   -> a genuine replay; do nothing, answer 200
+create table if not exists public.iap_notifications (
+  -- Apple's own message id. THE dedupe key.
+  notification_uuid       uuid not null,
+
+  -- The RAIL that verified this message, never the payload's own claim. The
+  -- production endpoint always writes 'Production' and the sandbox endpoint
+  -- always writes 'Sandbox', because each route is bound to one verifier. Part
+  -- of the primary key so a sandbox message can never be the reason a
+  -- production message is dismissed as a replay.
+  environment             text not null,
+
+  -- Apple's notificationType / subtype, stored as free text ON PURPOSE: a new
+  -- member of Apple's vocabulary must be RECORDED and ignored, never rejected.
+  -- An enum here would turn "Apple shipped a new notification type" into a 500
+  -- and an endless retry loop.
+  notification_type       text not null,
+  subtype                 text,
+
+  -- Join keys to iap_purchase_intents and entitlements. Nullable because a TEST
+  -- notification carries no transaction at all, and because a message is claimed
+  -- before its transaction is necessarily known.
+  transaction_id          text,
+  original_transaction_id text,
+  product_id              text,
+
+  received_at             timestamptz not null default now(),
+
+  -- NULL until the message has been fully consumed. See CLAIM-THEN-SETTLE.
+  processed_at            timestamptz,
+
+  -- What we did: granted / revoked / ignored_type / unknown_product /
+  -- sandbox_recorded / … Text rather than an enum for the same reason
+  -- notification_type is: this vocabulary will grow, and a schema change is not
+  -- an acceptable price for adding a diagnostic value.
+  outcome                 text,
+
+  constraint pk_iap_notifications primary key (notification_uuid, environment),
+
+  constraint ck_iap_notification_environment
+    check (environment in ('Production', 'Sandbox')),
+  constraint ck_iap_notification_type_len
+    check (length(notification_type) between 1 and 64),
+  constraint ck_iap_notification_subtype_len
+    check (subtype is null or length(subtype) between 1 and 64),
+
+  -- The same 1..100 bound iap_purchase_intents.original_transaction_id and
+  -- transaction.ts's TRANSACTION_ID_RE already use. The three must not disagree
+  -- about what an Apple id may be, or a purchase one layer accepts is one
+  -- another cannot record.
+  constraint ck_iap_notification_txn
+    check (transaction_id is null or length(transaction_id) between 1 and 100),
+  constraint ck_iap_notification_orig_txn
+    check (original_transaction_id is null
+           or length(original_transaction_id) between 1 and 100),
+  constraint ck_iap_notification_product
+    check (product_id is null or length(product_id) between 1 and 200),
+  constraint ck_iap_notification_outcome
+    check (outcome is null or length(outcome) between 1 and 40),
+
+  constraint ck_iap_notification_processed
+    check (processed_at is null or processed_at >= received_at),
+
+  -- A settled row must say what it settled AS. "Processed, outcome unknown" is
+  -- not a state anybody can act on six months later.
+  constraint ck_iap_notification_settled
+    check (processed_at is null or outcome is not null)
+);
+
+-- The 'Migration 165.' opening below is TRANSCRIBED VERBATIM from migration
+-- 2026_09_01_166, which mis-numbers itself in its own comment and RAISE strings.
+-- Correcting it here would put canonical and the live databases out of step for
+-- no gain: the number in the text is wrong, the table it describes is right.
+comment on table public.iap_notifications is
+  'Migration 165. One row per App Store Server Notification V2, keyed on Apple''s '
+  'notificationUUID plus the rail that verified it. It is the REPLAY GUARD for '
+  '/api/payments/apple/notifications and its sandbox twin: claimed before the '
+  'work and stamped after it, so a retry of a message already consumed costs one '
+  'indexed lookup. Keyed on the MESSAGE id and not the transaction id because '
+  'several different messages legitimately concern one transaction — a '
+  'CONSUMPTION_REQUEST and a later REFUND — and swallowing the second would miss '
+  'the one notification that must never be missed. Written by service_role only.';
+
+comment on column public.iap_notifications.environment is
+  'The RAIL that verified the message, never the payload''s own environment '
+  'claim. Part of the primary key so a sandbox message can never be the reason a '
+  'production message is dismissed as a replay.';
+
+comment on column public.iap_notifications.processed_at is
+  'NULL means an attempt STARTED and did not finish — an alarm, not a leak. The '
+  'endpoint claims the row before doing any work and stamps it afterwards, so an '
+  'unstamped row is re-processed on Apple''s next retry; every write underneath '
+  'is idempotent, so a second pass converges rather than duplicating.';
+
+comment on column public.iap_notifications.notification_type is
+  'Apple''s notificationType, as free text. NOT an enum: a new member of Apple''s '
+  'vocabulary must be recorded and ignored, never rejected — an enum would turn '
+  '"Apple shipped a new notification type" into a 500 and an endless retry loop.';
+
+-- NO audit trigger here either, for the reason iap_purchase_intents has none:
+-- every row is written by service_role from one endpoint, one per message, and
+-- the row IS its own record. RETENTION IS NOT SOLVED HERE, and saying so is
+-- better than pretending — rows accumulate at the rate of purchases and refunds,
+-- and they are the evidence a chargeback is answered with. If a prune is ever
+-- wanted it belongs in 016 with a horizon measured in years.

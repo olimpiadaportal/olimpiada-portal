@@ -3,13 +3,13 @@
 // list) — a foreign/malformed id renders the not-your-child notice.
 //
 // PURCHASE-SILENT ON ANDROID (docs/STORE_PAYMENTS_COMPLIANCE.md): there is no
-// subscribe wizard on mobile in ANY mode since the demo payment mode was
-// deleted (owner, 2026-08-18). Every branch below is read-only or
+// web subscribe wizard on mobile in ANY mode since the demo payment mode was
+// deleted (owner, 2026-08-18). Every shared branch below is read-only or
 // free-activation:
 //   free modes → free notice + bffActivateFree, and the price-free subjects
 //                editor when a plan is live
-//   real / off → the live plan if there is one, otherwise status only
-//                (mob.pay.notInApp)
+//   real / off → the live plan if there is one, otherwise the platform's
+//                approved posture (StoreKit on iOS, status-only on Android)
 // A live subscription is NEVER suppressed by the payment posture -- 'off' is
 // also the fail-closed default when the config RPC fails, and this screen used
 // to blank itself in exactly that case.
@@ -18,9 +18,10 @@
 // purchase panel (src/features/iap), plus the Restore control Apple requires to
 // exist and to be findable. Apple rejected the 2026-08-31 submission under
 // Guideline 3.1.1 — on that storefront the fix is not silence, it is IAP.
-// Everything is behind IAP_PLATFORM_SUPPORTED, a BUILD-TIME constant: an
-// Android build renders exactly what it rendered yesterday, down to the
-// mob.pay.notInApp sentence.
+// Everything is behind IAP_PLATFORM_SUPPORTED, a BUILD-TIME platform constant:
+// an Android build renders exactly what it rendered yesterday, down to the
+// mob.pay.notInApp sentence. The iOS StoreKit surface additionally follows the
+// admin availability state and disappears while access is free.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -42,6 +43,7 @@ import {
   fmtDate,
   groupChildId,
   isCancellable,
+  paidAccessAvailable,
   resolvePosture,
   subStatusKey,
 } from "@/features/parent/commerce";
@@ -118,6 +120,7 @@ export default function ChildSubscribeScreen() {
     config.data?.payment.mode ?? "off",
     freeAccess.data?.active === true,
   );
+  const purchaseEnabled = paidAccessAvailable(posture);
 
   const child = (children.data ?? []).find((c) => c.profile_id === id) ?? null;
   // The most recent LIVE subscription for this child.
@@ -174,6 +177,7 @@ export default function ChildSubscribeScreen() {
     // `child` is resolved above, so a foreign/unknown id contributes no grade
     // and the list is simply not narrowed — never narrowed by someone else's.
     child?.grade_id ?? null,
+    purchaseEnabled,
   );
   // THE OFFERS WAIT FOR THE ENTITLEMENT READ — on iOS only. The two reads
   // race: the StoreKit catalogue is cached for ten minutes while `entitled`
@@ -194,10 +198,11 @@ export default function ChildSubscribeScreen() {
   // inside IapPanel, which drops the subject it just sold from its own offer
   // list and lets this read confirm it afterwards.
   const iapState: IapSurfaceState =
-    IAP_PLATFORM_SUPPORTED && entitled.isPending ? "loading" : iap.state;
+    purchaseEnabled && IAP_PLATFORM_SUPPORTED && entitled.isPending ? "loading" : iap.state;
   // Does the panel actually put something on screen? "off"/"none" render null,
   // and in that case the screen keeps the sentence it has always shown.
-  const iapVisible = IAP_PLATFORM_SUPPORTED && iapState !== "off" && iapState !== "none";
+  const iapVisible =
+    purchaseEnabled && IAP_PLATFORM_SUPPORTED && iapState !== "off" && iapState !== "none";
 
   async function activateFree() {
     if (freePending) return;
@@ -397,16 +402,16 @@ export default function ChildSubscribeScreen() {
           activated during a free window is still theirs after it closes. */}
       {entitledCard}
 
-      {/* iOS ONLY, in BOTH postures. The panel renders null unless there is
-          something priced to offer, so a free window shows the notice above and
-          nothing else. */}
-      {IAP_PLATFORM_SUPPORTED ? (
+      {/* iOS ONLY, while paid access is available. Free mode keeps this shared
+          screen visually aligned with Android and exposes no StoreKit action. */}
+      {IAP_PLATFORM_SUPPORTED && purchaseEnabled ? (
         <IapPanel
           studentProfileId={id}
           state={iapState}
           offers={iap.offers}
           refetch={iap.refetch}
           onSettled={invalidate}
+          purchaseEnabled={purchaseEnabled}
         />
       ) : null}
 

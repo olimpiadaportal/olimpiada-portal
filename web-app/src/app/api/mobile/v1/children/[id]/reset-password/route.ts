@@ -1,8 +1,9 @@
 // Mobile BFF — parent resets a child's password (Stage M2).
 //
 // Token twin of the web resetChildPasswordAction: both delegate to the SAME
-// audited core (childAccountService.resetChildPassword) — ownership verified
-// (creator OR active link), identical password rules (min length + the
+// audited core (childAccountService.resetChildPassword) — authorized the same
+// way (the CREATING parent only; a linked co-parent is refused with
+// auth.child.err.creatorOnly), identical password rules (min length + the
 // password ≠ 8-digit-ID rule), the auth admin update and the
 // password_set_by/at bookkeeping. The new password is never logged anywhere.
 import { resolveBearerParent } from "@/lib/auth/mobileBearer";

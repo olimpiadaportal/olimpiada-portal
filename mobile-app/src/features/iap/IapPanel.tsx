@@ -10,13 +10,10 @@
 // a helper that could print one is exactly how a wrong price gets back onto a
 // screen.
 //
-// THE PANEL DOES NOT HIDE ITSELF WHEN ACCESS IS CURRENTLY FREE. The screens keep
-// showing their free-window notice above it, so the parent reads both facts —
-// but the purchase mechanism itself never appears and disappears with a
-// server-resolved flag. A store binary whose payment surface is switched by a
-// database row is the failure this project was already rejected for once, and
-// the mirror image of it (a purchase path a reviewer cannot reach) is a second
-// rejection under the same guideline.
+// The panel is also given the current server-resolved availability. During an
+// admin giveaway, scheduled free access, or payment-off state it renders
+// nothing and its press handler refuses to start. The BFF repeats the gate
+// before an intent is written, so a stale frame cannot open StoreKit.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { AppText } from "@/components/AppText";
@@ -40,6 +37,7 @@ export function IapPanel({
   offers,
   refetch,
   onSettled,
+  purchaseEnabled = true,
 }: {
   studentProfileId: string;
   state: IapSurfaceState;
@@ -47,8 +45,9 @@ export function IapPanel({
   refetch: () => void;
   /** Refresh whatever shows entitlement, so access appears without a reload. */
   onSettled: () => void;
+  /** Runtime admin gate. Android remains excluded by the platform boundary. */
+  purchaseEnabled?: boolean;
 }) {
-  const { tokens } = useTheme();
   const { t } = useT();
   const [pendingId, setPendingId] = useState<string | null>(null);
   // THE OUTCOME LINE, HELD WITH THE CHILD IT BELONGS TO — the same mount, the
@@ -92,7 +91,7 @@ export function IapPanel({
   const visibleOffers = offers.filter((o) => !soldSubjectIds.includes(o.subjectId));
 
   async function buy(offer: IapOffer) {
-    if (pendingId !== null) return;
+    if (!purchaseEnabled || pendingId !== null) return;
     setPendingId(offer.productId);
     setSettled({ studentProfileId, outcome: null });
     // runPurchase never throws. The catch is a last resort so an impossible
@@ -148,7 +147,7 @@ export function IapPanel({
   // `off` and `none` render NOTHING — not an empty state. See queries.ts: an
   // "unavailable" placeholder under its own heading reads as an unfinished
   // feature, which is the 2.1.0 rejection this app already collected.
-  if (state === "off" || state === "none") return null;
+  if (!purchaseEnabled || state === "off" || state === "none") return null;
 
   // EVERYTHING THIS PANEL HAD TO SELL HAS JUST BEEN BOUGHT, and the screen's
   // entitlement read has not landed yet. There is nothing left to choose, so the

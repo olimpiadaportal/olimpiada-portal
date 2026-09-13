@@ -42,6 +42,16 @@ let studentRow: { created_by_parent_profile_id: string } | null = null;
 let studentReadError: { code: string } | null = null;
 /** The `profiles` row the login lookup reads. */
 let profileRow: { auth_user_id: string | null } | null = null;
+/**
+ * MIGRATION 174: the children public.parent_children_to_delete() names for this
+ * parent. A child the parent CREATED but who has a second active link is NOT in
+ * here — that is the shared-child refusal, and the creator check alone cannot
+ * express it, because the creator is exactly the person who would delete a child
+ * their co-parent still depends on.
+ */
+let deletableIds: string[] = [];
+/** Makes the shared-rule RPC fail, with a Postgres code. */
+let ruleError: { code: string } | null = null;
 
 vi.mock("@/lib/audit", () => ({
   writeAuditLog: async (_p: string, action: string, opts?: { success?: boolean }) => {
@@ -88,6 +98,15 @@ vi.mock("@/lib/supabase/admin", () => ({
         }),
       }),
     }),
+    // MIGRATION 174: the ONE shared rule, read rather than re-derived, so this
+    // path and the BEFORE DELETE trigger cannot disagree about who may go.
+    rpc: async (fn: string) => {
+      if (ruleError) return { data: null, error: ruleError };
+      if (fn !== "parent_children_to_delete") {
+        throw new Error("unexpected rpc: " + fn);
+      }
+      return { data: deletableIds.map((id) => ({ child_profile_id: id })), error: null };
+    },
     auth: {
       admin: {
         deleteUser: async (id: string) => {
@@ -131,6 +150,8 @@ beforeEach(() => {
   studentRow = { created_by_parent_profile_id: PARENT_PROFILE };
   studentReadError = null;
   profileRow = { auth_user_id: CHILD_AUTH };
+  deletableIds = [STUDENT];
+  ruleError = null;
   storageTree = new Map();
   storageBroken = false;
   removed.length = 0;
@@ -146,6 +167,71 @@ describe("the happy path", () => {
     ).resolves.toEqual({ ok: true });
     expect(deleteCalls).toEqual([CHILD_AUTH]);
     expect(audits[0]).toEqual({ action: "parent.child_delete", success: true });
+  });
+});
+
+// ===========================================================================
+// MIGRATION 174 + 176 — the shared-child refusal. The creator check alone stops
+// being sufficient once an approved second parent holds the child.
+// ===========================================================================
+describe("a shared child is not one parent's to delete", () => {
+  it("refuses when the child is not in the shared rule's delete set", async () => {
+    deletableIds = []; // created by this parent, but a co-parent holds a link
+    const del = await subject();
+
+    const res = await del({ parentProfileId: PARENT_PROFILE, studentProfileId: STUDENT });
+
+    expect(res).toEqual({
+      ok: false,
+      errorKey: "link.err.sharedDelete",
+      retryable: false,
+    });
+    // AND the login is untouched: the co-parent's child can still sign in.
+    expect(deleteCalls).toEqual([]);
+  });
+
+  it("marks that refusal NOT retryable, so the client stops asking", async () => {
+    // The database would refuse this every time (trg_student_shared_delete_guard).
+    // Reported as a plain server error it would reach the app as a retryable 500,
+    // and the parent would press Delete forever on a child who can never go.
+    deletableIds = [];
+    const del = await subject();
+
+    const res = await del({ parentProfileId: PARENT_PROFILE, studentProfileId: STUDENT });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.retryable).toBe(false);
+  });
+
+  it("deletes NOTHING and purges NOTHING on that refusal", async () => {
+    deletableIds = [];
+    storageTree.set("child-avatars/students/" + STUDENT, ["keep-me.jpg"]);
+    const del = await subject();
+
+    await del({ parentProfileId: PARENT_PROFILE, studentProfileId: STUDENT });
+
+    expect(removed).toEqual([]);
+  });
+
+  it("REFUSES rather than guessing when the rule cannot be read", async () => {
+    // Guessing "yes, delete it" is the one answer that destroys a living child.
+    ruleError = { code: "57014" };
+    const del = await subject();
+
+    const res = await del({ parentProfileId: PARENT_PROFILE, studentProfileId: STUDENT });
+
+    expect(res).toEqual({ ok: false, errorKey: "auth.child.err.serverError" });
+    expect(deleteCalls).toEqual([]);
+  });
+
+  it("still deletes a child nobody else holds", async () => {
+    deletableIds = [STUDENT];
+    const del = await subject();
+
+    await expect(
+      del({ parentProfileId: PARENT_PROFILE, studentProfileId: STUDENT }),
+    ).resolves.toEqual({ ok: true });
+    expect(deleteCalls).toEqual([CHILD_AUTH]);
   });
 });
 

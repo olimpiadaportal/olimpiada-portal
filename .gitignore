@@ -121,3 +121,16 @@ docs/investor/*melumat_formasi*.docx
 docs/investor/**/passport*
 docs/investor/**/*VOEN*
 docs/investor/**/*voen*
+
+# --- Store screenshots captured from a live account -------------------------
+# Added 2026-09-14. App Store / Play screenshots taken on a real device show
+# REAL PRODUCTION DATA. The parent home screen alone renders, for every child on
+# the account, the child's full name, school, grade AND the 8-digit Login ID —
+# which is half of that child's credential pair (ID + parent password). These are
+# minors, and `mobile-app/store-assets/` is otherwise a TRACKED directory, so
+# without this rule the next `git add -A` publishes it permanently; git history
+# cannot be un-published. Keep captures locally and upload them to the consoles
+# directly. Drawn marketing art (feature graphics, icons) carries no account data
+# and stays tracked — this rule deliberately covers only the capture folders.
+mobile-app/store-assets/**/*-shots/
+mobile-app/store-assets/**/screenshots/

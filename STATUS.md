@@ -6,6 +6,116 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## AUDIT (2026-09-14) — what is verified against PRODUCTION, and what is left
+
+A session boundary fell in the middle of migration 174, so the state below was
+re-verified against the live database rather than taken from any hand-off. The
+one defect that mattered had already been closed.
+
+### Verified against `OLIMPIADA_PROD_DB_URL`, not from a report
+
+* **The immutability-trigger collision is closed.** Migration 174 moves
+  `checkout_sessions.owner_parent_profile_id` to ON DELETE SET NULL, and Postgres
+  implements a referential SET NULL as a real UPDATE, which fires row triggers.
+  `fn_checkout_intent_immutable` raises on any change to that exact column. Live
+  production now carries the one-way carve-out
+  (`… is distinct from … and new.owner_parent_profile_id is not null`), matching
+  the carve-out `student_profile_id` has had since migrations 125/127 for the
+  same reason. Without it, deleting ANY parent who had ever opened a checkout
+  would have aborted — and account deletion is a Google Play requirement, not a
+  feature.
+* **The four owner FKs are SET NULL** (checkout_sessions, free_trials,
+  iap_purchase_intents, sibling_discounts) while `child_subscriptions` remains
+  CASCADE, which is correct: a subscription dies with its owner, financial
+  history does not.
+* **`trg_student_shared_delete_guard` is armed on `public.students`**, closing
+  the raw-PostgREST hole — `students_write` is FOR ALL including DELETE and
+  `authenticated` holds the grant, so without this trigger a creating parent
+  could `DELETE FROM students` and destroy a shared child, bypassing every app
+  path.
+* Migrations **173–176 applied**.
+
+### 013 validation, run against production
+
+One failure, and it is the documented tolerated exception:
+`88_import_media_orphans` (205 abandoned bulk-import assets). Its own comment in
+013 says a one-off non-zero count is normal and the signal is a count that GROWS.
+**Nobody has been recording the number, so "is it growing?" cannot currently be
+answered — log it each run.**
+
+Check 3 (`tables_without_policies`) was failing on `parent_link_invites` and
+`parent_link_redeem_attempts`. That was a FALSE ALARM and the check has been
+corrected rather than the tables: both have RLS on, zero policies **and no grants
+to `anon` or `authenticated`**, so they are deny-all twice over and reachable
+only by `service_role` through the SECURITY DEFINER invite functions — which is
+the design. The danger check 3 exists for is a table clients CAN reach with no
+policy constraining it, so its predicate is now "no policies AND client-reachable".
+Verified it still finds both tables and excludes them only on the grant test;
+grant SELECT to `authenticated` on either and it goes red. **Do not "fix" this by
+adding a policy — a policy only matters once a grant exists, and adding one is how
+a reachable path gets opened by accident.**
+
+### Gates at this audit
+
+web 1481 vitest / 71 files · admin 1147 vitest / 52 files · mobile 1380 jest ·
+three typechecks clean.
+
+### Open
+
+* **13-inch iPad screenshots** — the only thing gating a 1.16.0 App Store
+  submission. NOTE: Expo Go is NOT a viable capture route for this app, and the
+  reason is NOT `expo-iap`. That module resolves its native module lazily behind
+  a Proxy, and the comment at `mobile-app/src/features/iap/store.ts:15-21` says so
+  — importing it in Expo Go does not throw, and every call site is guarded. The
+  two real reasons: (a) Expo Go on iOS ships ONE SDK at a time and cannot be
+  downgraded, so an SDK 57 Expo Go will not open this SDK 54 project at all; and
+  (b) Expo Go is a separate binary with its OWN Info.plist, so config-plugin
+  settings — `orientation: portrait`, `ios.supportsTablet`,
+  `ios.requireFullScreen`, the splash screen — are inert inside it. The iPad
+  behaviour captured there would not be the behaviour the build ships. Capture
+  from a `preview` internal-distribution build or from TestFlight instead.
+* **iPad screenshot route DECIDED (2026-09-14): TestFlight internal, not ad-hoc.**
+  The ad-hoc route is abandoned — Expo's device-registration configuration profile
+  fails on the owner's iPad with "Your iPad is not activated", a `lockdownd`
+  activation-record state that has nothing to do with the Apple Account. TestFlight
+  internal testing needs no UDID and no configuration profile, so it sidesteps the
+  failing mechanism entirely, and the binary is the one actually submitted rather
+  than a differently-signed ad-hoc copy.
+  Two facts that decide the shape of it:
+  - The iPad is signed into the owner's PERSONAL Apple Account, not the developer
+    one. It does NOT need to be switched. App Store Connect Help ("Overview of
+    accounts and roles") lets an INDIVIDUAL enrolment grant up to 50 additional
+    users access to its content — the individuals-cannot-add-users restriction
+    people remember is about Developer Program TEAM membership (certificates,
+    provisioning), which internal TestFlight does not touch. So the personal
+    account is invited as a Developer-role App Store Connect user and removed
+    afterwards. Switching *Media & Purchases* on the iPad is the FALLBACK only: it
+    risks Apple's 90-day device purchase association and it does not even skip
+    creating the Internal Testing group, because the Account Holder is not
+    auto-enrolled either.
+  - Uploading via `eas submit` and distributing to INTERNAL testers is not a
+    submission and triggers NO review, so the App Privacy gender/diagnostics
+    blocker below does not gate it. EXTERNAL testing does trigger Beta App Review —
+    do not open it.
+  Blocker found by execution, not inference: the local terminal is logged into EAS
+  as `aliko_dev` (a personal account) which has **no READ access** to project
+  `786a0358-…` owned by `olimpiadaplatforms-team` — `build:list` and
+  `project:info` both fail with `Entity not authorized`. `eas login` as the right
+  account is step zero; nothing EAS-side can be checked until then.
+  Unverified and capable of cancelling the whole plan: the iPad's MODEL. Only
+  "iPad Pro 13-inch" (2064×2752) or "iPad Pro 12.9-inch" (2048×2732) can fill the
+  13-inch slot. An 11-inch iPad is 1668×2388 — a different aspect ratio that cannot
+  be honestly rescaled into it.
+* **Google Play 1.16.0** — in review.
+* **R8 obfuscation** — non-blocking until February 2027. Deferred to a 1.16.1
+  maintenance release behind closed testing, because R8 breaks reflection and the
+  auth, IAP, notification and biometric paths all need a device pass.
+* **Android orientation warning** — deliberately not acted on. Removing the
+  portrait lock conflicts with the owner's requirement; Android will eventually
+  force adaptable large-screen layouts, which is a design round, not a checkbox.
+
+---
+
 ## COMPLETED TASK (2026-09-13) — 1.16.0 iOS subscription and navigation hardening
 
 The unreleased 1.16.0 implementation is complete and ready for the owner's

@@ -56,7 +56,25 @@ where n.nspname = 'public'
   and c.relkind = 'r'
   and c.relrowsecurity = false;
 
--- 3) Every public table has at least one policy. ---------------------------------
+-- 3) Every public table is reachable ONLY through a policy, or not at all. -------
+--
+-- The danger this check exists for is a table that CLIENTS CAN REACH but that no
+-- policy constrains: RLS is on, someone holds a grant, and every row is exposed
+-- to whoever asks. That is the shape to fail on.
+--
+-- A table with RLS on, NO policies AND NO grants to `anon`/`authenticated` is the
+-- OPPOSITE of that — it is deny-all twice over, and the absence of policies IS
+-- the security posture rather than an omission. Migration 176 uses exactly this
+-- for `parent_link_invites` and `parent_link_redeem_attempts`: a co-parent invite
+-- code and its rate-limit ledger are written and read ONLY by SECURITY DEFINER
+-- functions running as `service_role`, which bypasses RLS. Giving those tables a
+-- policy would be the regression, because a policy only matters once a grant
+-- exists, and adding one is how a client-reachable path gets opened by accident.
+--
+-- So the predicate is "no policies AND a client grant", not "no policies". A
+-- deliberately sealed table passes; the day someone grants SELECT on it to
+-- `authenticated` without writing a policy, this check goes red — which is the
+-- moment that actually matters.
 select '3_tables_without_policies' as check_name,
        coalesce(string_agg(c.relname, ', '), '(none)') as tables_without_policy,
        case when count(*) = 0 then 'PASS' else 'FAIL' end as status
@@ -68,6 +86,17 @@ where n.nspname = 'public'
   and not exists (
     select 1 from pg_policies p
     where p.schemaname = 'public' and p.tablename = c.relname
+  )
+  -- Reachable by a client at all? Any of the four DML privileges is enough.
+  and (
+       has_table_privilege('anon',          c.oid, 'SELECT')
+    or has_table_privilege('anon',          c.oid, 'INSERT')
+    or has_table_privilege('anon',          c.oid, 'UPDATE')
+    or has_table_privilege('anon',          c.oid, 'DELETE')
+    or has_table_privilege('authenticated', c.oid, 'SELECT')
+    or has_table_privilege('authenticated', c.oid, 'INSERT')
+    or has_table_privilege('authenticated', c.oid, 'UPDATE')
+    or has_table_privilege('authenticated', c.oid, 'DELETE')
   );
 
 -- 4) Expected enum types exist. --------------------------------------------------

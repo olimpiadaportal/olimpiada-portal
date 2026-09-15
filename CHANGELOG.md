@@ -35,7 +35,7 @@ tester who keeps reporting.
 
 ---
 
-## 1.16.0 — unreleased; version assigned, build not yet cut
+## 1.16.0 — build 6; approved by Apple 2026-09-15, Play in review
 
 **Deliberately not filed under 1.15.0.** Build 5 of 1.15.0 was approved by Apple
 and released on 2026-09-09, so nothing below is in it — filing these lines there
@@ -46,6 +46,20 @@ version already on the App Store. Release notes for the lines below:
 count here on purpose: this section grew from 13 such lines to well over thirty
 in one round, and a number in prose beside a list that keeps growing sends a
 release-note writer home early.)
+
+- `[internal]` The App Store Connect app id is pinned in the submit profile
+  (`eas.json` → `submit.production.ascAppId`), so `eas submit` no longer stops to
+  log into Apple on every run. No version bump: `submit` config is read by
+  `eas submit` and never by `eas build`, so it cannot reach a binary — and bumping
+  would have orphaned the build already uploaded for review.
+
+- `[internal]` Screenshots captured from a live account can no longer be committed.
+  `.gitignore` now covers `mobile-app/store-assets/**/*-shots/` and `**/screenshots/`.
+  The parent home screen renders, for every child on the account, the child's full
+  name, school, grade and 8-digit Login ID — which is half of that child's
+  credential pair. The folder was untracked but NOT ignored, so one `git add -A`
+  would have published three minors' credentials permanently. Drawn marketing art
+  (feature graphics, icons) carries no account data and stays tracked.
 
 - `[store]` The last question of an exam no longer offers TWO submit buttons.
   The Geri / İrəli / Təsdiqlə row was moved below the question scroll so it can

@@ -62,51 +62,56 @@ three typechecks clean.
 
 ### Open
 
-* **13-inch iPad screenshots** — the only thing gating a 1.16.0 App Store
-  submission. NOTE: Expo Go is NOT a viable capture route for this app, and the
-  reason is NOT `expo-iap`. That module resolves its native module lazily behind
-  a Proxy, and the comment at `mobile-app/src/features/iap/store.ts:15-21` says so
-  — importing it in Expo Go does not throw, and every call site is guarded. The
-  two real reasons: (a) Expo Go on iOS ships ONE SDK at a time and cannot be
-  downgraded, so an SDK 57 Expo Go will not open this SDK 54 project at all; and
-  (b) Expo Go is a separate binary with its OWN Info.plist, so config-plugin
-  settings — `orientation: portrait`, `ios.supportsTablet`,
-  `ios.requireFullScreen`, the splash screen — are inert inside it. The iPad
-  behaviour captured there would not be the behaviour the build ships. Capture
-  from a `preview` internal-distribution build or from TestFlight instead.
-* **iPad screenshot route DECIDED (2026-09-14): TestFlight internal, not ad-hoc.**
-  The ad-hoc route is abandoned — Expo's device-registration configuration profile
-  fails on the owner's iPad with "Your iPad is not activated", a `lockdownd`
-  activation-record state that has nothing to do with the Apple Account. TestFlight
-  internal testing needs no UDID and no configuration profile, so it sidesteps the
-  failing mechanism entirely, and the binary is the one actually submitted rather
-  than a differently-signed ad-hoc copy.
-  Two facts that decide the shape of it:
-  - The iPad is signed into the owner's PERSONAL Apple Account, not the developer
-    one. It does NOT need to be switched. App Store Connect Help ("Overview of
-    accounts and roles") lets an INDIVIDUAL enrolment grant up to 50 additional
-    users access to its content — the individuals-cannot-add-users restriction
-    people remember is about Developer Program TEAM membership (certificates,
-    provisioning), which internal TestFlight does not touch. So the personal
-    account is invited as a Developer-role App Store Connect user and removed
-    afterwards. Switching *Media & Purchases* on the iPad is the FALLBACK only: it
-    risks Apple's 90-day device purchase association and it does not even skip
-    creating the Internal Testing group, because the Account Holder is not
-    auto-enrolled either.
-  - Uploading via `eas submit` and distributing to INTERNAL testers is not a
-    submission and triggers NO review, so the App Privacy gender/diagnostics
-    blocker below does not gate it. EXTERNAL testing does trigger Beta App Review —
-    do not open it.
-  Blocker found by execution, not inference: the local terminal is logged into EAS
-  as `aliko_dev` (a personal account) which has **no READ access** to project
-  `786a0358-…` owned by `olimpiadaplatforms-team` — `build:list` and
-  `project:info` both fail with `Entity not authorized`. `eas login` as the right
-  account is step zero; nothing EAS-side can be checked until then.
-  Unverified and capable of cancelling the whole plan: the iPad's MODEL. Only
-  "iPad Pro 13-inch" (2064×2752) or "iPad Pro 12.9-inch" (2048×2732) can fill the
-  13-inch slot. An 11-inch iPad is 1668×2388 — a different aspect ratio that cannot
-  be honestly rescaled into it.
-* **Google Play 1.16.0** — in review.
+* **13-inch iPad screenshots — DONE (2026-09-15). 1.16.0 is APPROVED by Apple.**
+  Captured on the owner's iPad Pro 13-inch M4 from a TestFlight build, uploaded to
+  the iPad 13" slot, submitted, approved. Manual release was chosen, so the version
+  publishes when the owner presses *Release This Version* — "Pending Developer
+  Release" is an APPROVED state, not a review state. What is worth keeping from
+  how it was done, because each of these cost real time:
+  - **The ad-hoc route is a dead end on this device.** `eas device:create` →
+    Website fails at profile install with "Your iPad is not activated". That is a
+    `lockdownd` ACTIVATION-RECORD state — the device signs the UDID attestation
+    with an Apple-issued identity held in that record — and has nothing to do with
+    being signed in to an Apple Account. TestFlight needs no UDID and no
+    configuration profile, so it sidesteps the mechanism entirely.
+  - **The iPad's own Apple Account does not have to be switched.** An INDIVIDUAL
+    enrolment may grant up to 50 additional App Store Connect users; the
+    "individuals cannot add users" restriction people remember is about Developer
+    Program TEAM membership (certificates, provisioning), which internal TestFlight
+    does not touch. Invite the personal account as a Developer-role user, add it to
+    an Internal Testing group WITH THE BUILD ATTACHED (being a user is not enough),
+    then remove it afterwards.
+  - **EAS auth on this machine comes from a VS Code PROFILE, not the environment.**
+    `%APPDATA%CodeUserprofiles-69d4440bsettings.json` (profile
+    "Olimpiada Investor") sets `terminal.integrated.env.windows.EXPO_TOKEN`. The
+    default profile sets neither, so it falls back to the `aliko_dev` session in
+    `~/.expo/state.json`, which has NO read access to this project and fails with
+    `Entity not authorized`. That setting reaches VS Code's integrated terminal
+    ONLY — any other spawned shell misses it. Do not "fix" this by exporting
+    EXPO_TOKEN globally: that would hijack the owner's separate private project.
+  - **Transfer the captures by USB, never through chat or email.** Every send path
+    tried capped the long edge at 2560px and converted PNG→JPEG, yielding
+    1920×2560 — right aspect ratio, wrong size, silently rejected by the uploader.
+    iPad → File Explorer → Internal Storage → DCIM gives the native 2064×2752 PNG.
+  - **`requireFullScreen: true` BINDS on real iPadOS 26 hardware.** This was an
+    open inference in this file; it is now observed. Portrait, full-bleed, no
+    letterboxing. TN3192 breaks it only from the iOS 27 SDK, and Expo 54 compiles
+    against 26.
+  - **A giveaway / scheduled-free-access window HIDES THE ENTIRE IAP SURFACE.**
+    `IapPanel` is `return null` when `purchaseEnabled` is false
+    (`mobile-app/src/features/iap/IapPanel.tsx:150`), by design — an "unavailable"
+    placeholder reads as an unfinished feature, which is a rejection this app has
+    already collected. So App Review sees NO purchase flow while a window is open.
+    1.15.0 was approved 2026-09-09, one day BEFORE the window opened, so this had
+    never been reviewed in that state. **Close the window before submitting, verify
+    on a device that the price buttons return (`get_mobile_config()` is cached),
+    then submit — and confirm the review child still has something left to buy.**
+  - **Screenshots of a live account are never committed.** The parent home screen
+    renders each child's full name, school, grade AND 8-digit Login ID — half of
+    that child's credential pair. `.gitignore` now covers
+    `mobile-app/store-assets/**/*-shots/`; drawn marketing art stays tracked.
+* **Google Play 1.16.0** — still in review as of 2026-09-15. The two stores review
+  independently; Play is the slower one and nothing is blocked on it.
 * **R8 obfuscation** — non-blocking until February 2027. Deferred to a 1.16.1
   maintenance release behind closed testing, because R8 breaks reflection and the
   auth, IAP, notification and biometric paths all need a device pass.

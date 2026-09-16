@@ -118,8 +118,9 @@ in-app (parent profile → delete account) and removes the family's data.
 > collected by every shipped build for months while mapping to no declared type on
 > either form, so the declarations that are LIVE today are incomplete — this is not
 > a change that waits for the next release. Both consoles accept a data-safety /
-> App-Privacy update without a new build; do it now. (Only the gender row is
-> genuinely "next release": that field has not shipped yet.)
+> App-Privacy update without a new build; do it now. (The gender row was the one
+> genuinely "next release" item when this was written; it shipped in 1.16.0 and both
+> consoles were updated on 2026-09-15, before submission.)
 
 > **TWO MORE TYPES, AND THEY ARE A PRE-SUBMISSION BLOCKER ON 1.16.0 — written in
 > the same shape as the gender row, and owed in the SAME console pass
@@ -170,7 +171,7 @@ uniform, so they are stated here once instead of as three columns.
 | Child grade | Parent (Add-Child) | Other Data → Other Data Types | Personal info → Other info | Yes | Required |
 | Child school | Parent (Add-Child) | Other Data → Other Data Types | Personal info → Other info | Yes | Required |
 | Child city + rayon | Parent (Add-Child) | **Location → Coarse Location** | **Location → Approximate location** | Yes | Required |
-| Child gender | Parent (Add-Child, child edit) | Other Data → Other Data Types | Personal info → Other info | Yes | Optional field, but the Play *type* answers Required — §2.3 |
+| Child gender | Parent (Add-Child, child edit) | Other Data → Other Data Types | Personal info → Other info | Yes | Required in Add-Child since 2026-09-16; the Play *type* already answered Required — §2.3 |
 | Account ids + the 8-digit child login ID | Server-issued | Identifiers → User ID | Personal info → User IDs | Yes | Required |
 | Avatar photo (upload) | User | User Content → Photos or Videos | Photos and videos → Photos | Yes | Optional |
 | Attempts, answers, time per question, points, %, streaks, active days, olympiad questions already seen | App usage | Usage Data → Product Interaction | App activity → **Other actions** (+ App interactions) | Yes | Required |
@@ -270,13 +271,16 @@ collected?" A type containing **any** required field is Required — a user cann
 that collection off, whatever else the type also carries.
 
 - **Personal info → Other info is Required.** This CORRECTS the answer written for
-  the gender row earlier the same day ("users can choose whether this data is
-  collected"). That was right when gender was alone in the type; grade and school are
-  both mandatory in Add-Child and file in the same type, so the type-level answer is
-  now *Data collection is required*. **The gender field itself stays optional** in the
-  product, in the UI and in the privacy policy — Play's form simply has no per-field
-  switch, and answering "users can choose" for a type that also carries two mandatory
-  fields would be the false statement.
+  the gender row on 2026-09-08 ("users can choose whether this data is collected").
+  That was right when gender was alone in the type; grade and school are both
+  mandatory in Add-Child and file in the same type, so the type-level answer is
+  *Data collection is required*. **Since 2026-09-16 the gender field is mandatory
+  too** — Add-Child will not create a child without a Qız/Oğlan answer — so every
+  field in the type is now required and the submitted answer is, if anything, more
+  plainly right than when it was written. **No console change is owed for that**:
+  the answer does not move, and the product change that made gender mandatory
+  cannot move it. What DID have to change is the prose describing the field, here
+  and in the privacy policy, which said "optional" in three languages.
 - **Phone number → users can choose.** The parent phone became optional on
   2026-08-31 (Apple 5.1.1(v)); it is the only field in its type, so the type follows
   it. The form and the privacy policy both still say required — see §6.1.
@@ -333,7 +337,8 @@ carries promotional content, Apple's *Developer's Advertising or Marketing* purp
 becomes mandatory on that side too — which is one more reason the purchase-silence
 rules on notification content are not negotiable.
 
-**Child gender (migration 169, added 2026-09-08) — where it files on each form.**
+**Child gender (migration 169, added 2026-09-08; mandatory since migration 178,
+2026-09-16) — where it files on each form.**
 Neither questionnaire has a data type called "gender", and picking an invented one
 is worse than picking the catch-all the stores actually offer. iOS: **Other Data →
 Other Data Types** ("any other data types not mentioned"), Linked to the user
@@ -341,10 +346,11 @@ Other Data Types** ("any other data types not mentioned"), Linked to the user
 personal information such as date of birth, gender identity, veteran status,
 etc."), *Collected* not *Shared*, not processed ephemerally. The Play optionality
 answer for that type is **"Data collection is required"** — not, as first written
-here, "users can choose": the same type now also carries the mandatory grade and
+here, "users can choose": the same type also carries the mandatory grade and
 school, and Play asks the question per type, not per field (§2.3). The gender field
-itself remains optional — a parent may skip the question entirely or answer "prefer
-not to say". It is **not** iOS *Sensitive Info*: that
+itself is now mandatory as well — Add-Child offers **Qız** or **Oğlan** and refuses
+to create the child without one — so the field and its type agree, and the
+submitted console answer does not move. It is **not** iOS *Sensitive Info*: that
 type is racial or ethnic data, sexual orientation, health, beliefs, union
 membership, political opinion, genetic and biometric data, and gender is in none of
 them. Nothing about a child's access, the questions they are served, their points

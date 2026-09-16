@@ -24,12 +24,13 @@
 // admin availability state and disappears while access is free.
 import React, { useState } from "react";
 import { View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { AppText } from "@/components/AppText";
 import { CopyableId } from "@/components/CopyableId";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { HeaderHomeButton } from "@/components/HeaderHomeButton";
 import { ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
@@ -228,25 +229,56 @@ export default function ChildSubscribeScreen() {
     config,
   ]);
 
+  // THE ROUTE TO HOME, IN EVERY BRANCH — including the gate and the error.
+  // This screen is pushed over the tabs, so the tab bar is off screen while it
+  // is open and back returns to wherever the parent came from; a parent who
+  // arrived here on a stale deep link and got the not-your-child notice had no
+  // way forward at all. Declared once rather than repeated four times, and
+  // merged into the options the (parent) Stack already declares for this route,
+  // so the back chevron and the title are untouched. See
+  // components/HeaderHomeButton.tsx.
+  const homeHeader = (
+    <Stack.Screen
+      options={{
+        headerRight: () => (
+          <HeaderHomeButton
+            href="/(parent)/(tabs)/home"
+            icon="home"
+            label={t("nav.home")}
+            color={tokens.accent}
+            background={tokens.chipBg}
+            borderColor={tokens.border}
+          />
+        ),
+      }}
+    />
+  );
+
   if (loading) {
     return (
-      <ScreenScroll>
-        <Skeleton height={24} width="50%" />
-        <Skeleton height={160} />
-        <Skeleton height={240} />
-      </ScreenScroll>
+      <>
+        {homeHeader}
+        <ScreenScroll>
+          <Skeleton height={24} width="50%" />
+          <Skeleton height={160} />
+          <Skeleton height={240} />
+        </ScreenScroll>
+      </>
     );
   }
 
   if (children.isError) {
     return (
-      <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
-        <ErrorRetry
-          message={t("mob.boot.error")}
-          retryLabel={t("mob.retry")}
-          onRetry={() => void children.refetch()}
-        />
-      </ScreenScroll>
+      <>
+        {homeHeader}
+        <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
+          <ErrorRetry
+            message={t("mob.boot.error")}
+            retryLabel={t("mob.retry")}
+            onRetry={() => void children.refetch()}
+          />
+        </ScreenScroll>
+      </>
     );
   }
 
@@ -255,10 +287,13 @@ export default function ChildSubscribeScreen() {
     // A pull still re-reads the list, so a child created on another device
     // resolves here without leaving the screen.
     return (
-      <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
-        <GateNotice title={t("sub.title")} body={t("sub.err.notYourChild")} />
-        <Button title={t("addchild.back")} variant="ghost" onPress={() => router.back()} />
-      </ScreenScroll>
+      <>
+        {homeHeader}
+        <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
+          <GateNotice title={t("sub.title")} body={t("sub.err.notYourChild")} />
+          <Button title={t("addchild.back")} variant="ghost" onPress={() => router.back()} />
+        </ScreenScroll>
+      </>
     );
   }
 
@@ -320,109 +355,112 @@ export default function ChildSubscribeScreen() {
     ) : null;
 
   return (
-    <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
-      <AppText variant="muted">{childName}</AppText>
+    <>
+      {homeHeader}
+      <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
+        <AppText variant="muted">{childName}</AppText>
 
-      {/* WHAT THIS FAMILY HAS COMES FIRST, ALWAYS.
-          This screen used to branch on posture.paymentsOff BEFORE rendering the
-          live-subscription card, so in mode `off` a family with a real active
-          plan saw only "not managed here" and their actual entitlement was
-          suppressed. `off` is also the client's fail-closed default, so a failed
-          config RPC blanked the screen for everyone. Entitlement is never
-          conditional on a payment flag. */}
-      {posture.freeFlow ? (
-        <>
-          <Card>
-            <AppText>
-              {t("mob.gate.allOpen")}
-            </AppText>
-          </Card>
-          {revealedId ? (
-            <Card style={{ gap: spacing.md }}>
-              <AppText variant="title" style={{ textAlign: "center" }}>
-                {t("freeact.done")}
-              </AppText>
-              <IdReveal id={revealedId} t={t} />
-              <AppText variant="muted" style={{ textAlign: "center" }}>
-                {t("parent.child.idNote")}
-              </AppText>
-            </Card>
-          ) : !liveSub && !knownId ? (
-            // A brand-new child must still get a login ID inside the free window.
-            <Card style={{ gap: spacing.md }}>
-              <AppText variant="muted">{t("freeact.note")}</AppText>
-              {freeError ? (
-                <AppText variant="muted" color={tokens.danger}>
-                  {freeError}
-                </AppText>
-              ) : null}
-              <Button
-                title={t("freeact.cta")}
-                pending={freePending}
-                pendingTitle={t("freeact.activating")}
-                onPress={() => void activateFree()}
-              />
-            </Card>
-          ) : liveSub ? (
-            <ManageSubjectsEditor
-              studentId={id}
-              subjects={subjects.data ?? []}
-              covered={liveSub.subjects.map((s) => ({
-                subjectId: s.subject_id,
-                interval: s.interval,
-                pendingInterval: s.pending_interval,
-                removeAt: s.remove_at,
-              }))}
-              defaultInterval={liveSub.billing_interval}
-              onSaved={invalidate}
-            />
-          ) : null}
-        </>
-      ) : (
-        // 'real': read-only on Android. The plan itself is not started, changed
-        // or paid for anywhere in this app.
-        <>
-          {liveSubCard}
-          {/* ANDROID ONLY — see the same guard in (tabs)/subscription.tsx.
-              "Subscriptions are not managed in this app" is policy-safe on
-              Android and a written 3.1.1 confession on iOS, where it used to
-              appear whenever the catalogue was empty. iOS renders nothing
-              instead: an empty area claims nothing, while the obvious
-              alternative ("not available right now") is the 2.1.0 rejection. */}
-          {iapVisible || IAP_PLATFORM_SUPPORTED ? null : (
+        {/* WHAT THIS FAMILY HAS COMES FIRST, ALWAYS.
+            This screen used to branch on posture.paymentsOff BEFORE rendering the
+            live-subscription card, so in mode `off` a family with a real active
+            plan saw only "not managed here" and their actual entitlement was
+            suppressed. `off` is also the client's fail-closed default, so a failed
+            config RPC blanked the screen for everyone. Entitlement is never
+            conditional on a payment flag. */}
+        {posture.freeFlow ? (
+          <>
             <Card>
-              <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
+              <AppText>
+                {t("mob.gate.allOpen")}
+              </AppText>
             </Card>
-          )}
-        </>
-      )}
+            {revealedId ? (
+              <Card style={{ gap: spacing.md }}>
+                <AppText variant="title" style={{ textAlign: "center" }}>
+                  {t("freeact.done")}
+                </AppText>
+                <IdReveal id={revealedId} t={t} />
+                <AppText variant="muted" style={{ textAlign: "center" }}>
+                  {t("parent.child.idNote")}
+                </AppText>
+              </Card>
+            ) : !liveSub && !knownId ? (
+              // A brand-new child must still get a login ID inside the free window.
+              <Card style={{ gap: spacing.md }}>
+                <AppText variant="muted">{t("freeact.note")}</AppText>
+                {freeError ? (
+                  <AppText variant="muted" color={tokens.danger}>
+                    {freeError}
+                  </AppText>
+                ) : null}
+                <Button
+                  title={t("freeact.cta")}
+                  pending={freePending}
+                  pendingTitle={t("freeact.activating")}
+                  onPress={() => void activateFree()}
+                />
+              </Card>
+            ) : liveSub ? (
+              <ManageSubjectsEditor
+                studentId={id}
+                subjects={subjects.data ?? []}
+                covered={liveSub.subjects.map((s) => ({
+                  subjectId: s.subject_id,
+                  interval: s.interval,
+                  pendingInterval: s.pending_interval,
+                  removeAt: s.remove_at,
+                }))}
+                defaultInterval={liveSub.billing_interval}
+                onSaved={invalidate}
+              />
+            ) : null}
+          </>
+        ) : (
+          // 'real': read-only on Android. The plan itself is not started, changed
+          // or paid for anywhere in this app.
+          <>
+            {liveSubCard}
+            {/* ANDROID ONLY — see the same guard in (tabs)/subscription.tsx.
+                "Subscriptions are not managed in this app" is policy-safe on
+                Android and a written 3.1.1 confession on iOS, where it used to
+                appear whenever the catalogue was empty. iOS renders nothing
+                instead: an empty area claims nothing, while the obvious
+                alternative ("not available right now") is the 2.1.0 rejection. */}
+            {iapVisible || IAP_PLATFORM_SUPPORTED ? null : (
+              <Card>
+                <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
+              </Card>
+            )}
+          </>
+        )}
 
-      {/* OUTSIDE THE POSTURE FORK, for the same reason the live plan is: what a
-          family OWNS is never conditional on a payment flag, and a subject
-          activated during a free window is still theirs after it closes. */}
-      {entitledCard}
+        {/* OUTSIDE THE POSTURE FORK, for the same reason the live plan is: what a
+            family OWNS is never conditional on a payment flag, and a subject
+            activated during a free window is still theirs after it closes. */}
+        {entitledCard}
 
-      {/* iOS ONLY, while paid access is available. Free mode keeps this shared
-          screen visually aligned with Android and exposes no StoreKit action. */}
-      {IAP_PLATFORM_SUPPORTED && purchaseEnabled ? (
-        <IapPanel
-          studentProfileId={id}
-          state={iapState}
-          offers={iap.offers}
-          refetch={iap.refetch}
-          onSettled={invalidate}
-          purchaseEnabled={purchaseEnabled}
-        />
-      ) : null}
+        {/* iOS ONLY, while paid access is available. Free mode keeps this shared
+            screen visually aligned with Android and exposes no StoreKit action. */}
+        {IAP_PLATFORM_SUPPORTED && purchaseEnabled ? (
+          <IapPanel
+            studentProfileId={id}
+            state={iapState}
+            offers={iap.offers}
+            refetch={iap.refetch}
+            onSettled={invalidate}
+            purchaseEnabled={purchaseEnabled}
+          />
+        ) : null}
 
-      {/* RESTORE IS UNCONDITIONAL ON iOS — including when nothing is for sale.
-          Apple requires the control to exist and to be findable; a family that
-          reinstalls or switches device must get back what they paid for. */}
-      {IAP_PLATFORM_SUPPORTED ? (
-        <Card style={{ gap: spacing.md }}>
-          <RestoreAccessButton />
-        </Card>
-      ) : null}
-    </ScreenScroll>
+        {/* RESTORE IS UNCONDITIONAL ON iOS — including when nothing is for sale.
+            Apple requires the control to exist and to be findable; a family that
+            reinstalls or switches device must get back what they paid for. */}
+        {IAP_PLATFORM_SUPPORTED ? (
+          <Card style={{ gap: spacing.md }}>
+            <RestoreAccessButton />
+          </Card>
+        ) : null}
+      </ScreenScroll>
+    </>
   );
 }

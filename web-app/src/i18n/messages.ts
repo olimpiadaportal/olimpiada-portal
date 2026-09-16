@@ -708,13 +708,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "link.choice.title": "Necə davam etmək istəyirsiniz?",
     "link.choice.create": "Yeni uşaq yaradın",
     "link.choice.createBody": "Yeni profil və ayrıca 8 rəqəmli giriş ID-si yaradın.",
-    "link.choice.existing": "Mövcud uşağı əlaqələndirin",
-    "link.choice.existingBody": "Digər valideynin artıq yaratdığı uşağa giriş istəyin. Yenidən ödəniş tələb olunmur.",
-    "link.title": "Uşağa ortaq giriş",
-    "link.subtitle": "Uşağın 8 rəqəmli ID-si və sahib valideynin yaratdığı birdəfəlik kod ilə giriş istəyin.",
-    "link.childId": "Uşağın 8 rəqəmli ID-si",
+    "link.choice.existing": "Mövcud uşaq profilinə giriş əldə et",
+    "link.choice.existingBody": "Uşağın ID-si və parolu ilə mövcud profilə qoşulun. Yenidən ödəniş tələb olunmur.",
+    "link.title": "Mövcud uşaq profilinə giriş əldə et",
+    "link.subtitle": "Uşağın ID-si və parolu ilə profilə dərhal giriş əldə edin. Təsdiq gözləmək lazım deyil.",
+    "link.childId": "Uşağın ID-si",
     "link.code": "Dəvət kodu",
-    "link.request": "Giriş istəyin",
+    "link.request": "Giriş əldə et",
     "link.pending": "Təsdiq gözlənilir",
     "link.manage": "Girişi idarə et",
     "link.issue": "Dəvət kodu yarat",
@@ -738,6 +738,28 @@ export const messages: Record<Locale, Record<string, string>> = {
     "link.err.sharedDelete": "Uşağı silməzdən əvvəl digər valideynlərin girişini ləğv edin.",
     "link.err.rate": "Həddindən çox cəhd edildi. Sonra yenidən yoxlayın.",
     "link.err.generic": "Ortaq giriş yenilənə bilmədi. Yenidən cəhd edin.",
+    "parent.err.firstNameRequired": "Adınızı daxil edin.",
+    "parent.err.lastNameRequired": "Soyadınızı daxil edin.",
+    "parent.err.pwTooShort": "Parol ən azı 8 simvoldan ibarət olmalıdır.",
+    "parent.err.pwTooLong": "Parol 128 simvoldan uzun ola bilməz.",
+    "parent.err.pwNeedsUpper": "Parolda ən azı bir böyük hərf olmalıdır.",
+    "parent.err.pwNeedsSpecial": "Parolda ən azı bir xüsusi simvol olmalıdır (!, ?, # kimi).",
+    "auth.pw.req.title": "Parol tələbləri:",
+    "auth.pw.req.length": "{min}–{max} simvol",
+    "auth.pw.req.upper": "Ən azı bir böyük hərf",
+    "auth.pw.req.special": "Ən azı bir xüsusi simvol (!, ?, # kimi)",
+    "auth.pw.req.met": "yerinə yetirilib",
+    "auth.pw.req.unmet": "yerinə yetirilməyib",
+    "auth.pw.cleared": "Təhlükəsizlik üçün parol sahəsi təmizləndi — qalan məlumatlarınız saxlanılıb.",
+    "link.childPassword": "Uşağın parolu",
+    "link.credentialsHint": "Bu məlumatlar yalnız yoxlama üçün istifadə olunur və saxlanılmır.",
+    "link.linkedNotice": "Giriş verildi. Profili yaradan valideynə bildiriş göndərildi.",
+    "link.access.title": "Bu profilə kimin girişi var",
+    "link.access.creator": "Profili yaradıb",
+    "link.access.linked": "Giriş verilib",
+    "link.access.since": "Tarix",
+    "link.err.credentialsInvalid": "ID və ya parol yanlışdır.",
+    "link.err.alreadyOwner": "Bu profil artıq sizindir.",
     "parent.dash.noChildren": "Hələ uşaq əlavə etməmisiniz.",
     "parent.dash.childId": "Giriş ID",
     "parent.child.title": "Uşaq əlavə et",
@@ -1134,15 +1156,29 @@ export const messages: Record<Locale, Record<string, string>> = {
     // is handed a paragraph under a select reads none of it. Wording is kept
     // VERBATIM with the mobile app's mob.child.gender.* — one product must not
     // ask a parent the same question in two different voices.
+    //
+    // IT NO LONGER OPENS WITH "İstəyə bağlıdır." / "Optional." (owner,
+    // 2026-09-16). The field is mandatory on both platforms, and a hint that
+    // says otherwise directly under a control that refuses to be skipped is
+    // not a copy nit — it is the sentence the parent reads at the moment they
+    // decide. Everything the policy requires it to disclose is untouched: who
+    // reads the answer, and that access, tasks and ranking are unaffected.
     "addchild.field.gender": "Cinsi",
     "addchild.field.genderNone": "Seçilməyib",
     "addchild.gender.female": "Qız",
     "addchild.gender.male": "Oğlan",
     "addchild.gender.unspecified": "Bildirmək istəmirəm",
     "addchild.field.genderHint":
-      "İstəyə bağlıdır. Övladınızın profilində saxlanılır və ümumi statistika üçün istifadə olunur; səlahiyyətli əməkdaşlarımız onu profildə və daxili hesabatlarda görür. Girişinə, tapşırıqlarına və ya reytinqinə heç bir təsiri yoxdur.",
+      "Övladınızın profilində saxlanılır və ümumi statistika üçün istifadə olunur; səlahiyyətli əməkdaşlarımız onu profildə və daxili hesabatlarda görür. Girişinə, tapşırıqlarına və ya reytinqinə heç bir təsiri yoxdur.",
+    // TWO REFUSALS, TWO KEYS. `genderRequired` is the everyday one since the
+    // field became mandatory (owner, 2026-09-16): nothing was chosen, or the
+    // retired 'unspecified' was sent. `genderInvalid` stays exactly what it
+    // was — a value the column does not know — because error keys are a
+    // contract shared with the mobile BFF and repurposing one changes what an
+    // already-shipped client shows.
+    "addchild.err.genderRequired": "Övladınızın cinsini seçin.",
     "addchild.err.genderInvalid":
-      "Cins seçimi düzgün deyil. Siyahıdan birini seçin və ya boş buraxın.",
+      "Cins seçimi düzgün deyil. Siyahıdan birini seçin.",
     // A CREATED CHILD WHOSE ANSWER DID NOT LAND. Shown on a SUCCESS, not as
     // a failure: the account is real and nothing is retried. It names the
     // one thing the parent must do, because a dropped answer is now a NULL
@@ -1417,7 +1453,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Şəhər və rayon | Bəli | Regional reytinq cədvəlləri üçün\n" +
       "Məktəbin adı | Bəli | Məktəb üzrə reytinq cədvəli üçün\n" +
       "Sinif | Bəli | Uşağa öz sinfinə uyğun sualların verilməsi üçün\n" +
-      "Cinsi | Xeyr | Ümumi statistika üçün; profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür. Valideyn bu sualı boş buraxa və ya «Bildirmək istəmirəm» seçə bilər; uşağın girişinə, ona verilən suallara və reytinqinə heç bir təsiri yoxdur\n" +
+      "Cinsi | Bəli | Ümumi statistika üçün; profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür. Valideyn profil yaradılarkən «Qız» və ya «Oğlan» seçir və sonra dəyişə bilər; uşağın girişinə, ona verilən suallara və reytinqinə heç bir təsiri yoxdur\n" +
       "8 rəqəmli giriş nömrəsi | Server verir | Uşağın giriş açarı. Bu nömrənin son 4 rəqəmi ictimai reytinq cədvəlində göstərilir\n" +
       "Parol | Bəli (valideyn təyin edir) | Giriş üçün. Parol yalnız autentifikasiya xidmətimizdə şifrələnmiş formada saxlanılır\n" +
       "Avatar | Xeyr | Hazır şəkillərdən biri, yaxud yüklənmiş foto. Foto həmişə qapalı saxlancda saxlanılır — «Avatar şəkilləri» hissəsinə baxın\n" +
@@ -1477,9 +1513,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     // and it decides nothing. Stating staff access is a fact about internal
     // access; it adds no legal basis, no retention period and no recipient.
     "privacy.s5.stored":
-      "Yuxarıdakı «Uşaq profili» cədvəlindəki hər şey: ad, soyad, şəhər, rayon, məktəb, sinif, valideynin istəyə bağlı qeyd etdiyi cins, 8 rəqəmli giriş nömrəsi, seçilmiş avatar və görünüş, məşq nəticələri (cavablar, ballar, faizlər, seriyalar, aktiv günlər, reytinq mövqeyi).\n" +
+      "Yuxarıdakı «Uşaq profili» cədvəlindəki hər şey: ad, soyad, şəhər, rayon, məktəb, sinif, valideynin qeyd etdiyi cins, 8 rəqəmli giriş nömrəsi, seçilmiş avatar və görünüş, məşq nəticələri (cavablar, ballar, faizlər, seriyalar, aktiv günlər, reytinq mövqeyi).\n" +
       "\n" +
-      "Cinsin qeyd edilməsi istəyə bağlıdır: valideyn sualı cavabsız qoya, «Bildirmək istəmirəm» seçə və ya qeyd etdiyini sonradan dəyişə bilər — bunların heç biri uşağın hesabına təsir etmir. Qeyd edildikdən sonra cavab uşağın profilində saxlanılır və profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür; onların ixrac etdiyi daxili hesabat fayllarında da yer alır. Bu məlumat əsasında platformadan kimlərin istifadə etdiyini bütövlükdə görmək üçün ümumi statistika hazırlayırıq. Cins heç nəyi müəyyən etmir: uşağın girişinə, ona verilən suallara, ballarına və reytinq cədvəlindəki yerinə heç bir təsiri yoxdur; reytinq cədvəllərində də göstərilmir.",
+      "Uşaq profili yaradılarkən cinsin qeyd edilməsi mütləqdir: valideyn «Qız» və ya «Oğlan» seçir və qeyd etdiyini sonradan istənilən vaxt dəyişə bilər — bunların heç biri uşağın hesabına təsir etmir. Qeyd edildikdən sonra cavab uşağın profilində saxlanılır və profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür; onların ixrac etdiyi daxili hesabat fayllarında da yer alır. Bu məlumat əsasında platformadan kimlərin istifadə etdiyini bütövlükdə görmək üçün ümumi statistika hazırlayırıq. Cins heç nəyi müəyyən etmir: uşağın girişinə, ona verilən suallara, ballarına və reytinq cədvəlindəki yerinə heç bir təsiri yoxdur; reytinq cədvəllərində də göstərilmir.",
     // "Məkan" USED TO STAND ALONE IN THIS LIST, and it was false: the child's
     // şəhər and rayon are in the «Uşaq profili» table one section up, they are
     // what groups the leaderboards, and the store forms declare them (Apple
@@ -2850,9 +2886,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "link.choice.title": "How would you like to continue?",
     "link.choice.create": "Create a new child",
     "link.choice.createBody": "Create a new profile with its own 8-digit login ID.",
-    "link.choice.existing": "Link an existing child",
+    "link.choice.existing": "Get access to an existing child profile",
     "link.choice.existingBody": "Request access to a child another parent already created. No second payment is required.",
-    "link.title": "Shared child access",
+    "link.title": "Get access to an existing child profile",
     "link.subtitle": "Request access using the child's 8-digit ID and the one-time code created by the owning parent.",
     "link.childId": "Child's 8-digit ID",
     "link.code": "Invitation code",
@@ -2880,6 +2916,28 @@ export const messages: Record<Locale, Record<string, string>> = {
     "link.err.sharedDelete": "Remove the other parents' access before deleting this child.",
     "link.err.rate": "Too many attempts. Please try again later.",
     "link.err.generic": "Shared access could not be updated. Please try again.",
+    "parent.err.firstNameRequired": "Enter your first name.",
+    "parent.err.lastNameRequired": "Enter your last name.",
+    "parent.err.pwTooShort": "The password must be at least 8 characters long.",
+    "parent.err.pwTooLong": "The password cannot be longer than 128 characters.",
+    "parent.err.pwNeedsUpper": "The password needs at least one capital letter.",
+    "parent.err.pwNeedsSpecial": "The password needs at least one special character (such as !, ? or #).",
+    "auth.pw.req.title": "Password requirements:",
+    "auth.pw.req.length": "{min}–{max} characters",
+    "auth.pw.req.upper": "At least one capital letter",
+    "auth.pw.req.special": "At least one special character (such as !, ? or #)",
+    "auth.pw.req.met": "met",
+    "auth.pw.req.unmet": "not met",
+    "auth.pw.cleared": "The password field was cleared for security — everything else you entered was kept.",
+    "link.childPassword": "Child's password",
+    "link.credentialsHint": "These details are used only to verify access and are not stored.",
+    "link.linkedNotice": "Access granted. The parent who created this profile has been notified.",
+    "link.access.title": "Who can reach this profile",
+    "link.access.creator": "Created the profile",
+    "link.access.linked": "Has access",
+    "link.access.since": "Since",
+    "link.err.credentialsInvalid": "That ID or password is not correct.",
+    "link.err.alreadyOwner": "This profile is already yours.",
     "parent.dash.noChildren": "You haven't added any children yet.",
     "parent.dash.childId": "Login ID",
     "parent.child.title": "Add a child",
@@ -3261,9 +3319,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "addchild.gender.male": "Boy",
     "addchild.gender.unspecified": "Prefer not to say",
     "addchild.field.genderHint":
-      "Optional. It is stored on your child's profile and used for overall statistics; our authorised staff see it there and in internal account reports. It never affects your child's access, their tasks or their ranking.",
+      "It is stored on your child's profile and used for overall statistics; our authorised staff see it there and in internal account reports. It never affects your child's access, their tasks or their ranking.",
+    "addchild.err.genderRequired": "Select your child's gender.",
     "addchild.err.genderInvalid":
-      "That gender value is not valid. Choose one from the list or leave it blank.",
+      "That gender value is not valid. Choose one from the list.",
     "addchild.warn.genderNotSaved":
       "The child was created, but their gender was not saved. You can set it by editing the child's details.",
     "subj.math": "Mathematics",
@@ -3494,7 +3553,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "City and district (rayon) | Yes | For regional leaderboards\n" +
       "School name | Yes | For the school leaderboard\n" +
       "Grade | Yes | So the child is served questions that match their grade\n" +
-      "Gender | No | For overall statistics; visible to our authorised staff like the rest of the profile. A parent may leave the question blank or choose «Prefer not to say»; it has no effect on the child's access, on the questions they are served or on their ranking\n" +
+      "Gender | Yes | For overall statistics; visible to our authorised staff like the rest of the profile. A parent chooses «Girl» or «Boy» when creating the profile and can change it later; it has no effect on the child's access, on the questions they are served or on their ranking\n" +
       "8-digit login ID | Issued by our server | The child's login credential. The last 4 digits of this number are shown on the public leaderboard\n" +
       "Password | Yes (set by the parent) | To sign in. Held only by our authentication service, in hashed form\n" +
       "Avatar | No | Either a preset image or an uploaded photo. A photo is always kept in private storage — see «Avatar photos»\n" +
@@ -3541,9 +3600,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.storedTitle": "What is stored about a child",
     // See the az block for why the gender belongs in this enumeration.
     "privacy.s5.stored":
-      "Everything in the «Child profile» table above: first name, last name, city, district, school, grade, the optional gender a parent may give, the 8-digit login number, the chosen avatar and look, and practice results (answers, points, percentages, streaks, active days, leaderboard placement).\n" +
+      "Everything in the «Child profile» table above: first name, last name, city, district, school, grade, the gender a parent gives, the 8-digit login number, the chosen avatar and look, and practice results (answers, points, percentages, streaks, active days, leaderboard placement).\n" +
       "\n" +
-      "Giving a gender is entirely optional: a parent can leave the question unanswered, choose «Prefer not to say», or change what they gave later — none of which affects the child's account. Once given, the answer is stored on the child's profile and is visible to our authorised staff in the same way as the rest of that profile, including in the internal account reports they export. We use it to produce overall statistics about who uses the platform. It decides nothing about the child: it has no effect on their access, on the questions they are served, on their points or on their leaderboard position, and it is never shown on a leaderboard.",
+      "Giving a gender is required when a child profile is created: a parent chooses «Girl» or «Boy», and can change what they gave later at any time — none of which affects the child's account. Once given, the answer is stored on the child's profile and is visible to our authorised staff in the same way as the rest of that profile, including in the internal account reports they export. We use it to produce overall statistics about who uses the platform. It decides nothing about the child: it has no effect on their access, on the questions they are served, on their points or on their leaderboard position, and it is never shown on a leaderboard.",
     // See the az block for why a bare "location" denial cannot stand here.
     "privacy.s5.notCollected":
       "What we never collect about a child: date of birth, email address, phone number, home address, device location, health data, financial data, contacts, browsing history, advertising identifiers or hardware identifiers.\n" +
@@ -4839,9 +4898,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "link.choice.title": "Как вы хотите продолжить?",
     "link.choice.create": "Создать нового ребёнка",
     "link.choice.createBody": "Создайте новый профиль с отдельным 8-значным ID для входа.",
-    "link.choice.existing": "Привязать существующего ребёнка",
+    "link.choice.existing": "Получить доступ к существующему профилю ребёнка",
     "link.choice.existingBody": "Запросите доступ к ребёнку, которого уже создал другой родитель. Повторная оплата не требуется.",
-    "link.title": "Совместный доступ к ребёнку",
+    "link.title": "Получить доступ к существующему профилю ребёнка",
     "link.subtitle": "Запросите доступ с помощью 8-значного ID ребёнка и одноразового кода владельца аккаунта.",
     "link.childId": "8-значный ID ребёнка",
     "link.code": "Код приглашения",
@@ -4869,6 +4928,28 @@ export const messages: Record<Locale, Record<string, string>> = {
     "link.err.sharedDelete": "Перед удалением ребёнка отключите доступ других родителей.",
     "link.err.rate": "Слишком много попыток. Повторите позже.",
     "link.err.generic": "Не удалось обновить совместный доступ. Повторите попытку.",
+    "parent.err.firstNameRequired": "Введите имя.",
+    "parent.err.lastNameRequired": "Введите фамилию.",
+    "parent.err.pwTooShort": "Пароль должен содержать не менее 8 символов.",
+    "parent.err.pwTooLong": "Пароль не может быть длиннее 128 символов.",
+    "parent.err.pwNeedsUpper": "В пароле нужна хотя бы одна заглавная буква.",
+    "parent.err.pwNeedsSpecial": "В пароле нужен хотя бы один специальный символ (например, !, ? или #).",
+    "auth.pw.req.title": "Требования к паролю:",
+    "auth.pw.req.length": "От {min} до {max} символов",
+    "auth.pw.req.upper": "Хотя бы одна заглавная буква",
+    "auth.pw.req.special": "Хотя бы один специальный символ (например, !, ? или #)",
+    "auth.pw.req.met": "выполнено",
+    "auth.pw.req.unmet": "не выполнено",
+    "auth.pw.cleared": "Поле пароля очищено в целях безопасности — остальные введённые данные сохранены.",
+    "link.childPassword": "Пароль ребёнка",
+    "link.credentialsHint": "Эти данные используются только для проверки и не сохраняются.",
+    "link.linkedNotice": "Доступ предоставлен. Родитель, создавший профиль, получил уведомление.",
+    "link.access.title": "У кого есть доступ к профилю",
+    "link.access.creator": "Создал профиль",
+    "link.access.linked": "Есть доступ",
+    "link.access.since": "С",
+    "link.err.credentialsInvalid": "Неверный ID или пароль.",
+    "link.err.alreadyOwner": "Этот профиль уже принадлежит вам.",
     "parent.dash.noChildren": "Вы ещё не добавили детей.",
     "parent.dash.childId": "ID для входа",
     "parent.child.title": "Добавить ребёнка",
@@ -5248,9 +5329,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "addchild.gender.male": "Мальчик",
     "addchild.gender.unspecified": "Предпочитаю не указывать",
     "addchild.field.genderHint":
-      "Необязательно. Хранится в профиле ребёнка и используется для общей статистики; наши уполномоченные сотрудники видят его там и во внутренних отчётах по аккаунтам. На доступ ребёнка, задания и рейтинг это никак не влияет.",
+      "Хранится в профиле ребёнка и используется для общей статистики; наши уполномоченные сотрудники видят его там и во внутренних отчётах по аккаунтам. На доступ ребёнка, задания и рейтинг это никак не влияет.",
+    "addchild.err.genderRequired": "Укажите пол ребёнка.",
     "addchild.err.genderInvalid":
-      "Указан недопустимый пол. Выберите вариант из списка или оставьте поле пустым.",
+      "Указан недопустимый пол. Выберите вариант из списка.",
     "addchild.warn.genderNotSaved":
       "Ребёнок создан, но пол не сохранился. Указать его можно, отредактировав данные ребёнка.",
     "subj.math": "Математика",
@@ -5480,7 +5562,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Город и район | Да | Для региональных таблиц лидеров\n" +
       "Название школы | Да | Для школьной таблицы лидеров\n" +
       "Класс | Да | Чтобы ребёнку выдавались вопросы для его класса\n" +
-      "Пол | Нет | Для общей статистики; виден нашим уполномоченным сотрудникам так же, как остальной профиль. Родитель может оставить этот вопрос без ответа или выбрать «Предпочитаю не указывать»; на доступ ребёнка, на выдаваемые ему вопросы и на рейтинг это никак не влияет\n" +
+      "Пол | Да | Для общей статистики; виден нашим уполномоченным сотрудникам так же, как остальной профиль. Родитель выбирает «Девочка» или «Мальчик» при создании профиля и может изменить ответ позже; на доступ ребёнка, на выдаваемые ему вопросы и на рейтинг это никак не влияет\n" +
       "8-значный номер для входа | Выдаёт сервер | Логин ребёнка. Последние 4 цифры этого номера показываются в публичной таблице лидеров\n" +
       "Пароль | Да (задаёт родитель) | Для входа. Хранится только в сервисе аутентификации в виде хеша\n" +
       "Аватар | Нет | Готовое изображение или загруженное фото. Фото всегда хранится в закрытом хранилище — см. «Фотографии-аватары»\n" +
@@ -5529,9 +5611,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.storedTitle": "Что хранится о ребёнке",
     // См. блок az — почему пол обязан быть в этом перечне.
     "privacy.s5.stored":
-      "Всё, что указано в таблице «Профиль ребёнка» выше: имя, фамилия, город, район, школа, класс, необязательно указываемый родителем пол, 8-значный номер для входа, выбранный аватар и оформление, а также результаты занятий (ответы, баллы, проценты, серии, активные дни, место в рейтинге).\n" +
+      "Всё, что указано в таблице «Профиль ребёнка» выше: имя, фамилия, город, район, школа, класс, указываемый родителем пол, 8-значный номер для входа, выбранный аватар и оформление, а также результаты занятий (ответы, баллы, проценты, серии, активные дни, место в рейтинге).\n" +
       "\n" +
-      "Указывать пол необязательно: родитель может не отвечать на этот вопрос, выбрать «Предпочитаю не указывать» или позже изменить указанное — ничто из этого на аккаунт ребёнка не влияет. Указанный ответ хранится в профиле ребёнка и виден нашим уполномоченным сотрудникам так же, как и остальная часть этого профиля, в том числе во внутренних отчётах по аккаунтам, которые они выгружают. На основании этих данных мы готовим общую статистику о том, кто пользуется платформой. При этом пол ничего не определяет: на доступ ребёнка, на выдаваемые ему вопросы, на баллы и на место в таблице лидеров это не влияет никак, и в таблицах лидеров пол не отображается.",
+      "При создании профиля ребёнка пол указывается обязательно: родитель выбирает «Девочка» или «Мальчик» и может изменить ответ позже в любое время — ничто из этого на аккаунт ребёнка не влияет. Указанный ответ хранится в профиле ребёнка и виден нашим уполномоченным сотрудникам так же, как и остальная часть этого профиля, в том числе во внутренних отчётах по аккаунтам, которые они выгружают. На основании этих данных мы готовим общую статистику о том, кто пользуется платформой. При этом пол ничего не определяет: на доступ ребёнка, на выдаваемые ему вопросы, на баллы и на место в таблице лидеров это не влияет никак, и в таблицах лидеров пол не отображается.",
     // См. блок az — почему голое отрицание «геолокации» здесь стоять не может.
     "privacy.s5.notCollected":
       "Что мы о ребёнке не собираем: дату рождения, адрес электронной почты, номер телефона, домашний адрес, геолокацию устройства, данные о здоровье, финансовые данные, контакты, историю браузера, рекламные и аппаратные идентификаторы.\n" +

@@ -1472,6 +1472,146 @@ release-note writer home early.)
   another payment rail or any purchase surface on Android. The rule is aligned
   across `AGENTS.md`, both `CLAUDE.md` files and the compliance runbook.
 
+- `[internal]` Everything from here down ships as an **EAS Update to the 1.16.0
+  runtime**, not as a new build. `expo.version` deliberately stays 1.16.0, which
+  is what lets `runtimeVersion: appVersion` deliver it to the binary already on
+  the App Store; no native dependency and no native config changed, because an
+  OTA cannot carry one. The `[store]` lines below reach existing installs on the
+  next launch rather than through a store release.
+
+- `[store]` Giving a second adult access to a child now takes that child's own
+  8-digit ID and password, and the access is granted immediately. The one-time
+  code the first parent had to generate, and the approval prompt that followed
+  it, are gone. The parent who created the child is notified every time an adult
+  is added, by name, and can still remove that access at any time; a linked
+  adult can still leave on their own. Nothing else moved: a household is still
+  capped at four adults, and only the creating parent can reset the child's
+  password or change their avatar.
+
+- `[web]` The Parent Panel's existing-child screen asks for the same two
+  credentials and lists each child's adults with who created them. The code box,
+  the pending-request list and the approve/reject controls are gone with the
+  flow they belonged to.
+
+- `[internal]` The invite flow this replaces had never completed a single link
+  in production — 4 codes minted, 1 redeemed, 0 links — because issuing a second
+  code revoked the redemption already waiting for approval, so a parent who
+  retried destroyed their own request. Migration 177 (applied to staging and
+  production) adds `link_child_by_verified_credentials`, `child_access_adults`,
+  structured `profiles.first_name` / `last_name`, and a sealed
+  `parent_link_verify_attempts` ledger that rate-limits a guessing ADULT without
+  ever being usable to lock a child out of their own account. Approval was both
+  the consent step and the notification, so both come back as mechanism: a
+  priority-1 notification to the creating parent naming the adult, an audit row
+  at severity warning, the unchanged four-adult cap, and the creator-only
+  boundary. 176's tables and `manage_child_link` stay where they are — revoke
+  and leave still run through them. Backported into 002/010/011, with check 135
+  added to 013.
+
+- `[store]` The child's gender is now a required answer when a parent creates a
+  child profile — Qız or Oğlan, with no preselected value. It still decides
+  nothing about the child: not their access, not which questions they are
+  served, not how hard those questions are, not their ranking, and it never
+  appears on a leaderboard. Children created before this change keep whatever
+  was recorded for them, including no answer at all.
+
+- `[internal]` Migration 178 gives `create_child_account` a twelfth argument so
+  the gender is written INSIDE the provisioning transaction. It used to be a
+  separate service-role patch run after that function had already committed,
+  with a deliberately non-fatal failure path — the right shape for an optional
+  field and the wrong one for a required one, because "the form made you answer
+  and then discarded the answer" is a data bug the parent never sees.
+  `students.gender` stays NULLABLE on purpose: 51 children exist from before the
+  question did, there is no honest backfill for a minor's personal data, and
+  013 check 127 still fails if anyone makes the column NOT NULL. `unspecified`
+  stays in the enum so those rows remain readable, but no form may submit it any
+  more, so the server refuses it too.
+
+- `[store]` **(tester)** Adding a second child now carries over the city and the
+  school as well as the surname. It used to drop all three whenever the
+  sibling's rayon could not be matched — which happens for a school with no
+  rayon recorded, and for a sibling whose own rayon is blank, both perfectly
+  ordinary rows. The fields are carried one at a time and only where they are
+  provably valid, so a prefilled form is still a form that submits. Gender is
+  never carried over: a prefilled answer about a different child is
+  indistinguishable from a real one once it is in the column.
+
+- `[store]` Profile, Subscription, Leaderboard, Notifications and news articles
+  now offer a way back to the home screen from their header. These screens open
+  OVER the bottom tabs, so the tab bar is off screen while they are open and
+  every back gesture returns to wherever you came from — a parent who opened
+  Profile from Subscription could reach Subscription again and nothing else. The
+  back arrow, the Android back button and the iOS edge swipe are untouched and
+  still agree with each other.
+
+- `[store]` Dark mode has a slow, faint star field behind the app. It shows only
+  in the empty margins around cards and text, never through them, and the
+  system's "reduce motion" setting keeps the sky while dropping the movement.
+
+- `[web]` The same night sky is on the website in dark mode, in CSS alone — no
+  component, no JavaScript, no added bundle bytes — and every selector is gated
+  on the dark theme, so light mode cannot see any of it.
+
+- `[web]` Parent registration asks for first name and surname as two fields,
+  marks the field that was actually wrong, and names the password rule that was
+  missed instead of saying the password is weak. A live requirements checklist
+  appears under every field where a password is CHOSEN and never under a sign-in
+  field, where it would be useless and a hint to an anonymous visitor. A
+  rejected form no longer wipes what was typed — except the password, which is
+  deliberately never echoed back into the page.
+
+- `[internal]` The mobile registration BFF now writes `first_name` /
+  `last_name` alongside the phone, in the one statement it already ran.
+  Migration 177's backfill split `display_name` on the first space and will
+  never run again, so every parent who registered IN THE APP would otherwise
+  have kept NULL names — and the new linking screen identifies adults by first
+  name, last name and email, where exactly those rows would have shown up blank.
+
+- `[admin]` The App Store products screen is now a read-only MIRROR: our rows
+  beside what App Store Connect reports for the same product ids, each state
+  shown with the label the console itself uses, a freshness stamp on the answer,
+  and a named disagreement wherever the two differ. The create form is gone —
+  Apple-side products are made by a script the owner runs by hand, and a form
+  that appeared to do the same thing minted permanent, unsellable ids in our
+  database while changing nothing in the store. The offer switch stays: it is
+  the only code path in the repository that can withdraw a live iOS product
+  without raw SQL against production.
+
+- `[admin]` The sidebar's "Yerlər" is now "Şəhər / rayon" (en "Cities &
+  districts", ru "Города и районы") — it names what an admin actually comes to
+  that screen to find. Display name only: the route, the keys and every database
+  entity are unchanged, and the sidebar item and the page title read the same
+  string, so the two can never drift apart.
+
+- `[web]` `.stack`, `.row`, `.grid2`, `.notice` and `.page` are written across
+  the parent pages and not one of them had a definition, so every element
+  carrying one fell back to a bare block — no gap, no alignment, no callout
+  colour, no measure. That, and not a bad layout, is why the existing-child
+  screen read as an unstyled dump. They are defined now, from existing tokens
+  only, so no dark-mode token value moved.
+
+- `[internal]` The privacy policy promised in all three languages that the child
+  gender question could be left blank or answered "prefer not to say", while the
+  binary now refuses to create the child without an answer — the same class of
+  contradiction the retired 1.16.0 gender-declaration blocker existed for, on a
+  page a store reviewer reads. Corrected in az, en and ru (sections 4 and 5),
+  with `lastUpdated` moved to 16.09.2026 in the document and in both
+  `privacyPolicy.ts` fallbacks, which had drifted a day apart since the Sentry
+  change moved the document and missed them. The store-declaration prose in
+  `docs/STORE_LISTING_COPY.md` §8.1, `mobile-app/markdowns/STORE_LAUNCH_PACK.md`
+  §2 and the submission preflight's gender check no longer call the field
+  optional. **No console change is owed:** Play's optionality answer for
+  *Personal info → Other info* has read "data collection is required" since
+  2026-09-08 because the mandatory grade and school share that type, and Apple
+  never asks the question at all.
+
+- `[internal]` Tests follow the two behaviours that would otherwise regress
+  silently: the back-affordance suite now also pins the header route-to-home on
+  every screen pushed over the tabs, and `parentValidationDetail.test.ts` pins
+  the frozen registration `errorKey` wire contract — which the shipped 1.16.0
+  binary translates against its own baked-in catalogue — against the additive
+  per-field detail keys the web form reads.
+
 ---
 
 ## 1.15.0 — RELEASED on the App Store 2026-09-09 (submitted 2026-09-04, approved and released the same day)

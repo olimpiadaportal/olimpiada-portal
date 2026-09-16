@@ -6,6 +6,98 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## ROUND (2026-09-16) — ten-item change list, shipped as an OTA to 1.16.0
+
+**RELEASED AS AN EAS UPDATE, NOT A NEW VERSION, AND THAT WAS A DECISION.** Every
+mobile change in this round is JavaScript: the Home control, the star field, the
+forms, the link screen. Nothing touches native config, so `expo.version` stayed
+at 1.16.0 and the work reaches the live binary in minutes instead of an App Store
+review. The bump is what FORECLOSES the OTA path (`runtimeVersion: appVersion`),
+so not bumping is what bought the speed — the opposite of the usual reflex, and
+the reason the rule above says to decide BEFORE editing `app.json`.
+
+### Database — two migrations, staging then production
+
+* **177** credential-verified linking. Replaces the invite/approval flow, which
+  had NEVER completed a link in production: `manage_child_link`'s `issue` branch
+  revokes any `open`/`pending` invite, so a parent who redeemed a code and then
+  generated a fresh one to retry destroyed their own redemption. Confirmed from
+  live rows — 4 invites minted 2026-09-15, 1 redeemed, 0 `parent_student_links`.
+* **178** `p_gender` inside `create_child_account`, 11-arg overload dropped.
+  **Built by transforming `pg_get_functiondef` output, not by hand.** The
+  hand-written first draft invented a profile insert where the real function uses
+  the Auth trigger's existing profile, and silently dropped three idempotency
+  guards. A rebuilt body is how a guard disappears.
+* 013 runs **140 checks** against production; the only failure is the documented
+  `88_import_media_orphans` (205 — unchanged since 2026-09-14, so **not growing**,
+  which is the first time that question could be answered).
+
+### A validation check that was deleting itself
+
+Check 17 named `create_child_account` by TEXT signature to
+`has_function_privilege`, which casts to `regprocedure` internally and **raises**
+when the function is absent. The moment 178 dropped the 11-arg overload the check
+stopped failing and started ERRORING — aborting its own statement and removing
+itself from the run (140 → 139, with nothing saying why). It now resolves through
+`to_regprocedure`, which returns NULL instead of raising. Check 66 additionally
+pins BOTH superseded arities as absent: restoring either would silently write no
+gender.
+
+### The exemption that keeps an installed app working
+
+Gender is required — at the web forms, the web server, the admin panel and the
+mobile UI. It is **not** enforced on the two mobile BFF routes, and that is
+deliberate, not a gap. A bundle already on a parent's phone cannot be made to ask
+a question its build has no control for: the OTA applies on the NEXT launch, and
+1.15.x installs never receive it at all. Enforcing there would not make anyone
+answer — it would make Add-Child fail with a refusal their app cannot satisfy.
+Same reasoning as `p_gender` being nullable in 178. An absent value on the edit
+path OMITS the column rather than writing NULL over an answer already recorded.
+
+### What the adversarial review caught, in two rounds
+
+Workers self-report optimistically; the reviewers ran the commands themselves.
+Worth keeping because each was invisible to typecheck and tests:
+
+* a feature **dark in all three locales** — 13 i18n keys referenced, none added;
+* `messages.generated.ts` left stale at 1327 keys with 17 unresolved, which on
+  the OTA target renders raw keys;
+* the privacy policy still promising in all three languages that the gender
+  question can be skipped — the document two store reviewers read — with a GREEN
+  test pinning the old claim;
+* a theme-gated `isolation: isolate` making the app layer differently in light
+  and dark;
+* a star field at 5x the intended alpha, justified by a claim ("only visible in
+  the margins") that `.site-main` and `.arena-main` having no background
+  disproves;
+* Apple's API on the `/iap` render path with no timeout;
+* the Home control present in one of a screen's three return branches;
+* 169 bare-LF lines added to a 97%-CRLF file;
+* two workers reporting checks they had not run.
+
+All fixed. The star alphas were scaled to match the mobile half so the two
+platforms stop showing different skies for one feature.
+
+### Gates
+
+web 1533 vitest / 73 files · admin 1157 / 52 · mobile 1410 jest / 68 suites ·
+three typechecks clean · **both Next production builds compile** · mobile
+`check-i18n` resolves all 779 used keys against 1385 generated.
+
+### Owed before the next STORE submission (not before the OTA)
+
+The OTA needs none of this. A future store build does:
+
+* the `.md` half of the privacy policy and `STORE_LAUNCH_PACK` §2.6 still carry
+  stale "prefer not to say" prose in places the docs worker missed;
+* `privacyPolicy.ts` holds only the FALLBACK date — the live value is in
+  `system_settings` under `privacy.*`, edited at /settings → Privacy;
+* the store DECLARATIONS themselves do not change (gender was already declared
+  as collected, and Play's optionality answer for that type was already
+  "required" because grade and school share it).
+
+---
+
 ## AUDIT (2026-09-14) — what is verified against PRODUCTION, and what is left
 
 A session boundary fell in the middle of migration 174, so the state below was

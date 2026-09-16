@@ -1,7 +1,18 @@
 import "server-only";
 
 // ---------------------------------------------------------------------------
-// APP STORE CONNECT — read-only preflight for putting a store product on sale.
+// APP STORE CONNECT — read-only. Two readers, one credential set:
+//
+//   preflightStoreProduct()  — asks about ONE product before it is offered.
+//   fetchStoreCatalogue()    — reads the WHOLE app's product list so the admin
+//                              screen can mirror Apple's answer next to ours.
+//
+// NOTHING IN THIS MODULE WRITES TO APPLE, and nothing anywhere in this
+// repository does from a request: products are created by the local script
+// mobile-app/scripts/create-iap-products.mjs, run by hand by the owner. Do not
+// add a POST/PATCH here to "save the admin a step" — an admin screen that
+// appears to change App Store Connect, and does not, is the divergence this
+// module exists to expose.
 //
 // WHY THIS EXISTS. `iap_products.active` is a switch in OUR database. Nothing
 // about it consults Apple, so before this module the admin panel would happily
@@ -101,6 +112,73 @@ export type IapPreflightResult =
   | { readonly ok: true; readonly state: string }
   | { readonly ok: false; readonly problem: IapPreflightProblem; readonly state?: string };
 
+/**
+ * What Apple's state means for a product we might offer. The same three-way
+ * split the preflight already makes, named so the mirror screen can show it
+ * without re-implementing (and eventually contradicting) the rule.
+ */
+export type StoreStateVerdict = "sellable" | "blocked" | "unknown";
+
+export function storeStateVerdict(state: string): StoreStateVerdict {
+  if (SELLABLE_STATES.has(state)) return "sellable";
+  if (BLOCKED_STATE_REASON[state]) return "blocked";
+  return "unknown";
+}
+
+/**
+ * API state → the i18n key whose text matches WHAT APP STORE CONNECT SHOWS.
+ *
+ * This is the mapping the header warns about, written down once. An admin
+ * reading "MISSING_METADATA" on our screen would go looking for that status in
+ * App Store Connect and never find it — the console calls it "Prepare for
+ * Submission", the same label it gives READY_TO_SUBMIT. Same for
+ * PENDING_BINARY_APPROVAL ("Accepted") and DEVELOPER_ACTION_NEEDED
+ * ("Developer Rejected"). Apple publishes no mapping table; these pairings come
+ * from the console itself, so treat a change here as a fact to re-verify rather
+ * than a wording preference.
+ */
+const STATE_LABEL_KEY: Record<string, string> = {
+  MISSING_METADATA: "iap.store.state.prepare",
+  READY_TO_SUBMIT: "iap.store.state.prepare",
+  WAITING_FOR_REVIEW: "iap.store.state.waitingReview",
+  IN_REVIEW: "iap.store.state.inReview",
+  PENDING_BINARY_APPROVAL: "iap.store.state.accepted",
+  APPROVED: "iap.store.state.approved",
+  DEVELOPER_ACTION_NEEDED: "iap.store.state.developerRejected",
+  REJECTED: "iap.store.state.rejected",
+  REMOVED_FROM_SALE: "iap.store.state.removed",
+  DEVELOPER_REMOVED_FROM_SALE: "iap.store.state.removed",
+  WAITING_FOR_UPLOAD: "iap.store.state.contentPending",
+  PROCESSING_CONTENT: "iap.store.state.contentPending",
+};
+
+/** Falls back to the "we do not recognise this" label, never to the raw code. */
+export function storeStateLabelKey(state: string): string {
+  return STATE_LABEL_KEY[state] ?? "iap.store.state.unknown";
+}
+
+/** One product as App Store Connect currently reports it. */
+export type StoreProductSnapshot = {
+  productId: string;
+  /** Apple's raw InAppPurchaseState. For logs and verdicts, never for a human. */
+  state: string;
+  /** Apple's reference name — the fastest way to spot a mis-mapped product id. */
+  name: string | null;
+};
+
+/**
+ * `fetchedAt` is present on BOTH shapes on purpose: a screen that says "last
+ * checked 12:04" and quietly means "last SUCCESSFUL check, some time before the
+ * outage" is worse than one that admits the last attempt failed.
+ */
+export type StoreCatalogue =
+  | { readonly ok: true; readonly products: StoreProductSnapshot[]; readonly fetchedAt: string }
+  | {
+      readonly ok: false;
+      readonly problem: "storeNotConfigured" | "storeUnreachable";
+      readonly fetchedAt: string;
+    };
+
 type AscConfig = {
   issuerId: string;
   keyId: string;
@@ -172,6 +250,124 @@ function mintToken(config: AscConfig): string {
   return `${signingInput}.${base64Url(signature)}`;
 }
 
+/** One page of an inAppPurchasesV2 listing. */
+type AscPage = {
+  data?: { attributes?: { productId?: string; state?: string; name?: string } }[];
+  links?: { next?: string };
+};
+
+/**
+ * One authenticated GET. Returns null for every failure an operator can do
+ * nothing about mid-request — connection refused, a non-2xx (a 401 from a wrong
+ * key id looks exactly like one from a DER signature), a body that is not JSON.
+ * The caller turns that into `storeUnreachable`, which is a REFUSAL: this
+ * module never answers "probably fine".
+ */
+/**
+ * Apple is a THIRD PARTY ON A RENDER PATH, so it gets a deadline.
+ *
+ * This call used to happen only inside `setIapProductActive` — an explicit
+ * operator action, where waiting is understood. Since the /iap screen became a
+ * read-only mirror it runs on every render of that page, so an Apple outage or a
+ * black-holed connection would hang the admin's request until the platform's own
+ * timeout fired. Ten seconds is long enough for a slow-but-working response and
+ * short enough that a stuck one still renders the page with an honest
+ * "unreachable" instead of a spinner. The abort lands in the catch below and
+ * becomes `storeUnreachable`, exactly like every other failure here.
+ */
+const ASC_TIMEOUT_MS = 10_000;
+
+async function getJson(url: string, token: string): Promise<AscPage | null> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(ASC_TIMEOUT_MS),
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok) {
+    console.error("[admin] app store connect http", response.status);
+    return null;
+  }
+  try {
+    return (await response.json()) as AscPage;
+  } catch {
+    return null;
+  }
+}
+
+/** Apple caps this endpoint at 200 per page; the loop below is bounded anyway. */
+const CATALOGUE_PAGE_SIZE = 200;
+const CATALOGUE_MAX_PAGES = 10;
+
+/**
+ * Every in-app purchase App Store Connect holds for this app.
+ *
+ * WHY THE WHOLE LIST AND NOT ONE LOOKUP PER ROW. The mirror screen has to show
+ * BOTH directions of disagreement, and the second one is invisible to a
+ * per-row check: a product that exists at Apple with no row in `iap_products`
+ * is a purchase the server cannot map to an entitlement — the family is charged
+ * and gets nothing. Twenty-one row-by-row requests would also be twenty-one
+ * chances to hit Apple's rate limit on one page load.
+ *
+ * Paginated because `limit` maxes out at 200 and the catalogue only grows. The
+ * page cap is a safety rail, not an expectation: 2000 products is far past
+ * anything this product will sell, and an unbounded loop driven by a remote
+ * response is not something to leave in a request path.
+ */
+export async function fetchStoreCatalogue(): Promise<StoreCatalogue> {
+  // Stamped BEFORE the request: this is when the screen's picture of Apple was
+  // taken, and a slow call must not make the answer look fresher than it is.
+  const fetchedAt = new Date().toISOString();
+
+  const config = readConfig();
+  if (!config) return { ok: false, problem: "storeNotConfigured", fetchedAt };
+
+  let token: string;
+  try {
+    token = mintToken(config);
+  } catch (error) {
+    console.error(
+      "[admin] app store connect key unusable",
+      error instanceof Error ? error.name : "unknown",
+    );
+    return { ok: false, problem: "storeNotConfigured", fetchedAt };
+  }
+
+  const products: StoreProductSnapshot[] = [];
+  let url: string | null =
+    `${API_BASE}/v1/apps/${encodeURIComponent(config.appId)}/inAppPurchasesV2` +
+    `?fields%5BinAppPurchases%5D=productId,state,name&limit=${CATALOGUE_PAGE_SIZE}`;
+
+  for (let page = 0; page < CATALOGUE_MAX_PAGES && url; page += 1) {
+    const payload = await getJson(url, token);
+    // A partial catalogue must never be presented as the catalogue: a row would
+    // read "Apple has never heard of this" purely because page two failed.
+    if (!payload) return { ok: false, problem: "storeUnreachable", fetchedAt };
+
+    for (const row of payload.data ?? []) {
+      const productId = String(row?.attributes?.productId ?? "");
+      if (!productId) continue;
+      products.push({
+        productId,
+        state: String(row?.attributes?.state ?? ""),
+        name: row?.attributes?.name ?? null,
+      });
+    }
+
+    // Follow Apple's own cursor, and only Apple's: the bearer token travels in
+    // the header, so a `next` pointing anywhere else would hand our credential
+    // to another host.
+    const next = payload.links?.next;
+    url = typeof next === "string" && next.startsWith(`${API_BASE}/`) ? next : null;
+  }
+
+  return { ok: true, products, fetchedAt };
+}
+
 /**
  * Does App Store Connect have this product id, in a state that can still sell?
  *
@@ -200,26 +396,8 @@ export async function preflightStoreProduct(
     `?filter%5BproductId%5D=${encodeURIComponent(productId)}` +
     `&fields%5BinAppPurchases%5D=productId,state,name&limit=200`;
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-  } catch {
-    return { ok: false, problem: "storeUnreachable" };
-  }
-  if (!response.ok) {
-    console.error("[admin] app store connect preflight http", response.status);
-    return { ok: false, problem: "storeUnreachable" };
-  }
-
-  let payload: { data?: { attributes?: { productId?: string; state?: string } }[] };
-  try {
-    payload = (await response.json()) as typeof payload;
-  } catch {
-    return { ok: false, problem: "storeUnreachable" };
-  }
+  const payload = await getJson(url, token);
+  if (!payload) return { ok: false, problem: "storeUnreachable" };
 
   // Apple's filter is authoritative, but match the id ourselves too: a filter
   // that silently stopped filtering would otherwise approve the first product

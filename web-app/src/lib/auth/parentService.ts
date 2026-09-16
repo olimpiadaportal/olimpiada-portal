@@ -25,11 +25,14 @@ import { type ChildInfo } from "@/lib/auth/children";
 import {
   EMAIL_MAX,
   EMAIL_RE,
+  NAME_MAX,
   PASSWORD_MAX,
+  passwordDetailKey,
   validateParentRegistration,
+  type ParentRegistrationField,
 } from "@/lib/auth/parentValidation";
-import { checkNewPassword } from "@/lib/auth/passwordPolicy";
-import { getT } from "@/i18n/server";
+import { checkNewPassword, type PasswordProblem } from "@/lib/auth/passwordPolicy";
+import { getT, type T } from "@/i18n/server";
 import { rateLimitAllow } from "@/lib/rateLimit";
 import { isExistingAccountSignUp } from "@/lib/auth/signUpOutcome";
 import { setPendingVerifyEmail } from "@/lib/auth/pendingVerifyEmail";
@@ -51,6 +54,26 @@ import { writeAuditLog } from "@/lib/audit";
  * actually edited. `rejectedEmail` is echoed back (normalized, lowercased) so
  * that comparison survives the user typing the same address with different case
  * or padding.
+ *
+ * `values` EXISTS BECAUSE REACT WIPES THE FORM, and it is worth spelling out
+ * why nothing cheaper works. react-dom's `startHostTransition` schedules
+ * `requestFormReset` BEFORE it invokes the action, so by the time this function
+ * returns anything at all the reset is already queued; at commit,
+ * `recursivelyResetForms` calls the native `form.reset()`. Neither the return
+ * value, nor `key=`, nor `preventDefault` can intercept it — verified against
+ * react-dom 19.2.7. What DOES survive is a value the DOM node will reset TO:
+ * React writes `defaultValue` onto the node during the same commit's mutation
+ * phase, which runs BEFORE the reset. So the action echoes what was submitted
+ * and the form re-seeds `defaultValue` from it.
+ *
+ * Controlled inputs (the email box, the phone field) need no echo — React keeps
+ * a controlled input's `defaultValue` equal to its `value`, which is exactly why
+ * those two already survived while the plain name inputs did not.
+ *
+ * THE PASSWORD IS DELIBERATELY ABSENT. Echoing it would put a plaintext
+ * credential in the RSC flight payload, in the HTML, and in every proxy or
+ * error-overlay snapshot of that response. Clearing one field is the cheaper
+ * loss; the form says so and points at the rule that failed.
  */
 export type AuthFormState =
   | {
@@ -59,12 +82,37 @@ export type AuthFormState =
       rejectedEmail?: string;
       /** Registration succeeded and the account needs email confirmation. */
       verifyEmail?: true;
+      /** Submitted values echoed back so the post-action form reset restores
+       *  them instead of blanking the form. Never contains the password. */
+      values?: { first_name?: string; last_name?: string };
+      /** Which input to mark invalid, when the failure belongs to one. */
+      field?: ParentRegistrationField;
+      /** Password-rule failures only: which requirement was not met, so the
+       *  requirements checklist can point at that exact line. */
+      passwordProblem?: PasswordProblem;
     }
   | null;
 
 function f(formData: FormData, name: string): string {
   const v = formData.get(name);
   return typeof v === "string" ? v.trim() : "";
+}
+
+/**
+ * The granular sentence when the catalogue has one, the historical sentence
+ * otherwise.
+ *
+ * getT() returns the KEY ITSELF for an entry it cannot find, so a dictionary
+ * that has not caught up with a newly added detail key would print
+ * "parent.err.pwTooShort" at a parent. The five errorKey sentences have existed
+ * since Round 11 and are always present, which makes them the safe floor: this
+ * change can ship ahead of the catalogue and only lose precision, never
+ * legibility. Once all three locales carry the detail keys, this returns the
+ * detail sentence every time and costs one dictionary lookup.
+ */
+function bestMessage(t: T, detailKey: string, errorKey: string): string {
+  const detail = t(detailKey);
+  return detail === detailKey ? t(errorKey) : detail;
 }
 
 function siteUrl(): string {
@@ -85,6 +133,15 @@ export async function registerParent(
 ): Promise<AuthFormState> {
   const t = await getT();
   const password = String(formData.get("password") ?? "");
+  // Echoed back on EVERY failure return below, not just the validation ones:
+  // React resets the form after the action regardless of why it failed, so a
+  // rate-limit or duplicate-email answer blanks the name fields exactly as a
+  // validation answer does. See the AuthFormState doc comment. The password is
+  // read above and never enters this object.
+  const values = {
+    first_name: f(formData, "first_name").slice(0, NAME_MAX),
+    last_name: f(formData, "last_name").slice(0, NAME_MAX),
+  };
   // Same rules/keys/order as always (required → email → phone → password);
   // the shared validator also normalizes (names trimmed+capped, email
   // lowercased, phone trimmed) — use ITS values from here on.
@@ -95,10 +152,21 @@ export async function registerParent(
     password,
     phone: f(formData, "phone"),
   });
-  if (!check.ok) return { error: t(check.errorKey) };
-  const { displayName, email, phone } = check;
+  if (!check.ok) {
+    // `detailKey`, not `errorKey`: the web form ships with this server, so it
+    // can be told WHICH rule failed. The mobile BFF keeps returning `errorKey`
+    // raw — a shipped binary translates from its own baked-in catalogue and
+    // would print an unknown key verbatim.
+    return {
+      error: bestMessage(t, check.detailKey, check.errorKey),
+      values,
+      field: check.field,
+      passwordProblem: check.passwordProblem,
+    };
+  }
+  const { displayName, firstName, lastName, email, phone } = check;
   if (!rateLimitAllow("register", email, 5, WINDOW_15_MIN)) {
-    return { error: t("parent.err.tooMany") };
+    return { error: t("parent.err.tooMany"), values };
   }
 
   // AUTHORITATIVE duplicate check, before any account is created.
@@ -121,6 +189,7 @@ export async function registerParent(
       error: t("parent.err.emailExists"),
       code: "email_exists",
       rejectedEmail: email,
+      values,
     };
   }
 
@@ -145,9 +214,14 @@ export async function registerParent(
       ((error as { code?: string }).code === "user_already_exists" ||
         /already.*regist|already.*in use|exists/i.test(error.message))
     ) {
-      return { error: t("parent.err.emailExists"), code: "email_exists", rejectedEmail: email };
+      return {
+        error: t("parent.err.emailExists"),
+        code: "email_exists",
+        rejectedEmail: email,
+        values,
+      };
     }
-    return { error: t("parent.err.createFailed") };
+    return { error: t("parent.err.createFailed"), values };
   }
   // …and the case the branch above CANNOT catch. With "Confirm email" enabled,
   // signing up an address that already belongs to a CONFIRMED account is not an
@@ -164,7 +238,12 @@ export async function registerParent(
   // "wrong password" at the owner's request. The mitigation is the same — the
   // rate limiter above (5 attempts per address per 15 minutes).
   if (isExistingAccountSignUp(signUp)) {
-    return { error: t("parent.err.emailExists"), code: "email_exists", rejectedEmail: email };
+    return {
+      error: t("parent.err.emailExists"),
+      code: "email_exists",
+      rejectedEmail: email,
+      values,
+    };
   }
 
   // Provision the parent role/row now (service role; valid pre-confirmation).
@@ -177,17 +256,30 @@ export async function registerParent(
     await writeAuditLog(parentProfileId, "parent.register");
   }
 
-  // Persist the (already validated) phone on the profile. A failure here must
-  // NOT fail registration — the auth user exists; the phone can be backfilled.
-  // Log the error code only, never the phone value.
-  const { error: phoneError } = await admin
+  // Persist the (already validated) phone AND the structured name on the
+  // profile. A failure here must NOT fail registration — the auth user exists;
+  // all three can be backfilled. Log the error code only, never the values.
+  //
+  // first_name/last_name arrived with migration 177, which backfilled existing
+  // rows by SPLITTING display_name on the first space — best-effort, and wrong
+  // for a two-word given name. Writing both halves here is what makes every row
+  // from this point on exact: display_name stays the canonical label (the join
+  // of the two), and the parts are recorded as the parent actually typed them
+  // rather than reconstructed. The linking UI (177) identifies adults "by first
+  // name, last name and email", so the split has to be right.
+  //
+  // ONE statement, so migration 177 must be applied BEFORE this code deploys —
+  // the repo rule, and here it has teeth: against a database without the two
+  // columns PostgREST rejects the whole update, and the PHONE that used to ride
+  // in this statement alone would be dropped with it.
+  const { error: profileError } = await admin
     .from("profiles")
-    .update({ phone })
+    .update({ phone, first_name: firstName || null, last_name: lastName || null })
     .eq("auth_user_id", signUp.user.id);
-  if (phoneError) {
+  if (profileError) {
     console.error(
-      "registerParent: failed to persist profile phone",
-      phoneError.code ?? "unknown_error",
+      "registerParent: failed to persist profile phone/name",
+      profileError.code ?? "unknown_error",
     );
   }
 
@@ -422,12 +514,21 @@ export async function updatePassword(
   // predate the rule and must keep signing in.
   const weak = checkNewPassword(password);
   if (weak) {
+    // The SAME granular sentence registration gives, from the same table: a
+    // recovery flow that only says "weak" while registration names the missing
+    // capital letter is one rule explaining itself two ways. `passwordProblem`
+    // rides along so the requirements checklist under the field can mark the
+    // offending line.
     return {
-      error: t(
+      error: bestMessage(
+        t,
+        passwordDetailKey(weak),
         weak === "tooShort" || weak === "tooLong"
           ? "parent.err.password"
           : "parent.err.passwordWeak",
       ),
+      field: "password",
+      passwordProblem: weak,
     };
   }
   const supabase = await createServerSupabase();
@@ -539,9 +640,10 @@ export async function addChild(
     districtId,
     schoolId,
     cityDistrictId,
-    // Migration 169: OPTIONAL. "" (the wizard's untouched control) → null →
-    // nothing is written and the column keeps its "never asked" NULL. The
-    // string is whitelisted server-side; it is never passed through.
+    // REQUIRED since 2026-09-16 (owner). "" → null, which validateChildInfo
+    // refuses with addchild.err.genderRequired rather than creating a child
+    // nobody answered the question for. The string is whitelisted server-side;
+    // it is never passed through.
     gender: f(formData, "gender") || null,
   };
   const result = await createChild({
@@ -609,9 +711,10 @@ export async function updateChildProfile(
     schoolName: f(formData, "school_name"),
     classGrade: f(formData, "class_grade"),
     city: f(formData, "city"),
-    // Migration 169: OPTIONAL, and "" means LEAVE IT ALONE — the core never
-    // writes the column unless the parent actually chose something, so an edit
-    // to a school name can never blank an answer already on file.
+    // REQUIRED since 2026-09-16 (owner), on this path too. "" is refused by the
+    // core instead of being read as "leave it alone" — the edit form is where a
+    // legacy child (NULL, or the retired 'unspecified') finally gets answered,
+    // so a save that skipped the column would defeat the point of the change.
     gender: f(formData, "gender"),
   });
   if (!res.ok) {

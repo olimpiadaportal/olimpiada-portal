@@ -6,8 +6,25 @@
 //
 // Validation returns i18n KEYS (not localized text): the web action localizes
 // via getT(); the mobile app translates keys client-side.
+//
+// A FAILURE NOW CARRIES TWO KEYS, and the split is a WIRE CONTRACT rather than
+// a matter of taste:
+//
+//   errorKey   The HISTORICAL key, unchanged and frozen. The mobile BFF
+//              (/api/mobile/v1/auth/register) returns it RAW, and the shipped
+//              1.16.0 binary translates it against a catalogue baked into that
+//              build — a build that cannot be updated on the same clock as this
+//              server. Repurposing or deleting one of these five values makes a
+//              live app print a raw key at a parent. Add values; never move one.
+//   detailKey  ADDITIVE, and names the ONE rule that actually failed. A client
+//              that ships WITH the server (the web form) uses it to say "the
+//              password needs a capital letter" instead of "the password is
+//              weak"; a client that does not simply never reads the field.
+//
+// `field` is additive in the same way: it lets a form mark the offending input
+// instead of printing one sentence above the whole thing.
 
-import { checkNewPassword } from "@/lib/auth/passwordPolicy";
+import { checkNewPassword, type PasswordProblem } from "@/lib/auth/passwordPolicy";
 
 // R7 security: pragmatic email shape check (local@domain.tld) + hard length
 // caps so unbounded strings never reach auth/DB.
@@ -44,6 +61,50 @@ export type ParentRegistrationInput = {
   phone?: string | null;
 };
 
+/** The input a failure belongs to, so a form can mark that one field. */
+export type ParentRegistrationField =
+  | "firstName"
+  | "lastName"
+  | "email"
+  | "phone"
+  | "password";
+
+/**
+ * The precise unmet rule. Every value is either a NEW key or one of the
+ * existing keys whose sentence is already exactly this specific — nothing here
+ * repurposes an old key (see the header).
+ */
+export type ParentRegistrationDetailKey =
+  | "parent.err.firstNameRequired"
+  | "parent.err.lastNameRequired"
+  | "parent.err.email"
+  | "parent.err.phone"
+  | "parent.err.pwTooShort"
+  | "parent.err.pwTooLong"
+  | "parent.err.pwNeedsUpper"
+  | "parent.err.pwNeedsSpecial";
+
+/** One detail key per password rule. The whole point of these keys is that a
+ *  parent is told WHICH requirement they missed, not that something is wrong. */
+const PASSWORD_DETAIL: Record<PasswordProblem, ParentRegistrationDetailKey> = {
+  tooShort: "parent.err.pwTooShort",
+  tooLong: "parent.err.pwTooLong",
+  needsUpper: "parent.err.pwNeedsUpper",
+  needsSpecial: "parent.err.pwNeedsSpecial",
+};
+
+/**
+ * The detail key for a password problem, for the paths that run
+ * `checkNewPassword` on their own rather than through
+ * `validateParentRegistration` — today the password-reset action. Exported so
+ * there is ONE table: a reset that said "the password is weak" while
+ * registration said "it needs a capital letter" would be the same rule
+ * explaining itself two different ways.
+ */
+export function passwordDetailKey(problem: PasswordProblem): ParentRegistrationDetailKey {
+  return PASSWORD_DETAIL[problem];
+}
+
 export type ParentRegistrationValidation =
   | {
       ok: true;
@@ -62,12 +123,20 @@ export type ParentRegistrationValidation =
     }
   | {
       ok: false;
+      /** FROZEN wire contract — read the header before touching this union. */
       errorKey:
         | "parent.err.required"
         | "parent.err.email"
         | "parent.err.phone"
         | "parent.err.password"
         | "parent.err.passwordWeak";
+      /** Additive: which input to mark. */
+      field: ParentRegistrationField;
+      /** Additive: the single rule that was not satisfied. */
+      detailKey: ParentRegistrationDetailKey;
+      /** Additive, password failures only: the raw policy code, so a form can
+       *  highlight the matching row of its requirements checklist. */
+      passwordProblem?: PasswordProblem;
     };
 
 /**
@@ -86,9 +155,32 @@ export function validateParentRegistration(
   const email = input.email.trim().toLowerCase();
   const phone = (input.phone ?? "").trim();
   const password = input.password;
-  if (!firstName || !lastName) return { ok: false, errorKey: "parent.err.required" };
+  // ONE errorKey for both names (it is frozen), but two detail keys: the
+  // sentence behind parent.err.required is "enter your email and password",
+  // which is actively misleading when what is actually missing is a surname.
+  if (!firstName) {
+    return {
+      ok: false,
+      errorKey: "parent.err.required",
+      field: "firstName",
+      detailKey: "parent.err.firstNameRequired",
+    };
+  }
+  if (!lastName) {
+    return {
+      ok: false,
+      errorKey: "parent.err.required",
+      field: "lastName",
+      detailKey: "parent.err.lastNameRequired",
+    };
+  }
   if (!email || email.length > EMAIL_MAX || !EMAIL_RE.test(email)) {
-    return { ok: false, errorKey: "parent.err.email" };
+    return {
+      ok: false,
+      errorKey: "parent.err.email",
+      field: "email",
+      detailKey: "parent.err.email",
+    };
   }
   // OPTIONAL phone (Apple 5.1.1(v)) — a blank field is ACCEPTED and becomes
   // NULL below. A phone that is PRESENT is still validated BEFORE any auth user
@@ -96,7 +188,12 @@ export function validateParentRegistration(
   // composition is never trusted, and a malformed string would be refused by
   // chk_profiles_phone_e164 at write time anyway.
   if (phone && (phone.length > PHONE_MAX || !PHONE_RE.test(phone))) {
-    return { ok: false, errorKey: "parent.err.phone" };
+    return {
+      ok: false,
+      errorKey: "parent.err.phone",
+      field: "phone",
+      detailKey: "parent.err.phone",
+    };
   }
   // Strength lives in lib/auth/passwordPolicy — the same module the mobile BFF
   // register route reaches through this function, so client and server can
@@ -112,6 +209,9 @@ export function validateParentRegistration(
         weak === "tooShort" || weak === "tooLong"
           ? "parent.err.password"
           : "parent.err.passwordWeak",
+      field: "password",
+      detailKey: PASSWORD_DETAIL[weak],
+      passwordProblem: weak,
     };
   }
   // `phone || null` — NOT `phone`. Both call sites write this value straight

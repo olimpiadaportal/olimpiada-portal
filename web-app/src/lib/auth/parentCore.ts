@@ -16,7 +16,7 @@ import { isUuid } from "@/lib/uuid";
 import { writeAuditLog } from "@/lib/audit";
 import { CHILD_AVATAR_BUCKET } from "@/lib/childAvatar";
 import { AVATAR_BUCKET } from "@/lib/auth/avatarCore";
-import { parseStudentGender } from "@/lib/studentGender";
+import { parseStudentGender, parseStudentGenderRequired } from "@/lib/studentGender";
 
 // Internal identifiers (child_unique_id, profile/DB ids) are NEVER editable
 // here — only the human-facing info a parent may correct.
@@ -54,17 +54,38 @@ export async function updateChildProfileCore(params: {
   classGrade: string;
   city: string;
   /**
-   * Migration 169 — the OPTIONAL gender, for aggregate reporting only.
+   * REQUIRED since 2026-09-16 (owner) — Qız or Oğlan, for aggregate reporting
+   * only.
    *
-   * OMITTED OR BLANK MEANS "LEAVE THE COLUMN ALONE", which is the whole point
-   * of it being optional here. A surface that does not send the field (and a
-   * parent who never touched the control) must not be able to blank an answer
-   * that was already given — and there is deliberately no way to put the column
-   * back to NULL, because NULL means "never asked" and this parent HAS been
-   * asked. A parent withdrawing an answer picks "prefer not to say"
-   * ('unspecified'), which is a different fact and stays tellable apart.
+   * IT USED TO BE OPTIONAL HERE, AND "OMITTED" MEANT "LEAVE THE COLUMN ALONE".
+   * That was right for a field a parent could walk past: a surface that did not
+   * send it — the mobile BFF, an older bundle — must not be able to blank an
+   * answer given last month by saving a corrected school name. The rule has
+   * changed, so the protection has to be provided the other way round: the
+   * field is refused when it is missing instead of being silently skipped, and
+   * a save that gets this far writes it UNCONDITIONALLY.
+   *
+   * NOT OPTIONAL IN THE TYPE either, for the same reason as ChildInfo.gender: a
+   * caller that forgets the field should stop compiling rather than quietly
+   * post an edit that cannot succeed.
+   *
+   * THE LEGACY ROWS ARE THE POINT. A child whose column is NULL ("never asked")
+   * or 'unspecified' ("asked, declined") can still be edited — by ANSWERING.
+   * The column stays nullable because there is no honest backfill for a minor's
+   * personal data, so those 51 rows are filled by a parent or not at all.
    */
-  gender?: string | null;
+  gender: string | null;
+  /**
+   * Accept an edit that carries NO gender. Set by the mobile BFF only.
+   *
+   * An app already installed on a parent's phone cannot be made to ask a
+   * question its build has no control for, and this rule reaches mobile as an
+   * over-the-air update that applies on the next launch. Refusing in the gap
+   * would not make anyone answer - it would stop a parent fixing a typo in
+   * their child's school name. Web surfaces never set it: they are served fresh
+   * and can always comply.
+   */
+  genderOptional?: boolean;
 }): Promise<UpdateChildProfileCoreResult> {
   const { parentProfileId, studentProfileId } = params;
   if (!isUuid(studentProfileId)) return { ok: false, errorKey: "childedit.err.generic" };
@@ -92,24 +113,43 @@ export async function updateChildProfileCore(params: {
   const city = params.city.trim().slice(0, CITY_MAX) || null;
 
   // Same server-side validation the create flow uses (names present + capped,
-  // city/school/grade ids UUID-shaped, rayon UUID-shaped when given, gender —
-  // when sent at all — one of the three enum values). Returns i18n keys the UI
+  // city/school/grade ids UUID-shaped, rayon UUID-shaped when given, gender
+  // present and one of the two collectable answers). Returns i18n keys the UI
   // localizes.
-  const check = validateChildInfo({
-    firstName,
-    lastName,
-    districtId,
-    cityDistrictId,
-    schoolId,
-    gradeId,
-    gender: params.gender,
-  });
+  const check = validateChildInfo(
+    {
+      firstName,
+      lastName,
+      districtId,
+      cityDistrictId,
+      schoolId,
+      gradeId,
+      gender: params.gender,
+    },
+    // Only the mobile BFF sets this, and only because an installed bundle
+    // cannot be made to ask a question it does not have a control for.
+    { genderOptional: params.genderOptional },
+  );
   if (!check.ok) return { ok: false, validationErrors: check.errors };
 
   // Parsed a second time for the WRITE (the call above only judged it). Cheap,
   // pure, and it keeps one whitelist rather than a validator and a separate
   // cast that could drift apart.
-  const gender = parseStudentGender(params.gender);
+  //
+  // THE REFUSAL IS REPEATED RATHER THAN ASSUMED. validateChildInfo has already
+  // rejected an absent gender, so this branch is unreachable today — but the
+  // alternative is a non-null assertion, and the whole reason this function is
+  // being edited is that an earlier version of it could drop the column while
+  // reporting success. A parser whose success type cannot be null, plus a
+  // refusal on the impossible path, is what makes the write below safe to
+  // spread unconditionally.
+  // The exemption has to be honoured HERE TOO. Reading it only in the validator
+  // would let a mobile edit pass judgement and then fail at the writer one line
+  // later - the same request answered twice, differently.
+  const gender = params.genderOptional
+    ? parseStudentGender(params.gender)
+    : parseStudentGenderRequired(params.gender);
+  if (!gender.ok) return { ok: false, validationErrors: [gender.errorKey] };
 
   // Round 21: mirror the create RPC's requiredness rule — the rayon is
   // MANDATORY whenever the chosen city has active rayons. The client can't be
@@ -142,11 +182,17 @@ export async function updateChildProfileCore(params: {
       city,
       school_name: schoolName,
       class_grade: classGrade,
-      // Migration 169: PRESENT ONLY WHEN THE PARENT ANSWERED. Spreading an
-      // absent value in as `gender: null` would overwrite a stored answer on
-      // every unrelated save — a school correction quietly erasing the field
-      // is exactly the bug the "absent ≠ NULL" rule exists to prevent.
-      ...(gender.ok && gender.value ? { gender: gender.value } : {}),
+      // ALWAYS WRITTEN (owner, 2026-09-16). This used to be a conditional
+      // spread — `...(gender.ok && gender.value ? { gender } : {})` — which was
+      // correct while the field was optional and is exactly wrong now: a form
+      // that requires an answer, feeding a patch that can silently omit it,
+      // reports a save the database never made. The value is non-null by
+      // construction (parseStudentGenderRequired), so there is nothing left to
+      // condition on.
+      // Unconditional when a value exists. When the mobile exemption applied and
+    // the parent sent nothing, OMIT the column instead of writing null - an
+    // absent answer must never erase one already recorded.
+    ...(gender.value === null ? {} : { gender: gender.value }),
     })
     .eq("profile_id", studentProfileId);
   if (error) {

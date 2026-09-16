@@ -11,12 +11,13 @@
 // the parent↔child link in-body); multiple children get the Avatar chip picker.
 import React, { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { AppText } from "@/components/AppText";
 import { ChildAvatar } from "@/components/ChildAvatar";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { HeaderHomeButton } from "@/components/HeaderHomeButton";
 import { SectionHeader } from "@/components/SectionHeader";
 import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -239,9 +240,32 @@ export default function ParentLeaderboard() {
     childId ? posQ : null,
   ]);
 
+  // Declared ONCE and rendered by EVERY return below. Holding this inside a
+  // single return is how the gate branch ended up with a hidden tab bar and no
+  // way Home: a screen with more than one exit has to carry its header on all
+  // of them, and a file-level grep for <HeaderHomeButton cannot tell one branch
+  // from five.
+  const homeHeader = (
+    <Stack.Screen
+      options={{
+        headerRight: () => (
+          <HeaderHomeButton
+            href="/(parent)/(tabs)/home"
+            icon="home"
+            label={t("nav.home")}
+            color={tokens.accent}
+            background={tokens.chipBg}
+            borderColor={tokens.border}
+          />
+        ),
+      }}
+    />
+  );
+
   if (config.data && !leaderboardOn) {
     return (
       <ScreenScroll>
+        {homeHeader}
         <GateNotice title={t("lb.title")} body={t("gate.leaderboardOff")} />
       </ScreenScroll>
     );
@@ -277,281 +301,286 @@ export default function ParentLeaderboard() {
     : "";
 
   return (
-    <ScreenScroll refreshing={refreshing} onRefresh={onRefresh}>
-      {/* Board switch: Percent | Streak (wraps at 320pt with long ru labels) */}
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-        <Chip
-          label={t("lb.board.percent")}
-          active={board === "percent"}
-          onPress={() => setBoard("percent")}
-        />
-        <Chip
-          label={`\u{1F525} ${t("lb.board.streak")}`}
-          active={board === "streak"}
-          onPress={() => setBoard("streak")}
-        />
-      </View>
-
-      {board === "percent" ? (
-        <>
-          {/* Scope chips — catalog-driven (parents see every scope). */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            accessibilityLabel={t("lb.scope.global")}
-            contentContainerStyle={{ gap: spacing.sm, paddingVertical: spacing.xs }}
-          >
-            {scopeTabs.map((s) => (
-              <Chip
-                key={s}
-                label={t(`lb.scope.${s}`)}
-                active={scope === s}
-                onPress={() => setScopeSel(s)}
-              />
-            ))}
-          </ScrollView>
-
-          {/* Per-scope pickers — options come straight from the catalogs. */}
-          {scope === "subject" && activeSubjects.length > 0 ? (
-            <SelectField
-              label={t("lb.subjectLabel")}
-              value={subjectId ?? ""}
-              options={activeSubjects.map((s) => ({
-                id: s.id,
-                label: s.label,
-              }))}
-              onChange={(id) => setSubjectSel(id)}
-              placeholder={t("lb.subjectLabel")}
-            />
-          ) : null}
-
-          {scope === "grade" && grades.length > 0 ? (
-            <SelectField
-              label={t("lb.colGrade")}
-              value={gradeId ?? ""}
-              options={grades.map((g) => ({
-                id: g.id,
-                label: formatGradeLabel(g.level, locale, g.name),
-              }))}
-              onChange={(id) => setGradeSel(id)}
-              placeholder={t("lb.colGrade")}
-            />
-          ) : null}
-
-          {(scope === "city" || scope === "district" || scope === "school") &&
-          cities.length > 0 ? (
-            <View style={{ gap: spacing.md }}>
-              <SelectField
-                label={t("lb.colCity")}
-                value={cityId ?? ""}
-                options={cities.map((c) => ({ id: c.id, label: c.name }))}
-                onChange={(id) => {
-                  setCitySel(id);
-                  // Switching city drops the dependent rayon/school so they
-                  // re-clamp to the new city's catalog (web cascade parity).
-                  setDistrictSel(null);
-                  setSchoolSel(null);
-                }}
-                placeholder={t("lb.colCity")}
-              />
-              {scope === "district" && cityRayons.length > 0 ? (
-                <SelectField
-                  label={t("lb.colDistrict")}
-                  value={districtId ?? ""}
-                  options={cityRayons.map((d) => ({ id: d.id, label: d.name }))}
-                  onChange={(id) => setDistrictSel(id)}
-                  placeholder={t("lb.colDistrict")}
-                />
-              ) : null}
-              {scope === "school" && citySchools.length > 0 ? (
-                <SelectField
-                  label={t("lb.colSchool")}
-                  value={schoolId ?? ""}
-                  options={citySchools.map((s) => ({ id: s.id, label: s.name }))}
-                  onChange={(id) => setSchoolSel(id)}
-                  placeholder={t("lb.colSchool")}
-                />
-              ) : null}
-            </View>
-          ) : null}
-
-          {/* Period toggle: This month | All time (wraps instead of overflowing) */}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-            <Chip
-              label={t("lb.period.month")}
-              active={periodUrl === "month"}
-              onPress={() => setPeriodUrl("month")}
-            />
-            <Chip
-              label={t("lb.period.all")}
-              active={periodUrl === "all"}
-              onPress={() => setPeriodUrl("all")}
-            />
-          </View>
-        </>
-      ) : null}
-
-      {/* Top-50 board — numeric ranks only (web Round-20: medals removed). */}
-      {boardLoading ? (
-        <View style={{ gap: spacing.md }}>
-          <Skeleton height={52} />
-          <Skeleton height={52} />
-          <Skeleton height={52} />
-          <Skeleton height={52} />
+    <>
+      {/* Merged into the options the (parent) Stack already declares for this
+          route, so the layout's back chevron and title are untouched. */}
+      {homeHeader}
+      <ScreenScroll refreshing={refreshing} onRefresh={onRefresh}>
+        {/* Board switch: Percent | Streak (wraps at 320pt with long ru labels) */}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+          <Chip
+            label={t("lb.board.percent")}
+            active={board === "percent"}
+            onPress={() => setBoard("percent")}
+          />
+          <Chip
+            label={`\u{1F525} ${t("lb.board.streak")}`}
+            active={board === "streak"}
+            onPress={() => setBoard("streak")}
+          />
         </View>
-      ) : listQ.isError ? (
-        <ErrorRetry
-          message={t("mob.boot.error")}
-          retryLabel={t("mob.retry")}
-          onRetry={onRefresh}
-        />
-      ) : rows.length === 0 ? (
-        <Card>
-          <EmptyState title={t("plb.board.empty")} />
-        </Card>
-      ) : (
-        <>
-          <Card style={{ padding: spacing.sm, gap: 0 }}>
-            <BoardRowList
-              rows={rows}
-              board={board}
-              t={t}
-              locale={locale}
-              colors={{
-                ink: tokens.text,
-                muted: tokens.muted,
-                line: tokens.border,
-                selfBg: tokens.chipBg,
-                highlight: tokens.accent,
-              }}
+
+        {board === "percent" ? (
+          <>
+            {/* Scope chips — catalog-driven (parents see every scope). */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              accessibilityLabel={t("lb.scope.global")}
+              contentContainerStyle={{ gap: spacing.sm, paddingVertical: spacing.xs }}
+            >
+              {scopeTabs.map((s) => (
+                <Chip
+                  key={s}
+                  label={t(`lb.scope.${s}`)}
+                  active={scope === s}
+                  onPress={() => setScopeSel(s)}
+                />
+              ))}
+            </ScrollView>
+
+            {/* Per-scope pickers — options come straight from the catalogs. */}
+            {scope === "subject" && activeSubjects.length > 0 ? (
+              <SelectField
+                label={t("lb.subjectLabel")}
+                value={subjectId ?? ""}
+                options={activeSubjects.map((s) => ({
+                  id: s.id,
+                  label: s.label,
+                }))}
+                onChange={(id) => setSubjectSel(id)}
+                placeholder={t("lb.subjectLabel")}
+              />
+            ) : null}
+
+            {scope === "grade" && grades.length > 0 ? (
+              <SelectField
+                label={t("lb.colGrade")}
+                value={gradeId ?? ""}
+                options={grades.map((g) => ({
+                  id: g.id,
+                  label: formatGradeLabel(g.level, locale, g.name),
+                }))}
+                onChange={(id) => setGradeSel(id)}
+                placeholder={t("lb.colGrade")}
+              />
+            ) : null}
+
+            {(scope === "city" || scope === "district" || scope === "school") &&
+            cities.length > 0 ? (
+              <View style={{ gap: spacing.md }}>
+                <SelectField
+                  label={t("lb.colCity")}
+                  value={cityId ?? ""}
+                  options={cities.map((c) => ({ id: c.id, label: c.name }))}
+                  onChange={(id) => {
+                    setCitySel(id);
+                    // Switching city drops the dependent rayon/school so they
+                    // re-clamp to the new city's catalog (web cascade parity).
+                    setDistrictSel(null);
+                    setSchoolSel(null);
+                  }}
+                  placeholder={t("lb.colCity")}
+                />
+                {scope === "district" && cityRayons.length > 0 ? (
+                  <SelectField
+                    label={t("lb.colDistrict")}
+                    value={districtId ?? ""}
+                    options={cityRayons.map((d) => ({ id: d.id, label: d.name }))}
+                    onChange={(id) => setDistrictSel(id)}
+                    placeholder={t("lb.colDistrict")}
+                  />
+                ) : null}
+                {scope === "school" && citySchools.length > 0 ? (
+                  <SelectField
+                    label={t("lb.colSchool")}
+                    value={schoolId ?? ""}
+                    options={citySchools.map((s) => ({ id: s.id, label: s.name }))}
+                    onChange={(id) => setSchoolSel(id)}
+                    placeholder={t("lb.colSchool")}
+                  />
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* Period toggle: This month | All time (wraps instead of overflowing) */}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+              <Chip
+                label={t("lb.period.month")}
+                active={periodUrl === "month"}
+                onPress={() => setPeriodUrl("month")}
+              />
+              <Chip
+                label={t("lb.period.all")}
+                active={periodUrl === "all"}
+                onPress={() => setPeriodUrl("all")}
+              />
+            </View>
+          </>
+        ) : null}
+
+        {/* Top-50 board — numeric ranks only (web Round-20: medals removed). */}
+        {boardLoading ? (
+          <View style={{ gap: spacing.md }}>
+            <Skeleton height={52} />
+            <Skeleton height={52} />
+            <Skeleton height={52} />
+            <Skeleton height={52} />
+          </View>
+        ) : listQ.isError ? (
+          <ErrorRetry
+            message={t("mob.boot.error")}
+            retryLabel={t("mob.retry")}
+            onRetry={onRefresh}
+          />
+        ) : rows.length === 0 ? (
+          <Card>
+            <EmptyState title={t("plb.board.empty")} />
+          </Card>
+        ) : (
+          <>
+            <Card style={{ padding: spacing.sm, gap: 0 }}>
+              <BoardRowList
+                rows={rows}
+                board={board}
+                t={t}
+                locale={locale}
+                colors={{
+                  ink: tokens.text,
+                  muted: tokens.muted,
+                  line: tokens.border,
+                  selfBg: tokens.chipBg,
+                  highlight: tokens.accent,
+                }}
+              />
+            </Card>
+            {/* Provisional legend — thresholds arrive on the child-position
+                payload (the only rank RPC this screen calls). */}
+            {board === "percent" && pos && rows.some((r) => r.is_provisional) ? (
+              <AppText variant="muted" style={{ fontSize: 12 }}>
+                {t("lb.provisionalHint").replace("{n}", String(pos.min_attempts))}
+              </AppText>
+            ) : null}
+          </>
+        )}
+
+        {/* "Övladlarınızın mövqeyi" — the selected child under the CURRENT
+            filters; the chip picker appears once the family has 2+ children. */}
+        <SectionHeader title={t("plb.pos.title")} />
+        {childrenQ.isPending ? (
+          <Skeleton height={72} />
+        ) : childrenQ.isError ? (
+          <ErrorRetry
+            message={t("mob.boot.error")}
+            retryLabel={t("mob.retry")}
+            onRetry={() => void childrenQ.refetch()}
+          />
+        ) : kids.length === 0 ? (
+          <Card style={{ gap: spacing.md }}>
+            <AppText variant="muted">{t("plb.pos.noChildren")}</AppText>
+            <Button
+              title={t("parent.dash.addChild")}
+              variant="ghost"
+              onPress={() => router.push("/(parent)/add-child")}
             />
           </Card>
-          {/* Provisional legend — thresholds arrive on the child-position
-              payload (the only rank RPC this screen calls). */}
-          {board === "percent" && pos && rows.some((r) => r.is_provisional) ? (
-            <AppText variant="muted" style={{ fontSize: 12 }}>
-              {t("lb.provisionalHint").replace("{n}", String(pos.min_attempts))}
-            </AppText>
-          ) : null}
-        </>
-      )}
-
-      {/* "Övladlarınızın mövqeyi" — the selected child under the CURRENT
-          filters; the chip picker appears once the family has 2+ children. */}
-      <SectionHeader title={t("plb.pos.title")} />
-      {childrenQ.isPending ? (
-        <Skeleton height={72} />
-      ) : childrenQ.isError ? (
-        <ErrorRetry
-          message={t("mob.boot.error")}
-          retryLabel={t("mob.retry")}
-          onRetry={() => void childrenQ.refetch()}
-        />
-      ) : kids.length === 0 ? (
-        <Card style={{ gap: spacing.md }}>
-          <AppText variant="muted">{t("plb.pos.noChildren")}</AppText>
-          <Button
-            title={t("parent.dash.addChild")}
-            variant="ghost"
-            onPress={() => router.push("/(parent)/add-child")}
-          />
-        </Card>
-      ) : (
-        <View style={{ gap: spacing.sm }}>
-          {kids.length > 1 ? (
-            <ChildChips
-              childrenList={kids}
-              selectedId={childId}
-              onSelect={setChildSel}
-              accessibilityLabel={t("ana.childLabel")}
-            />
-          ) : null}
-          {selectedChild ? (
-            <Card
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: spacing.md,
-                // `wrap` + the status text's flexBasis "100%" below. Without it
-                // the identity column (flex: 1 → flexBasis 0) laid out at ~0pt
-                // in the not-in-filter branch: Yoga distributes NEGATIVE free
-                // space by (flexShrink × flexBasis), and a 37–40 char status
-                // string measures ~230pt against a 254pt card, so the column's
-                // basis-0 shrink weight left it with nothing to grow into.
-                flexWrap: "wrap",
-              }}
-            >
-              {/* THE PARENT'S OWN CHILD, on a summary card — not a board row.
-                  Storage RLS already permits a linked parent to sign this
-                  object (can_access_child_avatar), and parent Home renders the
-                  same child the same way; this card was simply left on the
-                  initials bubble. Fixed 2026-09-02.
-
-                  THE BOARD ROWS BELOW STAY ON INITIALS AND MUST. They list
-                  OTHER people's children beside real names, school, district
-                  and grade, get_leaderboard ships no avatar column at all, and
-                  a peer has no storage read access to those photos. See the
-                  header of components/ChildAvatar.tsx. */}
-              <ChildAvatar
-                row={selectedChild}
-                name={childDisplayName(selectedChild)}
-                seed={selectedChild.profile_id}
-                size={40}
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {kids.length > 1 ? (
+              <ChildChips
+                childrenList={kids}
+                selectedId={childId}
+                onSelect={setChildSel}
+                accessibilityLabel={t("ana.childLabel")}
               />
-              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                <AppText variant="label" numberOfLines={2}>
-                  {childDisplayName(selectedChild)}
-                </AppText>
-                {/* grade · SCHOOL — unbounded DB text on a single summary card
-                    (not a list row), so it wraps fully and the card grows. */}
-                <AppText variant="muted" style={{ fontSize: 12 }}>
-                  {childMeta || "—"}
-                </AppText>
-              </View>
-              {!scopeUsable ||
-              (!posQ.isPending && (!pos || (pos.rank === null && !pos.is_provisional))) ? (
-                // flexBasis "100%" makes this a full-width flex item, so with
-                // the row's `flexWrap` it ALWAYS drops onto its own line under
-                // the identity block instead of competing with it for width.
-                // At 320pt it then has the card's full 254pt (one line for both
-                // az and ru) and the identity column keeps ~202pt to wrap the
-                // school name into. Relative, so it holds at every width.
-                <AppText
-                  variant="muted"
-                  style={{ flexBasis: "100%", flexShrink: 1, textAlign: "right", fontSize: 12 }}
-                >
-                  {t("plb.pos.notInFilter")}
-                </AppText>
-              ) : posQ.isPending ? (
-                <Skeleton height={32} width="25%" />
-              ) : (
-                <View style={{ alignItems: "flex-end", gap: 2 }}>
-                  {pos!.rank !== null ? (
-                    <AppText variant="mono" color={tokens.accent} style={{ fontWeight: "700" }}>
-                      #{pos!.rank}{" "}
-                      <AppText variant="mono" color={tokens.muted} style={{ fontSize: 12 }}>
-                        / {pos!.total}
-                      </AppText>
-                    </AppText>
-                  ) : (
-                    <AppText variant="muted" style={{ fontSize: 12 }}>
-                      {t("plb.provisionalShort")}
-                    </AppText>
-                  )}
+            ) : null}
+            {selectedChild ? (
+              <Card
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: spacing.md,
+                  // `wrap` + the status text's flexBasis "100%" below. Without it
+                  // the identity column (flex: 1 → flexBasis 0) laid out at ~0pt
+                  // in the not-in-filter branch: Yoga distributes NEGATIVE free
+                  // space by (flexShrink × flexBasis), and a 37–40 char status
+                  // string measures ~230pt against a 254pt card, so the column's
+                  // basis-0 shrink weight left it with nothing to grow into.
+                  flexWrap: "wrap",
+                }}
+              >
+                {/* THE PARENT'S OWN CHILD, on a summary card — not a board row.
+                    Storage RLS already permits a linked parent to sign this
+                    object (can_access_child_avatar), and parent Home renders the
+                    same child the same way; this card was simply left on the
+                    initials bubble. Fixed 2026-09-02.
+
+                    THE BOARD ROWS BELOW STAY ON INITIALS AND MUST. They list
+                    OTHER people's children beside real names, school, district
+                    and grade, get_leaderboard ships no avatar column at all, and
+                    a peer has no storage read access to those photos. See the
+                    header of components/ChildAvatar.tsx. */}
+                <ChildAvatar
+                  row={selectedChild}
+                  name={childDisplayName(selectedChild)}
+                  seed={selectedChild.profile_id}
+                  size={40}
+                />
+                <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                  <AppText variant="label" numberOfLines={2}>
+                    {childDisplayName(selectedChild)}
+                  </AppText>
+                  {/* grade · SCHOOL — unbounded DB text on a single summary card
+                      (not a list row), so it wraps fully and the card grows. */}
                   <AppText variant="muted" style={{ fontSize: 12 }}>
-                    {lbFormatValue(board, pos!.value, t, locale)}
+                    {childMeta || "—"}
                   </AppText>
                 </View>
-              )}
-            </Card>
-          ) : null}
-          {selectedChild && !posQ.isPending && pos?.is_provisional && scopeUsable ? (
-            <AppText variant="muted" style={{ fontSize: 12 }}>
-              {t("lb.provisionalHint").replace("{n}", String(pos.min_attempts))}
-            </AppText>
-          ) : null}
-        </View>
-      )}
-    </ScreenScroll>
+                {!scopeUsable ||
+                (!posQ.isPending && (!pos || (pos.rank === null && !pos.is_provisional))) ? (
+                  // flexBasis "100%" makes this a full-width flex item, so with
+                  // the row's `flexWrap` it ALWAYS drops onto its own line under
+                  // the identity block instead of competing with it for width.
+                  // At 320pt it then has the card's full 254pt (one line for both
+                  // az and ru) and the identity column keeps ~202pt to wrap the
+                  // school name into. Relative, so it holds at every width.
+                  <AppText
+                    variant="muted"
+                    style={{ flexBasis: "100%", flexShrink: 1, textAlign: "right", fontSize: 12 }}
+                  >
+                    {t("plb.pos.notInFilter")}
+                  </AppText>
+                ) : posQ.isPending ? (
+                  <Skeleton height={32} width="25%" />
+                ) : (
+                  <View style={{ alignItems: "flex-end", gap: 2 }}>
+                    {pos!.rank !== null ? (
+                      <AppText variant="mono" color={tokens.accent} style={{ fontWeight: "700" }}>
+                        #{pos!.rank}{" "}
+                        <AppText variant="mono" color={tokens.muted} style={{ fontSize: 12 }}>
+                          / {pos!.total}
+                        </AppText>
+                      </AppText>
+                    ) : (
+                      <AppText variant="muted" style={{ fontSize: 12 }}>
+                        {t("plb.provisionalShort")}
+                      </AppText>
+                    )}
+                    <AppText variant="muted" style={{ fontSize: 12 }}>
+                      {lbFormatValue(board, pos!.value, t, locale)}
+                    </AppText>
+                  </View>
+                )}
+              </Card>
+            ) : null}
+            {selectedChild && !posQ.isPending && pos?.is_provisional && scopeUsable ? (
+              <AppText variant="muted" style={{ fontSize: 12 }}>
+                {t("lb.provisionalHint").replace("{n}", String(pos.min_attempts))}
+              </AppText>
+            ) : null}
+          </View>
+        )}
+      </ScreenScroll>
+    </>
   );
 }

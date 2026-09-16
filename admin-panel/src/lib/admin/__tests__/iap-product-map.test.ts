@@ -8,8 +8,14 @@
 // it fails in the store, for every family who taps Buy, and we find out from a
 // second rejection. Every property below is one that no click-through can show:
 // the guard before the first client field is read, the refusals that must
-// happen BEFORE a write, the platform value that must never come from a form,
-// and the fact that turning money on leaves a trail.
+// happen BEFORE a write, and the fact that turning money on leaves a trail.
+//
+// THE READ-ONLY PASS (owner, 2026-09-16) added a second job. The screen is now
+// a MIRROR — our rows beside what App Store Connect reports — and the property
+// that matters most about a mirror is that it never invents agreement: an
+// unreachable Apple must produce "not read", never "matches". The create path
+// is gone, and its absence is asserted rather than assumed, because a create
+// form here changed nothing at Apple while minting permanent, unsellable ids.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -73,22 +79,19 @@ let updateResult: { data: unknown; error: { code?: string; message?: string } | 
   data: [{ id: PRODUCT }],
   error: null,
 };
-let insertError: { code?: string; message?: string } | null = null;
 const listData: Record<string, unknown[]> = {};
 
+// No insert() here on purpose: the module has no create path any more, and a
+// stub that quietly accepted one would let a reintroduced insert pass this
+// suite. An unstubbed call throws, which is the report we want.
 function builder(table: string) {
-  let mode: "select" | "insert" | "update" = "select";
+  let mode: "select" | "update" = "select";
   const b: Record<string, unknown> = {};
   Object.assign(b, {
     select: () => b,
     eq: () => b,
     in: () => b,
     order: () => b,
-    insert: (payload: Record<string, unknown>) => {
-      mode = "insert";
-      ops.push({ table, op: "insert", payload });
-      return b;
-    },
     update: (payload: Record<string, unknown>) => {
       mode = "update";
       ops.push({ table, op: "update", payload });
@@ -101,13 +104,10 @@ function builder(table: string) {
       if (table === "grades") return { data: gradeRow, error: null };
       return { data: null, error: null };
     },
-    // Awaited directly: `await …update().eq().select()`, `await …insert()`,
+    // Awaited directly: `await …update().eq().select()` and
     // `await …select().order()`.
     then(res: (v: { data: unknown; error: unknown }) => unknown) {
       if (mode === "update") return Promise.resolve(res(updateResult));
-      if (mode === "insert") {
-        return Promise.resolve(res({ data: null, error: insertError }));
-      }
       return Promise.resolve(res({ data: listData[table] ?? [], error: null }));
     },
   });
@@ -133,13 +133,39 @@ let storePreflight: { ok: boolean; problem?: string; state?: string } = {
   state: "APPROVED",
 };
 const storeChecks: string[] = [];
-vi.mock("@/lib/admin/appStoreConnect", () => ({
-  preflightStoreProduct: async (productId: string) => {
-    storeChecks.push(productId);
-    return storePreflight;
-  },
-  isAppStoreConnectConfigured: () => true,
-}));
+
+/** What App Store Connect "reports" for the mirror. Reset in beforeEach. */
+const STORE_FETCHED_AT = "2026-09-16T08:00:00.000Z";
+type StoreStub =
+  | {
+      ok: true;
+      products: { productId: string; state: string; name: string | null }[];
+      fetchedAt: string;
+    }
+  | { ok: false; problem: string; fetchedAt: string };
+let storeCatalogue: StoreStub = {
+  ok: true,
+  products: [],
+  fetchedAt: STORE_FETCHED_AT,
+};
+
+vi.mock("@/lib/admin/appStoreConnect", async (importOriginal) => {
+  // Only the two NETWORK reads are stubbed. storeStateLabelKey and
+  // storeStateVerdict are pure lookup tables and they are exactly what the
+  // mirror renders, so they run for real — a stub of those would let the two
+  // halves agree in a test and disagree in the console.
+  const actual =
+    await importOriginal<typeof import("@/lib/admin/appStoreConnect")>();
+  return {
+    ...actual,
+    preflightStoreProduct: async (productId: string) => {
+      storeChecks.push(productId);
+      return storePreflight;
+    },
+    fetchStoreCatalogue: async () => storeCatalogue,
+    isAppStoreConnectConfigured: () => true,
+  };
+});
 
 /** FormData that records the order in which the action reads its fields. */
 class SpyFormData extends FormData {
@@ -155,11 +181,7 @@ function form(fields: Record<string, string>): FormData {
   return fd;
 }
 
-import {
-  createIapProduct,
-  listIapCatalogue,
-  setIapProductActive,
-} from "../iap";
+import { listIapCatalogue, setIapProductActive } from "../iap";
 
 const SUBJECT_PRODUCT = {
   id: PRODUCT,
@@ -179,13 +201,13 @@ beforeEach(() => {
   ops.length = 0;
   storeChecks.length = 0;
   storePreflight = { ok: true, state: "APPROVED" };
+  storeCatalogue = { ok: true, products: [], fetchedAt: STORE_FETCHED_AT };
   productRow = { ...SUBJECT_PRODUCT };
   productReadError = null;
   subjectRow = { id: SUBJECT, status: "active" };
   packageRow = { id: PACKAGE, status: "active" };
   gradeRow = null;
   updateResult = { data: [{ id: PRODUCT }], error: null };
-  insertError = null;
   for (const k of Object.keys(listData)) delete listData[k];
   vi.clearAllMocks();
 });
@@ -194,19 +216,6 @@ beforeEach(() => {
 describe("authorization", () => {
   it("setIapProductActive guards before reading any client field", async () => {
     await setIapProductActive(null, form({ __id: PRODUCT, __active: "true" }));
-    expect(order[0]).toBe("guard");
-    expect(order.filter((o) => o.startsWith("read:")).length).toBeGreaterThan(0);
-  });
-
-  it("createIapProduct guards before reading any client field", async () => {
-    await createIapProduct(
-      null,
-      form({
-        __scope: "olympiad_package",
-        __target: PACKAGE,
-        __slug: "citymath",
-      }),
-    );
     expect(order[0]).toBe("guard");
     expect(order.filter((o) => o.startsWith("read:")).length).toBeGreaterThan(0);
   });
@@ -399,43 +408,13 @@ describe("Android purchase-silence is structural, not a UI convention", () => {
     resolve(process.cwd(), "src/lib/admin/iap.ts"),
     "utf8",
   );
-  const FORM_SRC = readFileSync(
-    resolve(process.cwd(), "src/app/(protected)/iap/IapCreateForm.tsx"),
-    "utf8",
-  );
-
-  it("createIapProduct writes platform 'ios' even when the form claims android", async () => {
-    // A hand-crafted POST is the real threat model here: the form has no
-    // platform field, so a value can only arrive from outside the screen.
-    await createIapProduct(
-      null,
-      form({
-        __scope: "olympiad_package",
-        __target: PACKAGE,
-        __slug: "citymath",
-        __platform: "android",
-        platform: "google_play",
-      }),
-    );
-    const insert = ops.find((o) => o.op === "insert");
-    expect(insert?.table).toBe("iap_products");
-    expect(insert?.payload?.platform).toBe("ios");
-  });
 
   it("never reads a platform out of the submitted form", () => {
     expect(ACTION_SRC).not.toMatch(/formData\.get\(\s*["'][^"']*platform/i);
     expect(ACTION_SRC).toContain('const IOS_PLATFORM = "ios"');
   });
 
-  it("the create form offers no platform control at all", () => {
-    expect(FORM_SRC).not.toMatch(/name=["']__platform["']/);
-    expect(FORM_SRC.toLowerCase()).not.toContain("google_play");
-    // "android" may appear only inside the comment explaining why it must not
-    // be offered — never as a value in a control.
-    expect(FORM_SRC).not.toMatch(/value=["']android["']/);
-  });
-
-  it("cannot activate a non-ios row even if one somehow exists", async () => {
+  it("cannot offer a non-ios row even if one somehow exists", async () => {
     productRow = { ...SUBJECT_PRODUCT, platform: "android" };
     const res = await setIapProductActive(
       null,
@@ -447,120 +426,199 @@ describe("Android purchase-silence is structural, not a UI convention", () => {
 });
 
 // ===========================================================================
-describe("the permanent product id is composed by the server", () => {
-  it("ignores any product_id the client sends and builds it from the slug", async () => {
-    await createIapProduct(
-      null,
-      form({
-        __scope: "subject",
-        __target: SUBJECT,
-        __slug: "physics",
-        __interval: "year",
-        __product_id: "ai.olympiq.app.sub.evil.month",
-        product_id: "whatever",
-      }),
+describe("the screen is read-only apart from the one switch", () => {
+  // The owner's reasoning, pinned: creating a product here never created one at
+  // Apple (that is a local script, run by hand), so "managing" products on this
+  // screen was a workflow that changed nothing in the store and left permanent,
+  // unsellable ids in ours. What survived is the switch that decides what OUR
+  // app offers — the only code path in the repository that can set
+  // active = false, i.e. withdraw a live product without raw SQL on production.
+  const ACTION_SRC = readFileSync(
+    resolve(process.cwd(), "src/lib/admin/iap.ts"),
+    "utf8",
+  );
+  const PAGE_SRC = readFileSync(
+    resolve(process.cwd(), "src/app/(protected)/iap/page.tsx"),
+    "utf8",
+  );
+
+  it("exports exactly two server functions: the read and the offer switch", async () => {
+    const mod = await import("../iap");
+    const fns = Object.keys(mod).filter(
+      (k) => typeof (mod as Record<string, unknown>)[k] === "function",
     );
-    const insert = ops.find((o) => o.op === "insert");
-    expect(insert?.payload?.product_id).toBe("ai.olympiq.app.sub.physics.year");
-    expect(insert?.payload?.interval).toBe("year");
-    // A new product is NEVER born sellable: App Store Connect approval is a
-    // fact this server cannot check and must not assume.
-    expect(insert?.payload?.active).toBe(false);
+    expect(fns.sort()).toEqual(["listIapCatalogue", "setIapProductActive"]);
   });
 
-  it("composes a package id with no interval segment", async () => {
-    await createIapProduct(
-      null,
-      form({
-        __scope: "olympiad_package",
-        __target: PACKAGE,
-        __slug: "citymath",
-        __interval: "month",
-      }),
+  it("writes nothing but `active` — no insert, no delete, no other column", () => {
+    expect(ACTION_SRC).not.toMatch(/\.insert\(/);
+    expect(ACTION_SRC).not.toMatch(/\.delete\(/);
+    expect(ACTION_SRC).not.toMatch(/\.upsert\(/);
+    const updates = [...ACTION_SRC.matchAll(/\.update\(([^)]*)\)/g)].map(
+      (m) => m[1].trim(),
     );
-    const insert = ops.find((o) => o.op === "insert");
-    expect(insert?.payload?.product_id).toBe("ai.olympiq.app.oly.citymath");
-    expect(insert?.payload?.interval).toBeNull();
-    expect(insert?.payload?.package_id).toBe(PACKAGE);
-    expect(insert?.payload?.subject_id).toBeNull();
+    expect(updates).toEqual(["{ active: next }"]);
   });
 
-  it("normalizes case rather than refusing it — the preview shows the same string", async () => {
-    // The input lowercases as the admin types, so the preview they read and the
-    // id the server composes are the same characters. Refusing "Math" here
-    // would reject a slug the screen had already shown as valid.
-    await createIapProduct(
-      null,
-      form({ __scope: "olympiad_package", __target: PACKAGE, __slug: "CityMath" }),
-    );
-    expect(ops.find((o) => o.op === "insert")?.payload?.product_id).toBe(
-      "ai.olympiq.app.oly.citymath",
-    );
+  it("the create form is gone, not merely unlinked", () => {
+    expect(() =>
+      readFileSync(
+        resolve(process.cwd(), "src/app/(protected)/iap/IapCreateForm.tsx"),
+        "utf8",
+      ),
+    ).toThrow();
+    expect(PAGE_SRC).not.toContain("IapCreateForm");
   });
 
-  const badSlugs: Record<string, string> = {
-    "a dot": "math.month",
-    "a dash": "city-math",
-    "an underscore": "az_language",
-    "one character": "m",
-    "a space": "city math",
-    empty: "",
-    "non-ascii": "riyaziyyaṫ",
-  };
-  for (const [label, slug] of Object.entries(badSlugs)) {
-    it(`refuses a slug with ${label}, before any write`, async () => {
-      const res = await createIapProduct(
-        null,
-        form({ __scope: "olympiad_package", __target: PACKAGE, __slug: slug }),
-      );
-      expect(res).toEqual({ error: "iap.err.slug" });
-      expect(ops).toHaveLength(0);
-    });
+  it("the route survives — it IS the kill switch", () => {
+    expect(PAGE_SRC).toContain("IapToggle");
+  });
+});
+
+// ===========================================================================
+describe("the mirror never invents agreement", () => {
+  // Silent divergence is the failure mode: both halves looked fine separately
+  // and the store rejected the build anyway. Each case below is a shape the
+  // screen has to NAME rather than render as two innocent-looking pills.
+  const OUR_ID = SUBJECT_PRODUCT.product_id;
+
+  beforeEach(() => {
+    listData.iap_products = [{ ...SUBJECT_PRODUCT }];
+    listData.subjects = [
+      {
+        id: SUBJECT,
+        name: "Riyaziyyat",
+        code: "math",
+        status: "active",
+        subject_translations: [],
+      },
+    ];
+    listData.olympiad_packages = [];
+  });
+
+  /** One offered / not-offered row, with whatever Apple is pretending to say. */
+  function given(active: boolean, store: StoreStub) {
+    listData.iap_products = [{ ...SUBJECT_PRODUCT, active }];
+    storeCatalogue = store;
   }
 
-  it("refuses a scope outside the entitlement_scope enum", async () => {
-    const res = await createIapProduct(
-      null,
-      form({ __scope: "wallpaper", __target: PACKAGE, __slug: "citymath" }),
-    );
-    expect(res).toEqual({ error: "iap.err.scope" });
-    expect(ops).toHaveLength(0);
+  it("carries App Store Connect's OWN wording, never the API state code", async () => {
+    // "MISSING_METADATA" is a status no App Store Connect screen shows — the
+    // console calls it "Prepare for Submission". An admin sent hunting for the
+    // API name finds nothing.
+    given(false, {
+      ok: true,
+      products: [{ productId: OUR_ID, state: "MISSING_METADATA", name: "Math" }],
+      fetchedAt: STORE_FETCHED_AT,
+    });
+    const { rows } = await listIapCatalogue();
+    expect(rows[0].store).toEqual({
+      labelKey: "iap.store.state.prepare",
+      verdict: "blocked",
+      name: "Math",
+    });
   });
 
-  it("refuses a subject product with no cycle — ends_at would be uncomputable", async () => {
-    const res = await createIapProduct(
-      null,
-      form({ __scope: "subject", __target: SUBJECT, __slug: "physics" }),
-    );
-    expect(res).toEqual({ error: "iap.err.interval" });
-    expect(ops).toHaveLength(0);
+  it("names the 3.1.1 shape: offered here, unknown at Apple", async () => {
+    given(true, { ok: true, products: [], fetchedAt: STORE_FETCHED_AT });
+    const { rows } = await listIapCatalogue();
+    expect(rows[0].store).toBeNull();
+    expect(rows[0].divergence).toBe("offeredMissing");
   });
 
-  it("refuses to mint a permanent id for an archived target", async () => {
-    packageRow = { id: PACKAGE, status: "archived" };
-    const res = await createIapProduct(
-      null,
-      form({
-        __scope: "olympiad_package",
-        __target: PACKAGE,
-        __slug: "citymath",
-      }),
-    );
-    expect(res).toEqual({ error: "iap.err.targetArchived" });
-    expect(ops.some((o) => o.op === "insert")).toBe(false);
+  it("flags an offered product Apple will not sell", async () => {
+    given(true, {
+      ok: true,
+      products: [{ productId: OUR_ID, state: "REJECTED", name: null }],
+      fetchedAt: STORE_FETCHED_AT,
+    });
+    const { rows } = await listIapCatalogue();
+    expect(rows[0].divergence).toBe("offeredBlocked");
   });
 
-  it("maps a unique-violation to its own message, not a generic error", async () => {
-    insertError = { code: "23505", message: "duplicate key value" };
-    const res = await createIapProduct(
-      null,
-      form({
-        __scope: "olympiad_package",
-        __target: PACKAGE,
-        __slug: "citymath",
-      }),
-    );
-    expect(res).toEqual({ error: "iap.err.duplicateId" });
+  it("flags an offered product whose state Apple has not published to us", async () => {
+    given(true, {
+      ok: true,
+      products: [{ productId: OUR_ID, state: "SOMETHING_NEW", name: null }],
+      fetchedAt: STORE_FETCHED_AT,
+    });
+    const { rows } = await listIapCatalogue();
+    expect(rows[0].store?.labelKey).toBe("iap.store.state.unknown");
+    expect(rows[0].divergence).toBe("offeredUnknown");
+  });
+
+  it("states — without alarm — an approved product we choose not to offer", async () => {
+    given(false, {
+      ok: true,
+      products: [{ productId: OUR_ID, state: "APPROVED", name: null }],
+      fetchedAt: STORE_FETCHED_AT,
+    });
+    const { rows } = await listIapCatalogue();
+    expect(rows[0].divergence).toBe("approvedIdle");
+  });
+
+  it("does not put a notice on every row while a submission is in review", async () => {
+    // WAITING_FOR_REVIEW is sellable in sandbox but not yet approved. Flagging
+    // it as "ready and not offered" would light up all 21 rows during every
+    // submission, which trains an admin to ignore the column.
+    given(false, {
+      ok: true,
+      products: [{ productId: OUR_ID, state: "WAITING_FOR_REVIEW", name: null }],
+      fetchedAt: STORE_FETCHED_AT,
+    });
+    const { rows } = await listIapCatalogue();
+    expect(rows[0].divergence).toBeNull();
+  });
+
+  it("marks a row Apple has never had as unopenable", async () => {
+    given(false, { ok: true, products: [], fetchedAt: STORE_FETCHED_AT });
+    const { rows } = await listIapCatalogue();
+    expect(rows[0].divergence).toBe("absentAtApple");
+  });
+
+  it("an unreachable Apple yields NO verdict, not a false one", async () => {
+    // The dangerous shape: an empty catalogue from a failed read would make
+    // every row say "Apple has never heard of this".
+    given(true, {
+      ok: false,
+      problem: "storeUnreachable",
+      fetchedAt: STORE_FETCHED_AT,
+    });
+    const { rows, unmapped, store } = await listIapCatalogue();
+    expect(rows[0].store).toBeNull();
+    expect(rows[0].divergence).toBeNull();
+    expect(unmapped).toEqual([]);
+    expect(store).toEqual({
+      ok: false,
+      problem: "storeUnreachable",
+      fetchedAt: STORE_FETCHED_AT,
+    });
+  });
+
+  it("reports when the picture of Apple was taken", async () => {
+    given(false, { ok: true, products: [], fetchedAt: STORE_FETCHED_AT });
+    const { store } = await listIapCatalogue();
+    expect(store).toEqual({ ok: true, problem: null, fetchedAt: STORE_FETCHED_AT });
+  });
+
+  it("lists Apple products no row maps — the charge that grants nothing", async () => {
+    given(false, {
+      ok: true,
+      products: [
+        { productId: OUR_ID, state: "APPROVED", name: null },
+        { productId: "ai.olympiq.app.oly.citymath", state: "APPROVED", name: "City Math" },
+      ],
+      fetchedAt: STORE_FETCHED_AT,
+    });
+    const { unmapped } = await listIapCatalogue();
+    expect(unmapped).toEqual([
+      {
+        productId: "ai.olympiq.app.oly.citymath",
+        name: "City Math",
+        labelKey: "iap.store.state.approved",
+        verdict: "sellable",
+      },
+    ]);
   });
 });
 
@@ -579,18 +637,6 @@ describe("every toggle leaves a trail", () => {
     productRow = { ...SUBJECT_PRODUCT, active: true };
     await setIapProductActive(null, form({ __id: PRODUCT, __active: "false" }));
     expect(audits.map((a) => a.action)).toEqual(["admin.iap.product.deactivate"]);
-  });
-
-  it("audits a creation", async () => {
-    await createIapProduct(
-      null,
-      form({
-        __scope: "olympiad_package",
-        __target: PACKAGE,
-        __slug: "citymath",
-      }),
-    );
-    expect(audits.map((a) => a.action)).toEqual(["admin.iap.product.create"]);
   });
 
   it("does not audit a no-op toggle, so release day is not buried in noise", async () => {
@@ -672,11 +718,7 @@ describe("the module never reaches for the service-role key", () => {
   });
 
   it("guards first in every exported action", () => {
-    for (const fn of [
-      "listIapCatalogue",
-      "setIapProductActive",
-      "createIapProduct",
-    ]) {
+    for (const fn of ["listIapCatalogue", "setIapProductActive"]) {
       const body = SRC.slice(SRC.indexOf(`export async function ${fn}`));
       const firstAwait = body.indexOf("await ");
       expect(body.slice(firstAwait, firstAwait + 40)).toContain("requireAdmin()");
@@ -716,11 +758,26 @@ describe("trilingual copy", () => {
     const returned = new Set(
       [...SRC.matchAll(/error:\s*"(iap\.err\.[a-zA-Z.]+)"/g)].map((m) => m[1]),
     );
-    // The template-literal branch (`iap.err.${problem}`) covers these three.
+    // Two template-literal branches no regex can enumerate: `iap.err.${problem}`
+    // for our own target checks (IapTargetProblem) and `iap.err.${store.problem}`
+    // for Apple's refusals (IapPreflightProblem). Both unions are listed in full
+    // here — a new member added to either without its three translations is the
+    // failure this test is for, and it shows up as a missing key below.
     for (const p of ["targetMissing", "targetArchived", "gradeMissing"]) {
       returned.add(`iap.err.${p}`);
     }
-    expect(returned.size).toBeGreaterThan(8);
+    for (const p of [
+      "storeNotConfigured",
+      "storeUnreachable",
+      "storeMissingProduct",
+      "storeIncomplete",
+      "storeRejected",
+      "storeRemoved",
+      "storeUnknownState",
+    ]) {
+      returned.add(`iap.err.${p}`);
+    }
+    expect(returned.size).toBeGreaterThan(12);
     for (const key of returned) {
       expect(messages.az[key], `${key} (az)`).toBeTruthy();
       expect(messages.en[key], `${key} (en)`).toBeTruthy();
@@ -752,9 +809,9 @@ describe("the screen states the current posture", () => {
     expect(PAGE_SRC).not.toContain("requirePermission");
   });
 
-  it("shows a banner when NOTHING is active", () => {
-    // Zero active products is the state this platform ships in; without the
-    // banner an admin reads the whole screen as broken.
+  it("shows a banner when NOTHING is offered", () => {
+    // Zero offered products is a state this platform has shipped in; without
+    // the banner an admin reads the whole screen as broken.
     expect(PAGE_SRC).toContain("activeCount === 0");
     expect(PAGE_SRC).toContain("iap.banner.none.title");
   });
@@ -763,6 +820,23 @@ describe("the screen states the current posture", () => {
     expect(PAGE_SRC).toContain('r.scope === "subject"');
     expect(PAGE_SRC).toContain('r.scope === "olympiad_package"');
     expect(PAGE_SRC).toContain("row.targetName");
+  });
+
+  it("says the screen changes nothing at Apple, before anything else", () => {
+    expect(PAGE_SRC).toContain("iap.readonly.title");
+    expect(PAGE_SRC).toContain("iap.readonly.body");
+  });
+
+  it("shows BOTH sides and how fresh the Apple side is", () => {
+    expect(PAGE_SRC).toContain("iap.col.ours");
+    expect(PAGE_SRC).toContain("iap.col.apple");
+    expect(PAGE_SRC).toContain("iap.refresh.stamp");
+    expect(PAGE_SRC).toContain("IapRefreshButton");
+  });
+
+  it("renders the disagreement on the row instead of leaving it to be spotted", () => {
+    expect(PAGE_SRC).toContain("iap.diverge.");
+    expect(PAGE_SRC).toContain("row.divergence");
   });
 });
 

@@ -9,8 +9,9 @@
 import React, { useMemo, useState } from "react";
 import { RefreshControl, SectionList, View } from "react-native";
 import { BellOff } from "lucide-react-native";
-import { usePathname, useRouter } from "expo-router";
+import { Stack, usePathname, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { HeaderHomeButton } from "@/components/HeaderHomeButton";
 import { Screen } from "@/components/Screen";
 import { SectionHeader } from "@/components/SectionHeader";
 import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
@@ -159,40 +160,59 @@ export default function StudentNotifications() {
   }
 
   return (
-    <Screen background={arena.bg}>
-      <View style={{ flex: 1, gap: spacing.md, paddingTop: spacing.md }}>
-        {unreadCount > 0 ? (
-          <SectionHeader
-            title={t("mob.notif.unread").replace("{n}", String(unreadCount))}
-            color={arena.muted}
-            actionColor={arena.lime}
-            action={{ label: t("notif.markAllRead"), onPress: () => void markAllRead() }}
-          />
-        ) : null}
-
-        <CategoryChips
-          categories={categories}
-          active={filter}
-          onChange={setFilter}
-          allLabel={t("notif.filterAll")}
-          labelFor={catLabel}
-        />
-
-        <View style={{ flex: 1 }}>{body}</View>
-      </View>
-
-      <NotificationDetailSheet
-        item={detail}
-        t={t}
-        onClose={() => setDetail(null)}
-        onDelete={(id) => {
-          setDetail(null);
-          void remove(id);
-        }}
-        onOpenPath={(path) => {
-          if (openPath(path)) setDetail(null);
+    <>
+      {/* Merged into the options the (student) Stack already declares for this
+          route, so the layout's back chevron and title are untouched. The tab
+          this returns to is the ARENA, so it wears the bolt rather than a house. */}
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <HeaderHomeButton
+              href="/(student)/(tabs)/home"
+              icon="arena"
+              label={t("arena.nav.arena")}
+              color={arena.lime}
+              background={arena.panel2}
+              borderColor={arena.line}
+            />
+          ),
         }}
       />
-    </Screen>
+      <Screen background={arena.bg}>
+        <View style={{ flex: 1, gap: spacing.md, paddingTop: spacing.md }}>
+          {unreadCount > 0 ? (
+            <SectionHeader
+              title={t("mob.notif.unread").replace("{n}", String(unreadCount))}
+              color={arena.muted}
+              actionColor={arena.lime}
+              action={{ label: t("notif.markAllRead"), onPress: () => void markAllRead() }}
+            />
+          ) : null}
+
+          <CategoryChips
+            categories={categories}
+            active={filter}
+            onChange={setFilter}
+            allLabel={t("notif.filterAll")}
+            labelFor={catLabel}
+          />
+
+          <View style={{ flex: 1 }}>{body}</View>
+        </View>
+
+        <NotificationDetailSheet
+          item={detail}
+          t={t}
+          onClose={() => setDetail(null)}
+          onDelete={(id) => {
+            setDetail(null);
+            void remove(id);
+          }}
+          onOpenPath={(path) => {
+            if (openPath(path)) setDetail(null);
+          }}
+        />
+      </Screen>
+    </>
   );
 }

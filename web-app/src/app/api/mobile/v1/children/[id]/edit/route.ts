@@ -59,6 +59,14 @@ export async function POST(
       // an answer given earlier, and "declined to say" would silently become
       // "never asked".
       gender: bodyStr(body, "gender"),
+      // REQUIRED SINCE 2026-09-16 (owner) - BUT NOT ON THIS ROUTE. The caller is
+      // a bundle already installed on a parent phone; the control that asks the
+      // question ships over the air and applies on the next launch, and 1.15.x
+      // installs never receive it. Enforcing here would stop a parent fixing a
+      // typo in their child school name with a refusal their app cannot satisfy.
+      // An absent value also OMITS the column rather than writing null over an
+      // answer already recorded - see updateChildProfileCore.
+      genderOptional: true,
     });
     if (!res.ok) {
       if ("validationErrors" in res) {

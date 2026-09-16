@@ -353,6 +353,13 @@ export type CreateChildState =
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALLOWED_INTERVALS = new Set(["week", "month", "year"]);
+// The two genders a child account may be created with (owner, 2026-09-16).
+// The DB enum also holds 'unspecified' — "asked, and declined" — which stays
+// readable on the rows that carry it and is no longer OFFERED anywhere, so it
+// is deliberately NOT in this set. The parent panel keeps the same two in
+// web-app/src/lib/studentGender.ts; there is no shared module across the two
+// Next apps, so the pair is twinned rather than imported.
+const ALLOWED_GENDERS = new Set(["female", "male"]);
 const NAME_MAX = 80;
 const SUBJECTS_MAX = 20;
 
@@ -438,6 +445,7 @@ export async function createChildForParent(
   const lastName = f(formData, "last_name");
   const password = String(formData.get("password") ?? "");
   const gradeId = f(formData, "grade_id");
+  const gender = f(formData, "gender");
   const grantAccess = f(formData, "grant_access") === "true";
 
   if (!UUID_RE.test(parentProfileId)) {
@@ -455,6 +463,16 @@ export async function createChildForParent(
   if (childPwProblem) return { error: t(PASSWORD_PROBLEM_KEY[childPwProblem]) };
   if (gradeId && !UUID_RE.test(gradeId)) {
     return { error: t("accounts.child.create.err.invalid") };
+  }
+  // GENDER — REQUIRED, and new to this surface on 2026-09-16. This form has
+  // never collected it: while the field was optional that only meant admin
+  // children were created with a NULL, but create_child_account now takes it
+  // as its 12th argument, so the panel either asks or every admin-created
+  // child fails at the RPC. Whitelisted here rather than trusted from the
+  // select: a form field is a suggestion, and a value outside the enum would
+  // otherwise reach Postgres as a 22P02 the admin reads as "server error".
+  if (!ALLOWED_GENDERS.has(gender)) {
+    return { error: t("accounts.child.create.err.gender") };
   }
   // Round 12: city + school are required for admin-created children too (parity
   // with the parent Add-Child flow). Both are UUIDs; the school must belong to the
@@ -597,6 +615,10 @@ export async function createChildForParent(
         p_district_id: districtId,
         p_school_id: schoolId,
         p_city_district_id: cityDistrictId || null,
+        // Migration 178 — the 12th argument. Validated above; never passed
+        // through unchecked and never defaulted, because a gender nobody
+        // chose is indistinguishable in the export from one someone did.
+        p_gender: gender,
       },
     );
     if (rpcErr) throw new Error(rpcErr.message);

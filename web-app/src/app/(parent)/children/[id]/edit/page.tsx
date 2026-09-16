@@ -30,12 +30,14 @@ const KEYS = [
   "addchild.avatar.boy", "addchild.avatar.girl", "addchild.avatar.upload",
   "addchild.avatar.replace", "addchild.avatar.removePhoto",
   "addchild.avatar.photoSelected", "addchild.avatar.requirements",
-  // Migration 169 — the OPTIONAL gender field (ChildGenderField); same list as
-  // the Add-Child page, since it is the same control asking the same question.
+  // The REQUIRED gender field (ChildGenderField); same list as the Add-Child
+  // page, since it is the same control asking the same question — including the
+  // two keys it no longer uses, which stay so a cached bundle cannot render a
+  // raw key. See that page for the reasoning.
   "addchild.field.gender", "addchild.field.genderNone",
   "addchild.field.genderHint", "addchild.gender.female",
   "addchild.gender.male", "addchild.gender.unspecified",
-  "addchild.err.genderInvalid", "field.optional",
+  "addchild.err.genderRequired", "addchild.err.genderInvalid", "field.optional",
 ];
 
 // Parent edits a child's profile info after creation (name/grade/city/school).

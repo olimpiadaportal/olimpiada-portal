@@ -11,9 +11,12 @@ import {
   type SchoolItem,
 } from "./shared";
 
-// Yerlər / Locations — the merged Cities → Rayons → Schools admin screen
-// (Round 21, item 7; replaces the separate /cities, /districts and /schools
-// pages). Selection lives in the URL (?city=&district=) so refresh/back work
+// "Şəhər / rayon" (route /locations) — the merged Cities → Rayons → Schools
+// admin screen (Round 21, item 7; replaces the separate /cities, /districts
+// and /schools pages). The <h1> below reads the SAME `nav.locations` key as the
+// sidebar item, so the menu entry and the page title cannot disagree; the
+// subtitle keeps naming schools too, because the screen manages all three.
+// Selection lives in the URL (?city=&district=) so refresh/back work
 // and this SERVER component drives all data:
 //   * col 1: every city (DB districts) with rayon + school counts;
 //   * col 2: the selected city's rayons (DB city_districts) with school counts

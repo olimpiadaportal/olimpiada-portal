@@ -28,7 +28,7 @@ of them — never a mixture.
 # Bölmə A — OlympIQ Məxfilik Siyasəti
 
 **Qüvvəyə minmə tarixi:** 04.08.2026
-**Son yenilənmə:** 11.09.2026
+**Son yenilənmə:** 16.09.2026
 
 Bu siyasət OlympIQ veb saytına və OlympIQ mobil tətbiqinə (iOS və Android) aiddir.
 
@@ -129,7 +129,7 @@ tətbiq daxilində dəyişmək mümkün deyil** — bunun üçün bizimlə əlaq
 | Şəhər və rayon | Bəli | Regional reytinq cədvəlləri üçün |
 | Məktəbin adı | Bəli | Məktəb üzrə reytinq cədvəli üçün |
 | Sinif | Bəli | Uşağa öz sinfinə uyğun sualların verilməsi üçün |
-| Cinsi | Xeyr | Ümumi statistika üçün; profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür. Valideyn bu sualı boş buraxa və ya **"Bildirmək istəmirəm"** seçə bilər; uşağın girişinə, ona verilən suallara və reytinqinə heç bir təsiri yoxdur |
+| Cinsi | Bəli | Uşaq profili yaradılarkən cavab tələb olunur; seçim **"Qız"** və ya **"Oğlan"**dır. Ümumi statistika və hesabların idarə olunması üçün; profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza və onların ixrac etdiyi hesabat fayllarında görünür. Uşağın girişinə, ona verilən suallara, sualların çətinliyinə və reytinqinə heç bir təsiri yoxdur |
 | 8 rəqəmli giriş nömrəsi | Server verir | Uşağın giriş açarı. **Bu nömrənin son 4 rəqəmi ictimai reytinq cədvəlində göstərilir** (bax A5.3) |
 | Parol | Bəli (valideyn təyin edir) | Giriş üçün. Parol yalnız autentifikasiya xidmətimizdə şifrələnmiş formada saxlanılır |
 | Avatar | Xeyr | Hazır şəkillərdən biri, yaxud yüklənmiş foto. Bax A5.4 — yükləmə yolu vacibdir |
@@ -188,17 +188,18 @@ Veb saytda yalnız **işləmək üçün zəruri** kukilər istifadə olunur:
 
 ### A5.1 Uşaq haqqında nə saxlanılır
 
-Yuxarıdakı **A4.2** cədvəlindəki hər şey: ad, soyad, şəhər, rayon, məktəb, sinif, valideynin istəyə
-bağlı qeyd etdiyi cins, 8 rəqəmli giriş nömrəsi, seçilmiş avatar və görünüş, məşq nəticələri
+Yuxarıdakı **A4.2** cədvəlindəki hər şey: ad, soyad, şəhər, rayon, məktəb, sinif, valideynin qeyd
+etdiyi cins, 8 rəqəmli giriş nömrəsi, seçilmiş avatar və görünüş, məşq nəticələri
 (cavablar, ballar, faizlər, seriyalar, aktiv günlər, reytinq mövqeyi).
 
-Cinsin qeyd edilməsi istəyə bağlıdır: valideyn sualı cavabsız qoya, **"Bildirmək istəmirəm"** seçə və
-ya qeyd etdiyini sonradan dəyişə bilər — bunların heç biri uşağın hesabına təsir etmir. Qeyd
-edildikdən sonra cavab uşağın profilində saxlanılır və profilin qalan hissəsi kimi səlahiyyətli
-əməkdaşlarımıza görünür; onların ixrac etdiyi daxili hesabat fayllarında da yer alır. Bu məlumat
-əsasında platformadan kimlərin istifadə etdiyini bütövlükdə görmək üçün ümumi statistika hazırlayırıq.
-Cins heç nəyi müəyyən etmir: uşağın girişinə, ona verilən suallara, ballarına və reytinq cədvəlindəki
-yerinə heç bir təsiri yoxdur; reytinq cədvəllərində də göstərilmir.
+Cinsin qeyd edilməsi məcburidir: valideyn uşaq profilini yaradarkən **"Qız"** və ya **"Oğlan"**
+seçimlərindən birini etməlidir — sualı boş buraxmaq mümkün deyil. Səhv seçim edilibsə, valideyn
+sonradan uşağın məlumatlarından onu dəyişə bilər. Cavab uşağın profilində saxlanılır və profilin qalan
+hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür; onların ixrac etdiyi daxili hesabat fayllarında da
+yer alır. Bu məlumatdan platformadan kimlərin istifadə etdiyini bütövlükdə görmək üçün ümumi statistika
+hazırlamaq və hesabları idarə etmək məqsədilə istifadə edirik.
+Cins heç nəyi müəyyən etmir: uşağın girişinə, ona verilən suallara, sualların çətinliyinə, ballarına və
+reytinq cədvəlindəki yerinə heç bir təsiri yoxdur; reytinq cədvəllərində də göstərilmir.
 
 **Uşaq haqqında toplamadığımız məlumatlar:** doğum tarixi, e-poçt, telefon nömrəsi, ev ünvanı,
 cihazın məkanı, sağlamlıq məlumatı, maliyyə məlumatı, kontaktlar, brauzer tarixçəsi, reklam
@@ -526,7 +527,7 @@ etdiyiniz anlamına gəlir.
 # Part B — OlympIQ Privacy Policy
 
 **Effective date:** 04.08.2026
-**Last updated:** 11.09.2026
+**Last updated:** 16.09.2026
 
 This policy covers the OlympIQ website and the OlympIQ mobile app for iOS and Android.
 
@@ -627,7 +628,7 @@ changed in the app** — contact us instead.
 | City and district (*rayon*) | Yes | For regional leaderboards |
 | School name | Yes | For the school leaderboard |
 | Grade | Yes | So the child is served questions that match their grade |
-| Gender | No | For overall statistics; visible to our authorised staff like the rest of the profile. A parent may leave the question blank or choose **"Prefer not to say"**; it has no effect on the child's access, on the questions they are served or on their ranking |
+| Gender | Yes | Required when a parent creates a child profile; the choice is **"Girl"** or **"Boy"**. For overall statistics and account management; visible to our authorised staff like the rest of the profile, and in the account reports they export. It has no effect on the child's access, on the questions they are served, on how hard those questions are or on their ranking |
 | 8-digit login ID | Issued by our server | The child's login credential. **The last 4 digits of this number are shown on the public leaderboard** (see B5.3) |
 | Password | Yes (set by the parent) | To sign in. Held only by our authentication service, in hashed form |
 | Avatar | No | Either a preset image or an uploaded photo. See B5.4 — the upload path matters |
@@ -688,17 +689,17 @@ The website uses **strictly necessary** cookies only:
 
 ### B5.1 What is stored about a child
 
-Everything in the **B4.2** table: first name, last name, city, district, school, grade, the optional
-gender a parent may give, the 8-digit login number, the chosen avatar and look, and practice results
+Everything in the **B4.2** table: first name, last name, city, district, school, grade, the gender the
+parent gives, the 8-digit login number, the chosen avatar and look, and practice results
 (answers, points, percentages, streaks, active days, leaderboard placement).
 
-Giving a gender is entirely optional: a parent can leave the question unanswered, choose **"Prefer not
-to say"**, or change what they gave later — none of which affects the child's account. Once given, the
-answer is stored on the child's profile and is visible to our authorised staff in the same way as the
-rest of that profile, including in the internal account reports they export. We use it to produce
-overall statistics about who uses the platform. It decides nothing about the child: it has no effect
-on their access, on the questions they are served, on their points or on their leaderboard position,
-and it is never shown on a leaderboard.
+Giving a gender is required: when a parent creates a child profile they must choose **"Girl"** or
+**"Boy"**, and the question cannot be skipped. A parent can correct the answer later from the child's
+details. The answer is stored on the child's profile and is visible to our authorised staff in the same
+way as the rest of that profile, including in the internal account reports they export. We use it to
+produce overall statistics about who uses the platform and to manage accounts. It decides nothing about
+the child: it has no effect on their access, on the questions they are served, on how hard those
+questions are, on their points or on their leaderboard position, and it is never shown on a leaderboard.
 
 **What we never collect about a child:** date of birth, email address, phone number, home address,
 device location, health data, financial data, contacts, browsing history, advertising identifiers or
@@ -1029,7 +1030,7 @@ effect means you accept the updated policy.
 # Часть C — Политика конфиденциальности OlympIQ
 
 **Дата вступления в силу:** 04.08.2026
-**Последнее обновление:** 11.09.2026
+**Последнее обновление:** 16.09.2026
 
 Эта политика распространяется на сайт OlympIQ и на мобильное приложение OlympIQ для iOS и Android.
 
@@ -1132,7 +1133,7 @@ OlympIQ — образовательный продукт для школьни�
 | Город и район | Да | Для региональных таблиц лидеров |
 | Название школы | Да | Для школьной таблицы лидеров |
 | Класс | Да | Чтобы ребёнку выдавались вопросы для его класса |
-| Пол | Нет | Для общей статистики; виден нашим уполномоченным сотрудникам так же, как остальной профиль. Родитель может оставить этот вопрос без ответа или выбрать **«Предпочитаю не указывать»**; на доступ ребёнка, на выдаваемые ему вопросы и на рейтинг это никак не влияет |
+| Пол | Да | Обязательно указывается при создании профиля ребёнка; варианты — **«Девочка»** или **«Мальчик»**. Для общей статистики и управления аккаунтами; виден нашим уполномоченным сотрудникам так же, как остальной профиль, в том числе в выгружаемых ими отчётах по аккаунтам. На доступ ребёнка, на выдаваемые ему вопросы, на их сложность и на рейтинг это никак не влияет |
 | 8-значный номер для входа | Выдаёт сервер | Логин ребёнка. **Последние 4 цифры этого номера показываются в публичной таблице лидеров** (см. C5.3) |
 | Пароль | Да (задаёт родитель) | Для входа. Хранится только в сервисе аутентификации в виде хеша |
 | Аватар | Нет | Готовое изображение или загруженное фото. См. C5.4 — способ загрузки имеет значение |
@@ -1191,17 +1192,18 @@ OlympIQ — образовательный продукт для школьни�
 
 ### C5.1 Что хранится о ребёнке
 
-Всё, что указано в таблице **C4.2**: имя, фамилия, город, район, школа, класс, необязательно указываемый
+Всё, что указано в таблице **C4.2**: имя, фамилия, город, район, школа, класс, указанный
 родителем пол, 8-значный номер для входа, выбранный аватар и оформление, а также результаты занятий
 (ответы, баллы, проценты, серии, активные дни, место в рейтинге).
 
-Указывать пол необязательно: родитель может не отвечать на этот вопрос, выбрать **«Предпочитаю не
-указывать»** или позже изменить указанное — ничто из этого на аккаунт ребёнка не влияет. Указанный
-ответ хранится в профиле ребёнка и виден нашим уполномоченным сотрудникам так же, как и остальная
-часть этого профиля, в том числе во внутренних отчётах по аккаунтам, которые они выгружают. На
-основании этих данных мы готовим общую статистику о том, кто пользуется платформой. При этом пол
-ничего не определяет: на доступ ребёнка, на выдаваемые ему вопросы, на баллы и на место в таблице
-лидеров это не влияет никак, и в таблицах лидеров пол не отображается.
+Указать пол обязательно: создавая профиль ребёнка, родитель должен выбрать **«Девочка»** или
+**«Мальчик»** — пропустить этот вопрос нельзя. Позже родитель может изменить указанное в данных
+ребёнка. Ответ хранится в профиле ребёнка и виден нашим уполномоченным сотрудникам так же, как и
+остальная часть этого профиля, в том числе во внутренних отчётах по аккаунтам, которые они выгружают.
+Мы используем его, чтобы готовить общую статистику о том, кто пользуется платформой, и чтобы управлять
+аккаунтами. При этом пол ничего не определяет: на доступ ребёнка, на выдаваемые ему вопросы, на их
+сложность, на баллы и на место в таблице лидеров это не влияет никак, и в таблицах лидеров пол не
+отображается.
 
 **Что мы о ребёнке не собираем:** дату рождения, адрес электронной почты, номер телефона, домашний
 адрес, геолокацию устройства, данные о здоровье, финансовые данные, контакты, историю браузера,

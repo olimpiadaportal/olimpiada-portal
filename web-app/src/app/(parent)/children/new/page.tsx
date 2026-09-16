@@ -80,13 +80,18 @@ const KEYS = [
   "addchild.avatar.boy", "addchild.avatar.girl", "addchild.avatar.upload",
   "addchild.avatar.replace", "addchild.avatar.removePhoto",
   "addchild.avatar.photoSelected", "addchild.avatar.requirements",
-  // Migration 169 — the OPTIONAL gender field (ChildGenderField): its labels,
-  // the two distinct "no answer" strings, the shared "(optional)" suffix, and
-  // the refusal key the server returns for a forged value.
+  // The REQUIRED gender field (ChildGenderField, mandatory since 2026-09-16):
+  // its labels, the placeholder, and BOTH refusal keys — genderRequired for an
+  // unanswered field, genderInvalid for a forged value.
+  //
+  // `addchild.gender.unspecified` and `field.optional` are RETIRED FROM THIS
+  // CONTROL and stay listed for the same reason `pay.payNow` above does: a
+  // dictionary that drops a key a cached bundle still asks for renders the key
+  // itself on a parent's screen.
   "addchild.field.gender", "addchild.field.genderNone",
   "addchild.field.genderHint", "addchild.gender.female",
   "addchild.gender.male", "addchild.gender.unspecified",
-  "addchild.err.genderInvalid", "field.optional",
+  "addchild.err.genderRequired", "addchild.err.genderInvalid", "field.optional",
   // ...and the warning shown when the child was created but that answer was
   // not stored — a SUCCESS the parent must still act on.
   "addchild.warn.genderNotSaved",

@@ -6,16 +6,23 @@ import type { Locale } from "@/i18n/config";
 // districts/labels.ts (Round 21 merge). Reusable strings (action.*,
 // field.status, manage.*, flt.noMatches, modal.close) still come from getT() —
 // these are only the gaps. `nav.locations` lives here too so the sidebar label
-// renders translated until messages.ts gains the key.
+// renders translated until messages.ts gains the key — and it must STAY here:
+// the layout's navLabel() chain tries t() first, so a `nav.locations` entry in
+// messages.ts would win and silently orphan this one forever.
 //
 // NAMING (verified): the DB `districts` table holds the CITIES; `city_districts`
 // holds the intra-city rayons. In UI language: Şəhərlər / Rayonlar / Məktəblər.
+// The screen's DISPLAYED name is "Şəhər / rayon" (owner, 2026-09-16 — it names
+// what an admin actually comes here to find, which "Yerlər" did not). The key,
+// the route and every DB entity keep the locations/ naming: the rename was
+// presentational only. The sidebar item and the page <h1> both read this one
+// key, so the two can never drift apart.
 
 type Dict = Record<string, string>;
 
 const STRINGS: Record<Locale, Dict> = {
   az: {
-    "nav.locations": "Yerlər",
+    "nav.locations": "Şəhər / rayon",
     "loc.subtitle":
       "Şəhər, rayon və məktəbləri bir yerdən idarə et. Şəhəri seç — rayonları, rayonu seç — məktəbləri gör.",
     "loc.cities": "Şəhərlər",
@@ -89,7 +96,7 @@ const STRINGS: Record<Locale, Dict> = {
     "loc.errOp": "Əməliyyat alınmadı. Yenidən cəhd edin.",
   },
   en: {
-    "nav.locations": "Locations",
+    "nav.locations": "Cities & districts",
     "loc.subtitle":
       "Manage cities, districts and schools in one place. Pick a city to see its districts, a district to see its schools.",
     "loc.cities": "Cities",
@@ -164,7 +171,7 @@ const STRINGS: Record<Locale, Dict> = {
     "loc.errOp": "The operation failed. Please try again.",
   },
   ru: {
-    "nav.locations": "Локации",
+    "nav.locations": "Города и районы",
     "loc.subtitle":
       "Управляйте городами, районами и школами в одном месте. Выберите город — увидите районы, район — школы.",
     "loc.cities": "Города",

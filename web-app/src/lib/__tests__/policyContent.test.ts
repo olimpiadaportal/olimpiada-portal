@@ -343,11 +343,18 @@ const noEffect: Record<"az" | "en" | "ru", RegExp> = {
   ru: /рейтинг/,
 };
 
-describe("the optional gender is described as optional and inert", () => {
-  // Migration 169 makes three promises the column cannot make for itself: it is
-  // optional, a parent may decline, and NO access, content or ranking rule
-  // reads it. The policy is the only place a parent is ever told any of that,
-  // so a language that lost the promise has a consent gap, not a copy nit.
+describe("the required gender is described as required and inert", () => {
+  // The field became MANDATORY for a new child on 2026-09-16 (owner), so the
+  // promise this block used to pin - "a parent may decline" - is now the false
+  // statement rather than the protected one. What still needs pinning, and is
+  // the substantive half of the disclosure, is that the answer is INERT: no
+  // access, content or ranking rule reads it. The policy is the only place a
+  // parent is ever told that, so a language that loses it has a consent gap.
+  //
+  // The column remains NULLABLE and 51 pre-rule children still hold NULL or
+  // 'unspecified'; requiredness is a rule about NEW children, which is exactly
+  // why the table's Required? cell is compared against a MANDATORY row below
+  // rather than an optional one.
   const genderToken = CHILD_FIELDS.gender as Disclosure;
   // Both spellings of the false claim, per language, so a rewrite cannot walk
   // back into it in one locale while the other two stay honest.
@@ -367,22 +374,43 @@ describe("the optional gender is described as optional and inert", () => {
     en: /never to make a decision about an individual child/,
     ru: /не для решений в отношении конкретного ребёнка/,
   };
-  // Canonical rows to compare the gender row's "Required?" cell against, so the
-  // check pins the ANSWER rather than the three words that spell it — renaming
-  // "Xeyr" must not fail this, dropping the "No" must.
+  // Compared against rows whose requiredness is not in question, so the check
+  // pins the ANSWER rather than the word that spells it: renaming "Bəli" must
+  // not fail this, flipping the cell back to "No" must. The grade row is the
+  // mandatory reference; the avatar row is the optional one, and the gender row
+  // now has to match the first and differ from the second.
   const optionalRow: Disclosure = { az: "avatar", en: "avatar", ru: "аватар" };
 
-  it.each(locales)("%s marks the gender row not-required", (locale) => {
+  it.each(locales)("%s marks the gender row required", (locale) => {
     const table = messages[locale]["privacy.s4.childTable"];
     const gender = rowNaming(table, genderToken[locale]);
     const optional = rowNaming(table, optionalRow[locale]);
+    const grade = rowNaming(table, CHILD_FIELDS.classGrade![locale]);
     expect(gender, "no gender row in privacy.s4.childTable").toBeDefined();
     expect(optional, "no avatar row to take the optional marker from").toBeDefined();
-    expect(gender![1], "gender is not marked optional").toBe(optional![1]);
-    // A mandatory field's marker would be a different word; if it is the same
-    // one, the table has stopped distinguishing required from optional at all.
-    const grade = rowNaming(table, CHILD_FIELDS.classGrade![locale]);
-    expect(grade![1]).not.toBe(gender![1]);
+    expect(grade, "no grade row to take the mandatory marker from").toBeDefined();
+    expect(gender![1], "gender is not marked required").toBe(grade![1]);
+    // If it also equalled the optional marker, the table would have stopped
+    // distinguishing required from optional at all and the line above would be
+    // passing for the wrong reason.
+    expect(gender![1], "the table no longer distinguishes required from optional")
+      .not.toBe(optional![1]);
+  });
+
+  it.each(locales)("%s never promises the question can be skipped", (locale) => {
+    // The sentences that became FALSE on 2026-09-16. Pinned per language so a
+    // rewrite cannot walk one locale back into the old promise while the other
+    // two stay honest - the same reason every other claim here is per-language.
+    const skipPromise: RegExp =
+      locale === "az"
+        ? /boş buraxa|istəyə bağlıdır: valideyn|Bildirmək istəmirəm»/
+        : locale === "en"
+          ? /leave the question (blank|unanswered)|entirely optional: a parent|Prefer not to say»/
+          : /оставить (этот )?вопрос без ответа|не отвечать на этот вопрос|Указывать пол необязательно|Предпочитаю не указывать»/;
+    for (const key of ["privacy.s4.childTable", "privacy.s5.stored"] as const) {
+      expect(messages[locale][key], `${key} still promises the gender question is skippable`)
+        .not.toMatch(skipPromise);
+    }
   });
 
   it.each(locales)("%s states the purpose and the limits in their own paragraph", (locale) => {

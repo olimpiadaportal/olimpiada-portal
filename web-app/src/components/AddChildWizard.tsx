@@ -188,15 +188,23 @@ export function AddChildWizard({
   const [cityDistrictId, setCityDistrictId] = useState(""); // the rayon (Round 21)
   const [schoolId, setSchoolId] = useState("");
   const [gradeId, setGradeId] = useState("");
-  // Migration 169 — OPTIONAL gender. "" is the starting state and stays "" if
-  // the parent walks past it; the action posts nothing and the column keeps its
-  // "never asked" NULL. Never pre-select a value here.
+  // REQUIRED gender (owner, 2026-09-16). "" is the starting state and the step
+  // cannot advance while it is still "". Never pre-select a value here: a
+  // defaulted answer about a child is an answer nobody gave, and it would be
+  // indistinguishable in the export from one a parent actually chose.
   const [gender, setGender] = useState<ChildGenderChoice>("");
   const [infoErrors, setInfoErrors] = useState<string[]>([]);
-  // Things that did NOT get saved even though the child did (currently only the
-  // optional gender). Not errors — the wizard moves on — but they stay on
-  // screen for the rest of the flow, because the parent answered a question
-  // whose answer is now missing and only they can put it back from Edit-Child.
+  // Things that did NOT get saved even though the child did. Not errors — the
+  // wizard moves on — but they stay on screen for the rest of the flow, because
+  // only the parent can put back what the platform dropped.
+  //
+  // EMPTY IN EVERY PATH TODAY, AND KEPT ANYWAY. Its one member was the optional
+  // gender, which was written as its own patch AFTER the provisioning
+  // transaction and could therefore fail on its own; since 2026-09-16 the value
+  // rides inside create_child_account, so it fails WITH the child or not at
+  // all. The channel stays because "committed, but we saved less than you gave
+  // us" is a shape this flow will have again, and because the mobile BFF and
+  // the app already carry it end to end.
   const [infoWarnings, setInfoWarnings] = useState<string[]>([]);
   // The created child's profile id (returned by addChild; used by
   // subscribeChild / activateChildGiveaway).
@@ -318,6 +326,10 @@ export function AddChildWizard({
     }
     if (!schoolId) local.push("addchild.err.schoolRequired");
     if (!gradeId) local.push("addchild.err.gradeRequired");
+    // Owner, 2026-09-16: the gender joins the other required facts about the
+    // child. Same key validateChildInfo returns, so the parent reads one
+    // sentence whether the refusal came from here or from the server.
+    if (!gender) local.push("addchild.err.genderRequired");
     if (local.length) {
       setInfoErrors(local);
       return;
@@ -330,7 +342,8 @@ export function AddChildWizard({
     fd.set("city_district_id", cityDistrictId); // the rayon ("" → null server-side)
     fd.set("school_id", schoolId);
     fd.set("grade_id", gradeId);
-    // Migration 169 — OPTIONAL. "" → the server writes no gender at all.
+    // Required — the guard above already refused "", and createChild refuses it
+    // again before the provisioning RPC is called.
     fd.set("gender", gender);
     // Display fallbacks (the DB also stores free-text city/school/grade label).
     fd.set("city", cities.find((c) => c.id === districtId)?.name ?? "");
@@ -618,13 +631,22 @@ export function AddChildWizard({
               </select>
             </label>
 
-            {/* Optional gender (migration 169) — sits with the other facts
-                about the child, never gates anything, and is left blank by
-                simply not touching it. */}
+            {/* Required gender (owner, 2026-09-16) — sits with the other facts
+                about the child and gates this step exactly like the city,
+                school and grade above it. The refusal is shown under the
+                select as well as in the list at the bottom: this step is long
+                enough that a message at its foot is a message nobody reads. */}
             <ChildGenderField
               value={gender}
               onChange={setGender}
               disabled={pending}
+              error={
+                infoErrors.find(
+                  (e) =>
+                    e === "addchild.err.genderRequired" ||
+                    e === "addchild.err.genderInvalid",
+                ) ?? null
+              }
               dict={dict}
             />
 
@@ -657,13 +679,27 @@ export function AddChildWizard({
               />
             </div>
 
-            {infoErrors.length > 0 && (
-              <ul className="form-error">
-                {infoErrors.map((e, i) => (
-                  <li key={i}>{tt(e)}</li>
-                ))}
-              </ul>
-            )}
+            {/* THE SUMMARY LIST SKIPS WHAT A FIELD ALREADY SHOWS. The gender
+                control renders its own refusal underneath itself (above), so
+                leaving it in this list too printed the same sentence twice on
+                one step - once where the parent is looking and once at the
+                foot. A duplicated error reads as two separate problems. Any
+                error WITHOUT its own field slot still belongs here, which is
+                why this filters rather than disappearing. */}
+            {(() => {
+              const FIELD_OWNED = new Set([
+                "addchild.err.genderRequired",
+                "addchild.err.genderInvalid",
+              ]);
+              const unowned = infoErrors.filter((e) => !FIELD_OWNED.has(e));
+              return unowned.length > 0 ? (
+                <ul className="form-error">
+                  {unowned.map((e, i) => (
+                    <li key={i}>{tt(e)}</li>
+                  ))}
+                </ul>
+              ) : null;
+            })()}
           </div>
         )}
 

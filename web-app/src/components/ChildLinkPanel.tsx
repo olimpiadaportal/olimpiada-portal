@@ -1,114 +1,197 @@
 "use client";
 
+// THE EXISTING-CHILD ACCESS PANEL.
+//
+// This used to be a nomination flow: the parent typed a child id plus a one-time
+// code, which created a request the creating parent had to approve. The owner
+// removed approval on 2026-09-16, so the panel now asks for the child's OWN
+// credentials and grants access immediately.
+//
+// WHAT WENT WITH THE APPROVAL STEP, and why the creator half of this panel is
+// smaller than it was: issuing a code, approving and rejecting are all dead
+// concepts. Revoking and leaving are NOT - a creator must still be able to take
+// access away, and a linked adult must still be able to walk away - so those two
+// remain on the same manage_child_link RPC they always used.
+//
+// The password is never held in component state longer than the submit, and is
+// cleared on every outcome. It is a credential belonging to a child, not a form
+// value to be echoed back on error.
 import { useState, useTransition } from "react";
-import { childLinkMutationAction, childLinkStateAction } from "@/lib/auth/childLinkActions";
+import {
+  childLinkByCredentialsAction,
+  childLinkMutationAction,
+  childLinkStateAction,
+} from "@/lib/auth/childLinkActions";
+import type { ChildAccessAdult } from "@/lib/auth/childCredentialLink";
 import type { ChildLinkMutationInput, ChildLinkState } from "@/lib/childLink";
 
 type Dict = Record<string, string>;
+type AccessMap = Record<string, ChildAccessAdult[]>;
 
-export function ChildLinkPanel({ initial, dict }: { initial: ChildLinkState; dict: Dict }) {
+function adultLabel(a: ChildAccessAdult): string {
+  const parts = [a.first_name, a.last_name].filter(Boolean).join(" ").trim();
+  return parts || a.display_name || "—";
+}
+
+export function ChildLinkPanel({
+  initial,
+  access,
+  dict,
+}: {
+  initial: ChildLinkState;
+  access: AccessMap;
+  dict: Dict;
+}) {
   const [state, setState] = useState(initial);
   const [childId, setChildId] = useState("");
-  const [code, setCode] = useState("");
-  const [issued, setIssued] = useState<{ code: string; childId: string } | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const t = (key: string) => dict[key] ?? key;
 
-  function run(input: ChildLinkMutationInput) {
-    setMessage(null);
+  const canSubmit = childId.length === 8 && password.length > 0 && !pending;
+
+  function submitCredentials() {
+    setError(null);
+    setNotice(null);
     startTransition(async () => {
       try {
-        const result = await childLinkMutationAction(input);
+        const result = await childLinkByCredentialsAction(childId, password);
+        // Cleared on BOTH paths: a wrong password must not sit in the field
+        // waiting to be resubmitted, and a correct one has done its job.
+        setPassword("");
         if (!result.ok) {
-          setMessage(t(result.errorKey));
+          setError(t(result.errorKey));
           return;
         }
-        if ("code" in result) setIssued({ code: result.code, childId: result.childId });
-        if (input.action === "redeem") {
-          setChildId("");
-          setCode("");
-        }
+        setChildId("");
         setState(await childLinkStateAction());
-        setMessage(input.action === "redeem" ? t("link.pending") : t("link.success"));
+        setNotice(t("link.linkedNotice"));
       } catch {
-        setMessage(t("link.err.generic"));
+        setPassword("");
+        setError(t("link.err.generic"));
       }
     });
   }
 
-  async function copyIssuedCode() {
-    if (!issued) return;
-    try {
-      await navigator.clipboard.writeText(issued.code);
-      setMessage(t("link.success"));
-    } catch {
-      setMessage(t("link.err.generic"));
-    }
+  function run(input: ChildLinkMutationInput) {
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      try {
+        const result = await childLinkMutationAction(input);
+        if (!result.ok) {
+          setError(t(result.errorKey));
+          return;
+        }
+        setState(await childLinkStateAction());
+        setNotice(t("link.success"));
+      } catch {
+        setError(t("link.err.generic"));
+      }
+    });
   }
 
   return (
     <div className="stack" style={{ gap: 20 }}>
-      <div className="card stack" style={{ gap: 14 }}>
-        <h2>{t("link.choice.existing")}</h2>
+      <div className="card stack link-form">
         <p className="muted">{t("link.subtitle")}</p>
-        <label>
-          <span>{t("link.childId")}</span>
-          <input inputMode="numeric" autoComplete="off" maxLength={8} value={childId}
-            onChange={(e) => setChildId(e.target.value.replace(/\D/g, "").slice(0, 8))} />
-        </label>
-        <label>
-          <span>{t("link.code")}</span>
-          <input autoCapitalize="characters" autoComplete="off" maxLength={24} value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())} />
-        </label>
-        <button className="btn" disabled={pending || childId.length !== 8 || code.replace(/[\s-]/g, "").length !== 20}
-          onClick={() => run({ action: "redeem", childId, code })}>{t("link.request")}</button>
-        {state.pending.length > 0 ? <p className="muted">{t("link.pending")}</p> : null}
+
+        <div className="field">
+          <label htmlFor="link-child-id">{t("link.childId")}</label>
+          <input
+            id="link-child-id"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={8}
+            value={childId}
+            disabled={pending}
+            onChange={(e) => setChildId(e.target.value.replace(/\D/g, "").slice(0, 8))}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="link-child-password">{t("link.childPassword")}</label>
+          <input
+            id="link-child-password"
+            type="password"
+            autoComplete="off"
+            value={password}
+            disabled={pending}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && canSubmit) submitCredentials();
+            }}
+          />
+        </div>
+
+        <p className="muted link-hint">{t("link.credentialsHint")}</p>
+
+        <button className="btn" disabled={!canSubmit} onClick={submitCredentials}>
+          {pending ? t("state.loading") : t("link.request")}
+        </button>
+
+        {error ? (
+          <p className="notice danger" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {notice ? (
+          <p className="notice success" role="status">
+            {notice}
+          </p>
+        ) : null}
       </div>
 
-      {state.children.map((child) => (
-        <div className="card stack" style={{ gap: 12 }} key={child.id}>
-          <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
-            <div><h2>{child.name}</h2><p className="muted">{child.child_id}</p></div>
-            <span className="pill">{child.is_creator ? t("link.owner") : t("link.linked")}</span>
-          </div>
-          {child.is_creator ? (
-            <>
-              <button className="btn secondary" disabled={pending} onClick={() => run({ action: "issue", studentId: child.id })}>
-                {t("link.issue")}
+      {state.children.map((child) => {
+        const adults = access[child.id] ?? [];
+        return (
+          <div className="card stack" key={child.id}>
+            <div className="row link-child-head">
+              <div>
+                <h2>{child.name}</h2>
+                {child.child_id ? <p className="muted">{child.child_id}</p> : null}
+              </div>
+              <span className="pill">{child.is_creator ? t("link.owner") : t("link.linked")}</span>
+            </div>
+
+            <h3 className="link-access-title">{t("link.access.title")}</h3>
+            {adults.length === 0 ? (
+              <p className="muted">{t("link.noAdults")}</p>
+            ) : (
+              <ul className="link-access-list">
+                {adults.map((adult) => (
+                  <li className="row link-access-row" key={adult.profile_id}>
+                    <span className="link-access-who">
+                      <strong>{adultLabel(adult)}</strong>
+                      {adult.email ? <span className="muted">{adult.email}</span> : null}
+                      <span className="muted">
+                        {adult.role === "creator" ? t("link.access.creator") : t("link.access.linked")}
+                      </span>
+                    </span>
+                    {child.is_creator && adult.role === "linked" ? (
+                      <button
+                        className="btn secondary"
+                        disabled={pending}
+                        onClick={() => run({ action: "revoke", studentId: child.id, parentId: adult.profile_id })}
+                      >
+                        {t("link.revoke")}
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {child.is_creator ? null : (
+              <button className="btn secondary" disabled={pending} onClick={() => run({ action: "leave", studentId: child.id })}>
+                {t("link.leave")}
               </button>
-              {issued?.childId === child.child_id ? (
-                <div className="notice success" role="status">
-                  <strong style={{ letterSpacing: 2 }}>{issued.code}</strong>
-                  <p>{t("link.codeReady")}</p>
-                  <button className="btn secondary" type="button" onClick={() => void copyIssuedCode()}>
-                    {t("parent.child.idCopy")}
-                  </button>
-                </div>
-              ) : null}
-              {child.invitations.map((invite) => (
-                <div className="row" style={{ justifyContent: "space-between", gap: 12 }} key={invite.id}>
-                  <span>{invite.status === "pending" ? `${invite.name ?? "—"} · ${invite.masked_email ?? ""}` : t("link.pending")}</span>
-                  <span className="row" style={{ gap: 8 }}>
-                    {invite.status === "pending" ? <button className="btn" disabled={pending} onClick={() => run({ action: "approve", invitationId: invite.id })}>{t("link.approve")}</button> : null}
-                    <button className="btn secondary" disabled={pending} onClick={() => run({ action: invite.status === "pending" ? "reject" : "revokeInvite", invitationId: invite.id })}>{t("link.reject")}</button>
-                  </span>
-                </div>
-              ))}
-              {child.adults.length === 0 ? <p className="muted">{t("link.noAdults")}</p> : child.adults.map((adult) => (
-                <div className="row" style={{ justifyContent: "space-between", gap: 12 }} key={adult.parent_id}>
-                  <span>{adult.name ?? "—"}</span>
-                  <button className="btn secondary" disabled={pending} onClick={() => run({ action: "revoke", studentId: child.id, parentId: adult.parent_id })}>{t("link.revoke")}</button>
-                </div>
-              ))}
-            </>
-          ) : (
-            <button className="btn secondary" disabled={pending} onClick={() => run({ action: "leave", studentId: child.id })}>{t("link.leave")}</button>
-          )}
-        </div>
-      ))}
-      {message ? <p className="notice" role="status">{message}</p> : null}
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -13,11 +13,13 @@ which must never appear in store copy (see §5).
 The rest of that pack (data-safety inventory, reviewer notes, age-rating answers) is
 still current; only the listing metadata moved here.
 
-- **Last updated:** 2026-09-09
+- **Last updated:** 2026-09-16
 - **Play status:** submitted for the default `az-AZ` listing
-- **App Store status:** 1.15.0 build 5 approved 2026-09-09 and released. **1.16.0 is the
-  next submission**, and it is the first build that collects the child gender field — see
-  the declaration blocker in §8
+- **App Store status:** 1.16.0 approved 2026-09-15 and live. It is the first build that
+  collects the child gender field, and both consoles were updated to declare it before
+  that submission — the §8 blocker is discharged. Changes since then ship as **EAS
+  Updates to the 1.16.0 runtime**, which are not submissions and do not reopen either
+  form
 
 ---
 
@@ -371,7 +373,8 @@ Recorded here so a later submission does not contradict an earlier one.
     institution with no address or coordinates in our catalogue, and calling it location
     would force Precise to Yes. Reasoning: `STORE_LAUNCH_PACK.md` §2.2.
   - **Personal info → Other info** — the child's grade and school (and the gender row
-    below). Required, because both grade and school are mandatory.
+    below). Required, because grade and school are mandatory — and since 2026-09-16 so
+    is gender, which only reinforces the answer already submitted.
   - **App activity → Other actions** — graded attempts, answers, points, streaks and
     news-article likes ("gameplay, likes" are Google's own examples for this type; *App
     interactions* alone covers navigation, not these).
@@ -385,8 +388,9 @@ Recorded here so a later submission does not contradict an earlier one.
   Step-by-step console instructions, in the order each form asks:
   `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §6.1. Full inventory with every row mapped
   to a type on BOTH forms: the same file, §2.
-- **Data safety — one type still to add (migration 169, 2026-09-08).** A parent may now
-  give an optional gender for a child. Play has no data type called "gender", so it files
+- **Data safety — the child gender type (migration 169, 2026-09-08; DECLARED on both
+  forms 2026-09-15; the field became mandatory on 2026-09-16, migration 178).** A parent
+  gives a gender for a child. Play has no data type called "gender", so it files
   under **Personal info → Other info** ("any other personal information such as date of
   birth, gender identity, veteran status, etc."), declared *Collected* — not *Shared*, not
   processed ephemerally — and **two** purposes: **Analytics** for the overall
@@ -397,26 +401,27 @@ Recorded here so a later submission does not contradict an earlier one.
   record is not analytics. It shares its type with the grade and the school, which is why
   that type's optionality answer is **"data collection is required"** and not, as first
   written here, "users can choose": Play asks the question per type, and a type carrying
-  two mandatory fields is required whatever else it also carries. The field itself stays
-  optional in the product and in the policy. With the four types above, ten types are
-  declared in total. **It is a minor's data supplied by the parent**, not by the
-  child: the Families policy already applies to us through the target-audience answer
-  below, and the field is optional at every write, read by no access, content or ranking
-  rule, never shown on a leaderboard, removed with the child, and changeable by the parent
-  at any time — including to "prefer not to say", which is what taking the answer back
-  looks like here. It is **not** withdrawable in the sense of returning to *never asked*:
-  "prefer not to say" is itself a stored answer, and the never-asked state exists only for
-  children nobody has answered for. **Not yet submitted, and it now blocks a
-  submission.** This row goes in with the release that first ships the field, and that
-  release exists: it is **1.16.0**.
-  So both forms must carry gender **BEFORE 1.16.0 is submitted to either store** — not in
-  the same session, not after; the four types in the bullet above are for data already
-  shipped and must not wait for it either. The **OTA freeze** that stood here until
-  2026-09-09 is discharged — `expo.version` left 1.15.0, and `runtimeVersion: appVersion`
-  means an update published now can never reach a 1.15.0 binary. The obligation did not
-  lapse with it; it hardened, because a submitted build hands a reviewer the declaration
-  rather than leaving it attached to a binary already out (root `CLAUDE.md` →
-  “Releasing a new mobile version”).
+  two mandatory fields is required whatever else it also carries. **Since 2026-09-16 the
+  field itself is mandatory** — Add-Child offers Qız or Oğlan and will not create the
+  child without one — so the field and its type now agree. **That changes nothing on
+  either console**: the submitted optionality answer was already *required*, and a field
+  moving from optional to required cannot move it further. What it did change is the
+  prose, here and in the privacy policy, which promised parents an optional question in
+  three languages while the binary refuses to skip it. With the four types above, ten
+  types are declared in total. **It is a minor's data supplied by the parent**, not by
+  the child: the Families policy already applies to us through the target-audience answer
+  below, and the answer is read by no access, content, difficulty or ranking rule, never
+  shown on a leaderboard, removed with the child, and correctable by the parent at any
+  time from the child's details. It is **not** withdrawable: the requirement applies to
+  children created from 2026-09-16 onward, so an unanswered or "prefer not to say" value
+  survives only on children created before it, and nothing returns a new child to the
+  *never asked* state.
+  **Declared on both forms 2026-09-15, before 1.16.0 was submitted**, which is the rule
+  it was written to enforce (root `CLAUDE.md` → "Releasing a new mobile version"): a
+  store declaration is part of the submission, so any change to what the app collects
+  about a child updates both forms BEFORE the build that collects it is submitted. The
+  **OTA freeze** that stood here until 2026-09-09 is discharged with it. Nothing is owed
+  on either console for the mandatory-gender change.
   The iOS half of the same declaration
   (*Other Data → Other Data Types*, linked, not tracking; purposes **Analytics** and
   **App Functionality**, Apple's category for "perform customer support" — it has no
@@ -523,3 +528,4 @@ write down that it did.
 | 2026-09-09 | 1.15.0 build 5 approved and released. The OTA freeze on the gender row is discharged by the move to 1.16.0; the same duty is restated as a **pre-submission blocker** on 1.16.0, the build that first collects the field. |
 | 2026-09-11 | **Sentry landed in all three apps — the product's first third-party data recipient — so both declarations gain a category neither has ever carried.** Play: *App info and performance → Crash logs* and *Diagnostics* (ten declared types become twelve). App Store: *Diagnostics → Crash Data* and *Other Diagnostic Data*; *Performance Data* stays No because tracing is off. Both Collected, not Shared, not ephemeral, purpose **App functionality** only — not Analytics — and both answered **not linked to a user**, which is the only "not linked" answer on either form and is conditional on `Sentry.setUser()` never being called, the PII option staying off in every runtime, and the scrubbers running. Recorded as a **pre-submission blocker on 1.16.0**, owed in the same console pass as the gender row. The privacy policy was amended in the same change: Sentry is now a named processor in az/en/ru. |
 | 2026-09-09 | §7 still claimed `ios.supportsTablet` was false and that Apple would therefore never ask for iPad screenshots — 1.16.0 turned it on, so the sentence was backwards and the requirement it dismissed is now a submission blocker. Corrected, and the missing spec written as **§6.5**: the 13-inch iPad size (2064×2752) is required of any iPad-capable binary, 6.9-inch covers iPhone, 1–10 per size, no alpha channel, and a localisation without its own screenshots inherits the primary language's. |
+| 2026-09-16 | **The child gender field became mandatory (migration 178), and §8 still described it as optional.** Add-Child now offers only Qız or Oğlan and will not create the child without one. The Play optionality answer for *Personal info → Other info* does **not** move — it has been *Data collection is required* since 2026-09-08 because grade and school share the type — and Apple never asks the question, so **no console change is owed**. What changed is the prose: the field is no longer described as skippable, the "prefer not to say" withdrawal route no longer exists for new children, and the 1.16.0 declaration blocker is recorded as discharged (both forms were updated 2026-09-15, before submission). The privacy policy was corrected in the same change, in az/en/ru. |

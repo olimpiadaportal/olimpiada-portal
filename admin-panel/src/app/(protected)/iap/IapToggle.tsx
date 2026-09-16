@@ -1,21 +1,30 @@
 "use client";
 
-// The activate / deactivate control for ONE store product row.
+// The ONE control on an otherwise read-only screen: does OUR app offer this
+// product, or not?
+//
+// WHAT IT IS NOT. It does not create, withdraw, price or submit anything in App
+// Store Connect, and the dialog says so in a sentence of its own. That is not
+// politeness — an admin who believes this button pulled a product from Apple
+// will stop looking for the real problem during the incident that made them
+// click it. It survived the read-only pass because it is the only code path in
+// the repository that can set active = false, which is how a live iOS product
+// stops being offered without raw SQL against production.
 //
 // WHY A CONFIRMATION DIALOG AND NOT A SWITCH. Every other on/off control in
 // this panel (FeatureFlagToggle, StickerThemeToggle) is one click, because the
 // worst case is a screen that looks wrong until somebody clicks again. This one
-// is different in kind: activating a product makes it PURCHASABLE in the iOS
-// app, and if the matching product does not already exist and is not approved
-// in App Store Connect, StoreKit cannot resolve it and the purchase fails for
-// every family who taps Buy — an outcome no test on our side can reveal and no
-// server flag can undo fast enough. The dialog exists to state that consequence
-// in words before the click, and the acknowledgement checkbox exists because
-// the App Store Connect half is a fact only the person clicking can confirm.
+// is different in kind: offering a product makes it PURCHASABLE in the iOS app,
+// and if the matching product does not already exist and is not approved in App
+// Store Connect, StoreKit cannot resolve it and the purchase fails for every
+// family who taps Buy — an outcome no test on our side can reveal and no server
+// flag can undo fast enough. The dialog states that consequence in words before
+// the click, and repeats what App Store Connect reported for THIS product so
+// the acknowledgement is made against a fact on screen rather than a memory.
 //
-// Deactivation gets the same dialog with no checkbox: its consequence (the
-// product disappears from the app and nobody can buy it) is real but safe, and
-// it must never be harder than the dangerous direction.
+// Turning the offer off gets the same dialog with no checkbox: its consequence
+// (the product disappears from the app and nobody can buy it) is real but safe,
+// and it must never be harder than the dangerous direction.
 //
 // Every string arrives already translated from the server page — this component
 // never touches the i18n layer, the same contract DestructiveConfirmDialog and
@@ -30,10 +39,14 @@ export type IapToggleStrings = {
   deactivate: string;
   working: string;
   title: string;
-  /** The plain consequence sentence for turning a product ON. */
+  /** The plain consequence sentence for starting to offer a product. */
   consequenceOn: string;
-  /** …and for turning it OFF. */
+  /** …and for stopping. */
   consequenceOff: string;
+  /** "This changes nothing in App Store Connect" — shown in both directions. */
+  localOnly: string;
+  /** Label for the App Store Connect state line ("App Store Connect"). */
+  storeLabel: string;
   ack: string;
   confirmOn: string;
   confirmOff: string;
@@ -50,6 +63,7 @@ export function IapToggle({
   productId,
   grants,
   active,
+  storeText,
   blockedReason,
   strings,
 }: {
@@ -58,6 +72,12 @@ export function IapToggle({
   /** Human description of what the product sells, shown inside the dialog. */
   grants: string;
   active: boolean;
+  /**
+   * What App Store Connect reported for THIS product, already localized, or
+   * null when Apple could not be read. Shown in the dialog so the checkbox
+   * below is ticked against something visible rather than a recollection.
+   */
+  storeText: string | null;
   /**
    * Already-localized reason this row cannot be activated (archived subject,
    * deleted package…), or null when it is sellable. Only ever blocks the ON
@@ -127,8 +147,21 @@ export function IapToggle({
             <code>{productId}</code>
           </p>
 
+          {storeText && (
+            <p className="muted" style={{ marginTop: 0 }}>
+              {strings.storeLabel}: <strong>{storeText}</strong>
+            </p>
+          )}
+
           <p className={next ? "form-error" : undefined}>
             {next ? strings.consequenceOn : strings.consequenceOff}
+          </p>
+
+          {/* In BOTH directions: this button moves our own switch and nothing
+              else. The off direction needs it most — that is the click somebody
+              makes while trying to stop a live product. */}
+          <p className="muted" style={{ marginTop: 0 }}>
+            {strings.localOnly}
           </p>
 
           {next && (

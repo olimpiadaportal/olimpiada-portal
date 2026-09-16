@@ -239,3 +239,176 @@ describe("the request itself", () => {
     });
   });
 });
+
+// ===========================================================================
+describe("the whole-catalogue read behind the mirror screen", () => {
+  // The admin screen shows our rows beside Apple's, so this reader answers for
+  // EVERY product at once. Its failure mode is the opposite of the preflight's:
+  // the preflight must not wrongly allow, this must not wrongly report absence.
+  // "Apple has never heard of this product" is a 3.1.1-shaped accusation, and a
+  // dropped page or a failed request would make it about every row at once.
+
+  /** Pages of inAppPurchasesV2, served in order, with Apple's own `next` link. */
+  function respondWithPages(pages: { productId: string; state: string; name?: string }[][]) {
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: unknown) => {
+        requests.push(String(url));
+        const page = pages[call] ?? [];
+        const isLast = call >= pages.length - 1;
+        call += 1;
+        return new Response(
+          JSON.stringify({
+            data: page.map((p) => ({
+              attributes: { productId: p.productId, state: p.state, name: p.name ?? null },
+            })),
+            links: isLast
+              ? {}
+              : { next: "https://api.appstoreconnect.apple.com/v1/apps/6798527831/inAppPurchasesV2?cursor=2" },
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+  }
+
+  it("returns every product with its raw state and reference name", async () => {
+    respondWithPages([
+      [{ productId: PRODUCT, state: "APPROVED", name: "Math monthly" }],
+    ]);
+    const { fetchStoreCatalogue } = await subject();
+    const result = await fetchStoreCatalogue();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.products).toEqual([
+      { productId: PRODUCT, state: "APPROVED", name: "Math monthly" },
+    ]);
+    expect(Date.parse(result.fetchedAt)).toBeGreaterThan(0);
+  });
+
+  it("follows Apple's cursor instead of stopping at the first page", async () => {
+    respondWithPages([
+      [{ productId: "ai.olympiq.app.sub.math.week", state: "APPROVED" }],
+      [{ productId: "ai.olympiq.app.sub.math.year", state: "APPROVED" }],
+    ]);
+    const { fetchStoreCatalogue } = await subject();
+    const result = await fetchStoreCatalogue();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.products.map((p) => p.productId)).toEqual([
+      "ai.olympiq.app.sub.math.week",
+      "ai.olympiq.app.sub.math.year",
+    ]);
+    expect(requests).toHaveLength(2);
+  });
+
+  it("never follows a `next` link that points off Apple's host", async () => {
+    // The bearer token rides in the header; a redirected cursor would hand the
+    // credential to whoever wrote the JSON.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: unknown) => {
+        requests.push(String(url));
+        return new Response(
+          JSON.stringify({
+            data: [{ attributes: { productId: PRODUCT, state: "APPROVED" } }],
+            links: { next: "https://evil.example.com/v1/apps/1/inAppPurchasesV2" },
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+    const { fetchStoreCatalogue } = await subject();
+    await fetchStoreCatalogue();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain("api.appstoreconnect.apple.com");
+  });
+
+  it("reports a FAILED read rather than an empty catalogue", async () => {
+    // The dangerous shape: `ok: true, products: []` would tell the screen that
+    // Apple has none of our products, and every row would read as missing.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 500 })));
+    const { fetchStoreCatalogue } = await subject();
+    const result = await fetchStoreCatalogue();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.problem).toBe("storeUnreachable");
+  });
+
+  it("drops a half-read catalogue when a later page fails", async () => {
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        call += 1;
+        if (call === 1) {
+          return new Response(
+            JSON.stringify({
+              data: [{ attributes: { productId: PRODUCT, state: "APPROVED" } }],
+              links: { next: "https://api.appstoreconnect.apple.com/v1/apps/6798527831/inAppPurchasesV2?cursor=2" },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("nope", { status: 500 });
+      }),
+    );
+    const { fetchStoreCatalogue } = await subject();
+    const result = await fetchStoreCatalogue();
+    expect(result.ok).toBe(false);
+  });
+
+  it("says unconfigured, with a timestamp, when there are no credentials", async () => {
+    configure({ APP_STORE_CONNECT_ISSUER_ID: undefined });
+    const { fetchStoreCatalogue } = await subject();
+    const result = await fetchStoreCatalogue();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.problem).toBe("storeNotConfigured");
+    // Present on BOTH shapes: a screen that only stamps successes shows the age
+    // of the last good read during an outage, which is worse than no stamp.
+    expect(Date.parse(result.fetchedAt)).toBeGreaterThan(0);
+  });
+
+  it("asks for the app's own products and nothing else", async () => {
+    respondWithPages([[{ productId: PRODUCT, state: "APPROVED" }]]);
+    const { fetchStoreCatalogue } = await subject();
+    await fetchStoreCatalogue();
+    expect(requests[0]).toContain("/v1/apps/6798527831/inAppPurchasesV2");
+    expect(requests[0]).not.toContain("filter");
+  });
+});
+
+// ===========================================================================
+describe("the operator-facing state labels", () => {
+  // These are the pairings App Store Connect itself shows. Echoing Apple's API
+  // name at an admin sends them looking for a status that is not on any screen.
+  it("maps both 'Prepare for Submission' states to one label", async () => {
+    const { storeStateLabelKey } = await subject();
+    expect(storeStateLabelKey("MISSING_METADATA")).toBe("iap.store.state.prepare");
+    expect(storeStateLabelKey("READY_TO_SUBMIT")).toBe("iap.store.state.prepare");
+  });
+
+  it("uses the console's wording for the states that are renamed there", async () => {
+    const { storeStateLabelKey } = await subject();
+    expect(storeStateLabelKey("PENDING_BINARY_APPROVAL")).toBe("iap.store.state.accepted");
+    expect(storeStateLabelKey("DEVELOPER_ACTION_NEEDED")).toBe(
+      "iap.store.state.developerRejected",
+    );
+  });
+
+  it("falls back to a label, never to the raw code", async () => {
+    const { storeStateLabelKey } = await subject();
+    expect(storeStateLabelKey("SOMETHING_APPLE_ADDED")).toBe("iap.store.state.unknown");
+  });
+
+  it("verdicts agree with what the preflight would allow", async () => {
+    const { storeStateVerdict } = await subject();
+    expect(storeStateVerdict("APPROVED")).toBe("sellable");
+    expect(storeStateVerdict("WAITING_FOR_REVIEW")).toBe("sellable");
+    expect(storeStateVerdict("REJECTED")).toBe("blocked");
+    expect(storeStateVerdict("MISSING_METADATA")).toBe("blocked");
+    expect(storeStateVerdict("SOMETHING_APPLE_ADDED")).toBe("unknown");
+  });
+});

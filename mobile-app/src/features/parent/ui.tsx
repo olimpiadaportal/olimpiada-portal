@@ -19,6 +19,7 @@ import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
 import { ChildAvatar } from "@/components/ChildAvatar";
 import { ActionAreaShell } from "@/components/ActionArea";
+import { StarField } from "@/components/StarField";
 import { scrollBodyBottomInset } from "@/components/actionAreaLayout";
 import { scrollPaddingBottom } from "@/components/keyboardLayout";
 import { KeyboardFocusProvider, useKeyboardAwareScroll } from "@/lib/useKeyboardAware";
@@ -70,46 +71,55 @@ export function ScreenScroll({
   const gutter = useContentGutter();
   const hasActions = Boolean(actions);
   const body = (
-    <ScrollView
-      {...scrollProps}
-      style={{ flex: 1, backgroundColor: tokens.bg }}
-      contentContainerStyle={{
-        padding: spacing.lg,
-        // 0 on every phone. On a tablet this centres the content column
-        // instead of letting a layout drawn for a 390pt phone stretch across
-        // 1024pt. It overrides the `padding` above for left/right because
-        // React Native resolves the MORE SPECIFIC property last regardless of
-        // key order — this does not depend on the two lines staying in this
-        // sequence, so reordering them is safe and reordering them is also
-        // not what makes it work.
-        paddingHorizontal: spacing.lg + gutter,
-        paddingTop: topInset ? insets.top + spacing.sm : spacing.lg,
-        // Grow the CONTENT by the live keyboard overlap so the last field's
-        // action button can still be scrolled above the keyboard. Back to
-        // exactly `insets.bottom + spacing.xxl` the moment it closes.
-        paddingBottom: scrollPaddingBottom(
-          scrollBodyBottomInset(insets.bottom, hasActions) + spacing.xxl,
-          keyboardInset,
-        ),
-        gap: spacing.lg,
-      }}
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={tokens.accent}
-            colors={[tokens.accent]}
-            // Android draws the spinner from the scroll view's own top edge;
-            // on a headerless screen that puts it under the status bar.
-            progressViewOffset={topInset ? insets.top : 0}
-            accessibilityLabel={t("mob.refreshing")}
-          />
-        ) : undefined
-      }
-    >
-      {children}
-    </ScrollView>
+    // The background moved OFF the ScrollView and onto this wrapper so the dark
+    // star field can sit between the two: an opaque scroll surface would simply
+    // hide it. The wrapper is `flex: 1` around a `flex: 1` ScrollView, so every
+    // measurement below — the keyboard overlap, the action-area reservation,
+    // the tablet gutter — sees exactly the frame it saw before, and light mode
+    // is pixel-identical (same colour, one node up). See components/StarField.tsx.
+    <View style={{ flex: 1, backgroundColor: tokens.bg }}>
+      <StarField />
+      <ScrollView
+        {...scrollProps}
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          padding: spacing.lg,
+          // 0 on every phone. On a tablet this centres the content column
+          // instead of letting a layout drawn for a 390pt phone stretch across
+          // 1024pt. It overrides the `padding` above for left/right because
+          // React Native resolves the MORE SPECIFIC property last regardless of
+          // key order — this does not depend on the two lines staying in this
+          // sequence, so reordering them is safe and reordering them is also
+          // not what makes it work.
+          paddingHorizontal: spacing.lg + gutter,
+          paddingTop: topInset ? insets.top + spacing.sm : spacing.lg,
+          // Grow the CONTENT by the live keyboard overlap so the last field's
+          // action button can still be scrolled above the keyboard. Back to
+          // exactly `insets.bottom + spacing.xxl` the moment it closes.
+          paddingBottom: scrollPaddingBottom(
+            scrollBodyBottomInset(insets.bottom, hasActions) + spacing.xxl,
+            keyboardInset,
+          ),
+          gap: spacing.lg,
+        }}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={tokens.accent}
+              colors={[tokens.accent]}
+              // Android draws the spinner from the scroll view's own top edge;
+              // on a headerless screen that puts it under the status bar.
+              progressViewOffset={topInset ? insets.top : 0}
+              accessibilityLabel={t("mob.refreshing")}
+            />
+          ) : undefined
+        }
+      >
+        {children}
+      </ScrollView>
+    </View>
   );
 
   return (

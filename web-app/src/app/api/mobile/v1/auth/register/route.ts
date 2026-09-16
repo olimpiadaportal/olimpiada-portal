@@ -74,7 +74,7 @@ export async function POST(request: Request): Promise<Response> {
       phone: str(body, "phone"),
     });
     if (!check.ok) return json({ error: check.errorKey, retryable: false }, 400);
-    const { displayName, email, phone } = check;
+    const { displayName, firstName, lastName, email, phone } = check;
 
     // SAME scope string as the web action → shared web+mobile budget.
     if (!rateLimitAllow("register", email, 5, 15 * 60_000)) {
@@ -150,17 +150,33 @@ export async function POST(request: Request): Promise<Response> {
       await writeAuditLog(parentProfileId, "parent.register");
     }
 
-    // Persist the (already validated) phone on the profile. A failure here
-    // must NOT fail registration — the auth user exists; the phone can be
-    // backfilled. Log the error code only, never the phone value.
-    const { error: phoneError } = await admin
+    // Persist the (already validated) phone AND the structured name on the
+    // profile — the same one statement the web action writes
+    // (parentService.registerParent). A failure here must NOT fail registration:
+    // the auth user exists and all three can be backfilled. Log the error code
+    // only, never the values.
+    //
+    // WHY THE NAME PARTS BELONG HERE TOO. first_name/last_name arrived with
+    // migration 177, whose backfill SPLIT display_name on the first space — a
+    // one-time, best-effort guess that is wrong for a two-word given name and,
+    // more to the point, will never run again. This route wrote only { phone },
+    // so every parent who registered IN THE APP got NULL names while an
+    // otherwise identical web signup got them, and nothing downstream would ever
+    // repair it. The linking UI (177) identifies adults "by first name, last
+    // name and email", so those rows would show up there as blanks.
+    //
+    // ONE statement, so migration 177 must be applied BEFORE this code deploys:
+    // against a database without the two columns PostgREST rejects the whole
+    // update, and the PHONE that used to ride in this statement alone would be
+    // dropped with it. (177 is applied.)
+    const { error: profileError } = await admin
       .from("profiles")
-      .update({ phone })
+      .update({ phone, first_name: firstName || null, last_name: lastName || null })
       .eq("auth_user_id", signUp.user.id);
-    if (phoneError) {
+    if (profileError) {
       console.error(
-        "mobile register: failed to persist profile phone",
-        phoneError.code ?? "unknown_error",
+        "mobile register: failed to persist profile phone/name",
+        profileError.code ?? "unknown_error",
       );
     }
 

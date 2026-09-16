@@ -1,30 +1,45 @@
 import { requireAdmin } from "@/lib/admin/guards";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
+import { formatBakuDateTime } from "@/lib/admin/datetime";
 import { listIapCatalogue, type IapProductRow } from "@/lib/admin/iap";
 import { IapToggle, type IapToggleStrings } from "./IapToggle";
-import { IapCreateForm, type IapCreateStrings } from "./IapCreateForm";
+import { IapRefreshButton } from "./IapRefreshButton";
 
 // App Store products (public.iap_products) — ADMINISTRATOR ONLY, never Content
 // Manager: this is a payment module, and CLAUDE.md keeps Content Managers out
 // of every one of them. requireAdmin() is the boundary; the nav entry hiding it
 // is cosmetic.
 //
-// WHAT AN ADMIN COMES HERE TO DO. Migration 164 seeded 21 iOS subject products
-// with active = false, which means the iOS app is currently selling NOTHING.
-// Flipping `active` is the go-live step, and until this screen existed it
-// required raw SQL against production. The banner at the top states the current
-// posture in plain words for exactly that reason: "nothing is turned on" is a
-// deliberate state, not a broken screen, and an admin has to be able to tell
-// the difference at a glance.
+// WHAT THIS SCREEN IS (owner decision, 2026-09-16). A MIRROR, not a management
+// area. It shows our rows beside what App Store Connect reports about the same
+// product ids, and it names every place the two disagree. It creates nothing,
+// edits nothing and deletes nothing — Apple-side products are created by
+// mobile-app/scripts/create-iap-products.mjs, run by hand, and an admin form
+// that looked like it did the same thing was a workflow that changed nothing in
+// the store while minting permanent, unsellable ids in ours.
+//
+// THE ONE CONTROL LEFT is the offer switch, and it is deliberate: it is the
+// only code path in the repository that can set active = false, which is how a
+// live iOS product is withdrawn without raw SQL against production. It is
+// LOCAL — it decides what our app offers and changes nothing at Apple — and
+// every string around it says so.
+//
+// WHY THE FRESHNESS STAMP IS NOT DECORATION. Silent divergence is the failure
+// mode that produced a Guideline 3.1.1 rejection here: both halves looked fine
+// separately. A mirror whose age is invisible invites exactly that mistake
+// again — an admin reading a picture of Apple taken before the change they are
+// checking for.
 //
 // Reads go through the request-scoped client — iap_products_select returns
 // every row to an admin (inactive ones included, which is the whole point) — so
-// no service-role client is involved here. All writes live in lib/admin/iap.ts.
+// no service-role client is involved here. The single write lives in
+// lib/admin/iap.ts.
 export default async function IapProductsPage() {
   await requireAdmin();
   const t = await getT();
+  const locale = await getLocale();
 
-  const { rows, subjects, packages, loadFailed } = await listIapCatalogue();
+  const { rows, unmapped, store, loadFailed } = await listIapCatalogue();
 
   // The action returns i18n KEYS, never prose (project law: no raw server text
   // reaches a user). The client components cannot call getT(), so the whole
@@ -37,11 +52,13 @@ export default async function IapProductsPage() {
     "iap.err.targetArchived",
     "iap.err.gradeMissing",
     "iap.err.duplicateActive",
-    "iap.err.duplicateId",
-    "iap.err.scope",
-    "iap.err.target",
-    "iap.err.slug",
-    "iap.err.interval",
+    "iap.err.storeNotConfigured",
+    "iap.err.storeUnreachable",
+    "iap.err.storeMissingProduct",
+    "iap.err.storeIncomplete",
+    "iap.err.storeRejected",
+    "iap.err.storeRemoved",
+    "iap.err.storeUnknownState",
   ] as const;
   const errors: Record<string, string> = {};
   for (const k of ERROR_KEYS) errors[k] = t(k);
@@ -53,37 +70,14 @@ export default async function IapProductsPage() {
     title: t("iap.confirm.title"),
     consequenceOn: t("iap.confirm.on"),
     consequenceOff: t("iap.confirm.off"),
+    localOnly: t("iap.confirm.localOnly"),
+    storeLabel: t("iap.col.apple"),
     ack: t("iap.confirm.ack"),
     confirmOn: t("iap.confirm.yesOn"),
     confirmOff: t("iap.confirm.yesOff"),
     cancel: t("action.cancel"),
     close: t("modal.close"),
     blockedTitle: t("iap.blockedTitle"),
-    errors,
-    errFallback: t("iap.err.server"),
-  };
-
-  const createStrings: IapCreateStrings = {
-    heading: t("iap.create.heading"),
-    intro: t("iap.create.intro"),
-    scope: t("iap.create.scope"),
-    scopeSubject: t("iap.group.subject"),
-    scopePackage: t("iap.group.package"),
-    target: t("iap.create.target"),
-    targetPlaceholder: t("iap.create.targetPlaceholder"),
-    interval: t("iap.col.interval"),
-    intervalWeek: t("iap.interval.week"),
-    intervalMonth: t("iap.interval.month"),
-    intervalYear: t("iap.interval.year"),
-    slug: t("iap.create.slug"),
-    slugHint: t("iap.create.slugHint"),
-    preview: t("iap.create.preview"),
-    platformNote: t("iap.androidNote"),
-    inactiveNote: t("iap.create.inactiveNote"),
-    submit: t("iap.create.submit"),
-    working: t("pend.creating"),
-    saved: t("iap.create.saved"),
-    noTargets: t("iap.create.noTargets"),
     errors,
     errFallback: t("iap.err.server"),
   };
@@ -111,7 +105,37 @@ export default async function IapProductsPage() {
     return t(`iap.problem.${row.problem}`);
   };
 
+  // The store cell, with the tone that belongs to it. Apple's raw state code is
+  // never printed: "MISSING_METADATA" is a status no App Store Connect screen
+  // shows, so an admin would go hunting for it (see lib/admin/appStoreConnect).
+  const storeCell = (row: IapProductRow) => {
+    if (!store.ok) {
+      return { text: t("iap.store.unread"), tone: "pill-muted" };
+    }
+    if (!row.store) {
+      return { text: t("iap.store.absent"), tone: "pill-warn" };
+    }
+    return {
+      text: t(row.store.labelKey),
+      tone: row.store.verdict === "sellable" ? "pill-ok" : "pill-warn",
+    };
+  };
+
+  // A disagreement we are OFFERING is an error; one we are merely sitting on is
+  // a fact. Both are stated on the row — the difference is how loudly.
+  const SEVERE = new Set(["offeredMissing", "offeredBlocked", "offeredUnknown"]);
+  const divergenceOf = (row: IapProductRow) =>
+    row.divergence
+      ? {
+          text: t(`iap.diverge.${row.divergence}`),
+          severe: SEVERE.has(row.divergence),
+        }
+      : null;
+
   const activeCount = rows.filter((r) => r.active).length;
+  const severeCount = rows.filter(
+    (r) => r.divergence !== null && SEVERE.has(r.divergence),
+  ).length;
   const subjectRows = rows.filter((r) => r.scope === "subject");
   const packageRows = rows.filter((r) => r.scope === "olympiad_package");
 
@@ -137,13 +161,16 @@ export default async function IapProductsPage() {
                 <th>{t("iap.col.productId")}</th>
                 <th>{t("iap.col.grants")}</th>
                 <th>{t("iap.col.platform")}</th>
-                <th>{t("iap.col.state")}</th>
+                <th>{t("iap.col.ours")}</th>
+                <th>{t("iap.col.apple")}</th>
                 <th>{t("iap.col.action")}</th>
               </tr>
             </thead>
             <tbody>
               {group.map((row) => {
                 const problem = problemOf(row);
+                const apple = storeCell(row);
+                const gap = divergenceOf(row);
                 return (
                   <tr key={row.id}>
                     <td>
@@ -151,16 +178,28 @@ export default async function IapProductsPage() {
                     </td>
                     <td>
                       {grantsOf(row)}
-                      {/* An ACTIVE row whose target died is the worst state on
-                          this screen — the app is taking money for something
-                          the platform will not serve — so it is called out on
-                          the row rather than only when somebody clicks. */}
+                      {/* An OFFERED row whose target died is the worst state
+                          this side of the screen can be in — the app is taking
+                          money for something the platform will not serve — so
+                          it is called out on the row rather than only when
+                          somebody clicks. */}
                       {problem && row.active ? (
                         <span
                           className="form-error"
                           style={{ display: "block", marginTop: 4 }}
                         >
                           {problem}
+                        </span>
+                      ) : null}
+                      {/* …and this is the same idea across the two halves: the
+                          row states its own disagreement instead of leaving an
+                          admin to compare two pills. */}
+                      {gap ? (
+                        <span
+                          className={gap.severe ? "form-error" : "muted"}
+                          style={{ display: "block", marginTop: 4 }}
+                        >
+                          {gap.text}
                         </span>
                       ) : null}
                     </td>
@@ -174,12 +213,18 @@ export default async function IapProductsPage() {
                         {row.active ? t("iap.state.on") : t("iap.state.off")}
                       </span>
                     </td>
+                    <td className="nowrap">
+                      <span className={`pill pill-sm ${apple.tone}`}>
+                        {apple.text}
+                      </span>
+                    </td>
                     <td>
                       <IapToggle
                         id={row.id}
                         productId={row.product_id}
                         grants={grantsOf(row)}
                         active={row.active}
+                        storeText={store.ok ? apple.text : null}
                         blockedReason={problem}
                         strings={toggleStrings}
                       />
@@ -201,6 +246,40 @@ export default async function IapProductsPage() {
         <p className="muted">{t("iap.subtitle")}</p>
       </div>
 
+      {/* WHAT THIS SCREEN CANNOT DO, said before anything else. An admin who
+          believes the switch below reaches App Store Connect will stop looking
+          for the real problem at exactly the wrong moment. */}
+      <div className="card setting-card-info">
+        <h3>{t("iap.readonly.title")}</h3>
+        <p className="muted">{t("iap.readonly.body")}</p>
+      </div>
+
+      {/* The freshness line: WHEN this picture of Apple was taken, how the read
+          went, and how to take a new one. */}
+      <div className="card">
+        <div className="head-row">
+          <div>
+            <p style={{ margin: 0 }}>
+              {t("iap.refresh.stamp").replace(
+                "{at}",
+                formatBakuDateTime(store.fetchedAt, locale),
+              )}
+            </p>
+            <p className="muted" style={{ margin: "4px 0 0" }}>
+              {store.ok
+                ? t("iap.store.link.ok")
+                : store.problem === "storeNotConfigured"
+                  ? t("iap.store.link.notConfigured")
+                  : t("iap.store.link.unreachable")}
+            </p>
+          </div>
+          <IapRefreshButton
+            label={t("iap.refresh.action")}
+            workingLabel={t("iap.refresh.working")}
+          />
+        </div>
+      </div>
+
       {loadFailed ? (
         <div className="card">
           <p className="form-error" role="alert">
@@ -209,11 +288,20 @@ export default async function IapProductsPage() {
         </div>
       ) : null}
 
-      {/* THE STATE-OF-THE-STORE BANNER. Zero active products is the state this
-          platform ships in, and an admin who does not know that reads the whole
-          screen as broken. It is amber rather than red because it is correct
-          until App Store Connect approval lands — and it must not be dismissible,
-          because it stops being true only when somebody activates a row. */}
+      {/* THE DIVERGENCE COUNT, above the tables. A disagreement discovered by
+          scrolling is a disagreement nobody discovers. */}
+      {severeCount > 0 ? (
+        <div className="card setting-card-warn" role="alert">
+          <h3>{t("iap.diverge.summary").replace("{n}", String(severeCount))}</h3>
+          <p className="muted">{t("iap.diverge.summaryBody")}</p>
+        </div>
+      ) : null}
+
+      {/* THE STATE-OF-THE-STORE BANNER. Zero offered products is a state this
+          platform has shipped in, and an admin who does not know that reads the
+          whole screen as broken. It is amber rather than red because it can be
+          entirely correct — and it must not be dismissible, because it stops
+          being true only when somebody switches a row on. */}
       {activeCount === 0 ? (
         <div className="card setting-card-warn" role="status">
           <h3>{t("iap.banner.none.title")}</h3>
@@ -242,11 +330,54 @@ export default async function IapProductsPage() {
         </>
       )}
 
-      <IapCreateForm
-        subjects={subjects}
-        packages={packages}
-        strings={createStrings}
-      />
+      {/* THE OTHER DIRECTION OF DIVERGENCE. A product Apple sells that no row
+          here maps is a purchase the server cannot turn into an entitlement:
+          the family is charged and granted nothing. Invisible in the tables
+          above by construction, so it gets its own section — and the section
+          disappears when there is nothing to say. */}
+      {unmapped.length > 0 ? (
+        <section className="card-stack">
+          <div className="card-head">
+            <h3>{t("iap.unmapped.heading")}</h3>
+            <span className="muted">{unmapped.length}</span>
+          </div>
+          <div className="card">
+            <p className="muted" style={{ marginTop: 0 }}>
+              {t("iap.unmapped.body")}
+            </p>
+          </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t("iap.col.productId")}</th>
+                  <th>{t("iap.unmapped.col.name")}</th>
+                  <th>{t("iap.col.apple")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unmapped.map((p) => (
+                  <tr key={p.productId}>
+                    <td>
+                      <code>{p.productId}</code>
+                    </td>
+                    <td>{p.name ?? "—"}</td>
+                    <td className="nowrap">
+                      <span
+                        className={`pill pill-sm ${
+                          p.verdict === "sellable" ? "pill-ok" : "pill-warn"
+                        }`}
+                      >
+                        {t(p.labelKey)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

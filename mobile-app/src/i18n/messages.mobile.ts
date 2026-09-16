@@ -45,6 +45,22 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a5": "Xeyr. Fənn girişi yalnız valideyn hesabı vasitəsilə açılır.",
     "faq.q7": "Bir ailədən bir neçə uşaq üçün necə işləyir?",
     "faq.a7": "Valideyn bir hesabdan bir neçə uşaq əlavə edə bilər. Hər uşağın öz 8 rəqəmli ID-si və öz fənn girişi olur.",
+    // Migration 177 rewrote the co-parent link copy, and the new az wording
+    // reached for "giriş ƏLDƏ ET" — the literal string §11 of
+    // docs/STORE_PAYMENTS_COMPLIANCE.md tells the submitter to grep a release
+    // bundle for, and the one poly.buyNow was rewritten to remove. It is correct
+    // on the WEB, which sells; it is a get-it CTA inside a purchase-silent
+    // Android binary, where parent tabs are covered too because the
+    // consumption-only test is app-wide. Rephrased as CONNECTING to a profile,
+    // which is also what the flow now does: nothing is requested and nothing is
+    // acquired, a second adult is joined to a child who already exists.
+    // link.title is a NAVIGATOR HEADER on a phone, so it is also shortened
+    // here: the web sentence is a page heading and truncates to nonsense in a
+    // 200pt title slot. link.choice.existing stays long — it is a card heading
+    // and a button on the Add Child chooser, where the sentence has room.
+    "link.title": "Uşaq profilinə qoşul",
+    "link.choice.existing": "Mövcud uşaq profilinə qoşulun",
+    "link.request": "Qoşul",
     "mob.welcome.tagline": "Olimpiadalara hazırlaşmağın ən əyləncəli yolu",
     "mob.welcome.studentLogin": "Şagird girişi",
     // ---- FIRST-LAUNCH LANGUAGE PICKER ----------------------------------
@@ -98,6 +114,14 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.childId": "8 rəqəmli şagird ID-si",
     "mob.childIdPh": "1234 5678",
     "mob.parentPassword": "Valideynin təyin etdiyi şifrə",
+    // ---- EXISTING-CHILD ACCESS (migration 177) --------------------------
+    // The link screen's intro. Mobile-only rather than the shared
+    // `link.subtitle`, whose en/ru values still describe the retired
+    // invitation code — copy that would tell a parent to enter something the
+    // screen no longer has a field for. Access language, no purchase verb:
+    // linking grants a second adult reach, it buys nothing.
+    "mob.link.intro":
+      "Uşağın 8 rəqəmli ID-si və parolu ilə profilə dərhal giriş əldə edin. Təsdiq gözləmək lazım deyil — profili yaradan valideynə bildiriş göndərilir.",
     "mob.forgotOnWeb": "Şifrə bərpası veb saytda açılır.",
     "mob.placeholder.title": "Tezliklə",
     "mob.placeholder.body": "Bu bölmə növbəti mərhələdə əlavə olunacaq.",
@@ -130,27 +154,31 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.child.delete.pending": "Silinir…",
     "mob.child.delete.done": "Uşaq hesabı silindi",
     "mob.child.delete.failed": "Uşaq hesabını silmək alınmadı. Bir azdan yenidən cəhd edin.",
-    // ---- optional gender (migration 169) ---------------------------------
-    // Two different "no answer" wordings, and the difference is the whole
-    // point: `none` is the PLACEHOLDER — nobody has been asked yet — while
-    // `unspecified` is a parent who WAS asked and chose not to say. The
-    // column stores those separately and no screen may blur them, so these
-    // two strings must never be made to read alike in any locale.
+    // ---- gender: REQUIRED since migration 178 ----------------------------
+    // TWO ANSWERS AND NO OPT-OUT ROW. The field was optional when migration 169
+    // created it, and the catalogue carried a third row — "Bildirmək
+    // istəmirəm" — plus a placeholder that had to be worded so it could never
+    // be mistaken for it. Both are gone: the question is mandatory now, and an
+    // opt-out row is an optional field wearing a star. The database enum keeps
+    // its `unspecified` member for rows written earlier; nothing renders it.
+    // `select` is an ordinary "choose one" placeholder, in the voice of
+    // addchild.field.selectCity, and `required` is the error in the voice of
+    // addchild.err.cityRequired.
     // The hint is the POINT OF COLLECTION and must not describe the field more
     // narrowly than the policy does: it says the answer is stored on the
     // child's profile, that authorised staff read it there and in the internal
     // account reports they export (the Accounts export prints a child's gender
     // on their own row — "only for overall statistics" would be false), and
-    // that nothing about access, content or ranking touches it.
-    // privacy.s5.stored is the long form; this is what a parent reads at the
-    // moment they decide. VERBATIM with the web app's addchild.field.gender*.
+    // that nothing about access, content or ranking touches it. It no longer
+    // opens with "İstəyə bağlıdır" for the obvious reason. privacy.s5.stored is
+    // the long form; this is what a parent reads at the moment they decide.
     "mob.child.gender.label": "Cinsi",
-    "mob.child.gender.none": "Seçilməyib",
+    "mob.child.gender.select": "Cinsi seçin",
+    "mob.child.gender.required": "Övladınızın cinsini seçin.",
     "mob.child.gender.female": "Qız",
     "mob.child.gender.male": "Oğlan",
-    "mob.child.gender.unspecified": "Bildirmək istəmirəm",
     "mob.child.gender.hint":
-      "İstəyə bağlıdır. Övladınızın profilində saxlanılır və ümumi statistika üçün istifadə olunur; səlahiyyətli əməkdaşlarımız onu profildə və daxili hesabatlarda görür. Girişinə, tapşırıqlarına və ya reytinqinə heç bir təsiri yoxdur.",
+      "Övladınızın profilində saxlanılır və ümumi statistika üçün istifadə olunur; səlahiyyətli əməkdaşlarımız onu profildə və daxili hesabatlarda görür. Girişinə, tapşırıqlarına və ya reytinqinə heç bir təsiri yoxdur.",
     "mob.select.cancel": "Ləğv et",
     "mob.select.search": "Axtar…",
     "mob.select.noResults": "Uyğun nəticə tapılmadı",
@@ -319,6 +347,9 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a5": "No. Subject access is opened only through the parent account.",
     "faq.q7": "How does it work for several children in one family?",
     "faq.a7": "A parent can add several children from one account. Each child gets their own 8-digit ID and their own subject access.",
+    "link.title": "Connect to a child",
+    "link.choice.existing": "Connect to an existing child profile",
+    "link.request": "Connect",
     "mob.welcome.tagline": "The most fun way to prepare for olympiads",
     "mob.welcome.studentLogin": "Student sign-in",
     "mob.lang.body": "Which language should the app use? You can change it any time later.",
@@ -349,6 +380,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.childId": "8-digit student ID",
     "mob.childIdPh": "1234 5678",
     "mob.parentPassword": "Password set by your parent",
+    "mob.link.intro":
+      "Enter the child's 8-digit ID and password to reach their profile straight away. There is no approval to wait for — the parent who created the profile is notified.",
     "mob.forgotOnWeb": "Password recovery opens on the website.",
     "mob.placeholder.title": "Coming soon",
     "mob.placeholder.body": "This section arrives in the next stage.",
@@ -373,12 +406,12 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.child.delete.done": "Child account deleted",
     "mob.child.delete.failed": "Could not delete the child account. Please try again in a moment.",
     "mob.child.gender.label": "Gender",
-    "mob.child.gender.none": "Not selected",
+    "mob.child.gender.select": "Select a gender",
+    "mob.child.gender.required": "Select your child's gender.",
     "mob.child.gender.female": "Girl",
     "mob.child.gender.male": "Boy",
-    "mob.child.gender.unspecified": "Prefer not to say",
     "mob.child.gender.hint":
-      "Optional. It is stored on your child's profile and used for overall statistics; our authorised staff see it there and in internal account reports. It never affects your child's access, their tasks or their ranking.",
+      "It is stored on your child's profile and used for overall statistics; our authorised staff see it there and in internal account reports. It never affects your child's access, their tasks or their ranking.",
     "mob.select.cancel": "Cancel",
     "mob.select.search": "Search…",
     "mob.select.noResults": "No matching results",
@@ -533,6 +566,9 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a5": "Нет. Доступ к предметам открывается только через родительский аккаунт.",
     "faq.q7": "Как это работает для нескольких детей в одной семье?",
     "faq.a7": "Родитель может добавить нескольких детей из одного аккаунта. У каждого ребёнка свой 8-значный ID и свой доступ к предметам.",
+    "link.title": "Подключение к ребёнку",
+    "link.choice.existing": "Подключиться к существующему профилю ребёнка",
+    "link.request": "Подключить",
     "mob.welcome.tagline": "Самый увлекательный способ готовиться к олимпиадам",
     "mob.welcome.studentLogin": "Вход для ученика",
     "mob.lang.body":
@@ -564,6 +600,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.childId": "8-значный ID ученика",
     "mob.childIdPh": "1234 5678",
     "mob.parentPassword": "Пароль, заданный родителем",
+    "mob.link.intro":
+      "Введите 8-значный ID ребёнка и его пароль, чтобы сразу получить доступ к профилю. Ждать подтверждения не нужно — родитель, создавший профиль, получит уведомление.",
     "mob.forgotOnWeb": "Восстановление пароля откроется на сайте.",
     "mob.placeholder.title": "Скоро",
     "mob.placeholder.body": "Этот раздел появится на следующем этапе.",
@@ -588,12 +626,12 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.child.delete.done": "Аккаунт ребёнка удалён",
     "mob.child.delete.failed": "Не удалось удалить аккаунт ребёнка. Попробуйте ещё раз чуть позже.",
     "mob.child.gender.label": "Пол",
-    "mob.child.gender.none": "Не выбрано",
+    "mob.child.gender.select": "Выберите пол",
+    "mob.child.gender.required": "Укажите пол ребёнка.",
     "mob.child.gender.female": "Девочка",
     "mob.child.gender.male": "Мальчик",
-    "mob.child.gender.unspecified": "Предпочитаю не указывать",
     "mob.child.gender.hint":
-      "Необязательно. Хранится в профиле ребёнка и используется для общей статистики; наши уполномоченные сотрудники видят его там и во внутренних отчётах по аккаунтам. На доступ ребёнка, задания и рейтинг это никак не влияет.",
+      "Хранится в профиле ребёнка и используется для общей статистики; наши уполномоченные сотрудники видят его там и во внутренних отчётах по аккаунтам. На доступ ребёнка, задания и рейтинг это никак не влияет.",
     "mob.select.cancel": "Отмена",
     "mob.select.search": "Поиск…",
     "mob.select.noResults": "Ничего не найдено",

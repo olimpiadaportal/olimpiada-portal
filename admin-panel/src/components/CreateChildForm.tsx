@@ -51,6 +51,12 @@ export type CreateChildStrings = {
   passwordHint: string;
   grade: string;
   gradeNone: string;
+  // Gender — REQUIRED since 2026-09-16 (owner). Two answers only; the DB enum's
+  // 'unspecified' is still readable on older rows and is offered nowhere.
+  gender: string;
+  genderChoose: string;
+  genderFemale: string;
+  genderMale: string;
   city: string;
   cityChoose: string;
   school: string;
@@ -401,6 +407,23 @@ function InnerForm({
                 {g.name}
               </option>
             ))}
+          </select>
+        </label>
+
+        {/* GENDER — required, and the reason this field exists here at all:
+            create_child_account takes it as its 12th argument (migration 178),
+            so a panel that never asked would fail at the RPC for every
+            admin-created child. Uncontrolled like the rest of this form; the
+            empty option is `disabled` so `required` has something to refuse,
+            and createChildForParent re-validates it against the whitelist. */}
+        <label className="field">
+          <span>{strings.gender}</span>
+          <select name="gender" required defaultValue="">
+            <option value="" disabled>
+              {strings.genderChoose}
+            </option>
+            <option value="female">{strings.genderFemale}</option>
+            <option value="male">{strings.genderMale}</option>
           </select>
         </label>
 

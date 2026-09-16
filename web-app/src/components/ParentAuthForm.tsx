@@ -9,6 +9,7 @@ import {
 import { PasswordInput } from "@/components/PasswordInput";
 import { PhoneField } from "@/components/PhoneField";
 import { ResendConfirmationForm } from "@/components/ResendConfirmationForm";
+import { useT } from "@/i18n/I18nProvider";
 
 export function ParentAuthForm({
   mode,
@@ -20,7 +21,13 @@ export function ParentAuthForm({
   /** Active UI locale — used for localized country names in the phone field. */
   locale?: string;
 }) {
-  const tt = (k: string) => dict[k] ?? k;
+  // The page hands down a fixed KEYS dictionary; `useT()` is the whole
+  // (single-locale, override-aware) catalogue the root layout already ships to
+  // every client component. Reading the prop FIRST keeps the page's admin
+  // "Website Content" overrides winning, while a key the page's list does not
+  // enumerate still resolves instead of rendering as itself.
+  const tClient = useT();
+  const tt = (k: string) => dict[k] ?? tClient(k);
   const fn = mode === "register" ? registerParent : parentLogin;
   const [state, action, pending] = useActionState<AuthFormState, FormData>(fn, null);
 
@@ -69,6 +76,31 @@ export function ParentAuthForm({
     );
   }
 
+  // WHY THESE ARE `defaultValue` AND NOT A `key=` TRICK. React 19 resets a form
+  // after its action runs, unconditionally: react-dom queues `requestFormReset`
+  // BEFORE calling the action, so nothing the action returns — and no
+  // `preventDefault`, and no remount — can call it off. What it CAN do is
+  // decide what the fields reset TO, because React writes `defaultValue` onto
+  // the nodes earlier in the same commit than the reset. So the action echoes
+  // the submitted values and they are re-seeded here.
+  //
+  // The email box and the phone field need nothing: both are controlled, and
+  // React keeps a controlled input's `defaultValue` in step with its `value`,
+  // which is exactly why only these two plain inputs ever lost their contents.
+  //
+  // The password is NOT echoed — see AuthFormState. Losing it is the deliberate
+  // trade: echoing it would put a plaintext credential in the RSC payload and
+  // the page HTML. The hint under the field says so, in the user's language.
+  const values = state?.values;
+  const invalid = state?.field;
+  // The password field is empty again after ANY failed registration attempt, so
+  // say why — otherwise the names surviving while the password vanishes reads
+  // like a bug. Guarded against a missing catalogue entry the way PhoneField
+  // guards `field.optional`: no string, no line, never a raw key on screen.
+  const clearedHint = tt("auth.pw.cleared");
+  const cleared =
+    mode === "register" && !!state?.error && clearedHint !== "auth.pw.cleared";
+
   return (
     <form action={action} className="form auth-form">
       {mode === "register" && (
@@ -80,6 +112,8 @@ export function ParentAuthForm({
               required
               autoComplete="given-name"
               placeholder={tt("parent.auth.firstNamePh")}
+              defaultValue={values?.first_name ?? ""}
+              aria-invalid={invalid === "firstName" || undefined}
             />
           </label>
           <label className="field">
@@ -89,6 +123,8 @@ export function ParentAuthForm({
               required
               autoComplete="family-name"
               placeholder={tt("parent.auth.lastNamePh")}
+              defaultValue={values?.last_name ?? ""}
+              aria-invalid={invalid === "lastName" || undefined}
             />
           </label>
         </>
@@ -103,7 +139,7 @@ export function ParentAuthForm({
           placeholder={tt("parent.auth.emailPh")}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          aria-invalid={emailRejected || undefined}
+          aria-invalid={emailRejected || invalid === "email" || undefined}
         />
       </label>
       {mode === "register" && (
@@ -118,6 +154,8 @@ export function ParentAuthForm({
       )}
       <label className="field">
         <span className="field-label">{tt("parent.auth.password")} *</span>
+        {/* The checklist turns itself on for `new-password` and stays off for
+            the login field; `problem` points it at the rule the server refused. */}
         <PasswordInput
           name="password"
           required
@@ -126,9 +164,22 @@ export function ParentAuthForm({
           placeholder={tt("parent.auth.passwordPh")}
           showLabel={tt("auth.showPassword")}
           hideLabel={tt("auth.hidePassword")}
+          problem={state?.passwordProblem ?? null}
+          aria-invalid={invalid === "password" || undefined}
         />
+        {cleared && (
+          <span className="hint" style={{ margin: 0 }}>
+            {clearedHint}
+          </span>
+        )}
       </label>
-      {state?.error && <p className="form-error">{state.error}</p>}
+      {/* role="alert" so the reason is announced: the form has just been reset
+          under the user and the message is the only thing that explains it. */}
+      {state?.error && (
+        <p className="form-error" role="alert">
+          {state.error}
+        </p>
+      )}
       {/* A duplicate address is the one case with an obvious next step, so
           offer it rather than leaving the user to find the login page. */}
       {emailRejected && (

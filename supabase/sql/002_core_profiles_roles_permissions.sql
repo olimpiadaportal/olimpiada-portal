@@ -33,6 +33,10 @@ create table if not exists public.profiles (
   id               uuid primary key default gen_random_uuid(),
   auth_user_id     uuid not null unique references auth.users (id) on delete cascade,
   display_name     text,
+  first_name       text,                      -- Migration 177: the parts display_name was built from. Nullable:
+  last_name        text,                      -- pre-177 rows were recovered by splitting display_name, so a
+                                              -- multi-word given name may have split imperfectly. display_name
+                                              -- stays the canonical label; never render a part alone as identity.
   email            citext,
   phone_optional   text,                      -- LEGACY, unused by app code (kept non-destructively; superseded by phone)
   phone            text,                      -- Round 11: parent contact phone, E.164 (+994…); OPTIONAL since 2026-08-31 (Apple 5.1.1(v))
@@ -424,3 +428,19 @@ create table if not exists public.parent_link_redeem_attempts (
   attempted_at timestamptz not null default now()
 );
 create index if not exists parent_link_attempts_actor_time on public.parent_link_redeem_attempts(actor_profile_id,attempted_at);
+-- Migration 177. DELIBERATELY SEPARATE FROM child_login_attempts. Routing
+-- credential-link failures through the child's own lockout would let a hostile
+-- adult lock a real minor out of their app for 15 minutes with eight wrong
+-- guesses, from a parent-facing endpoint. This flow reads is_child_login_locked
+-- (respecting an existing lockout) but never writes to it, and a success here
+-- never clears the child's real failure streak.
+create table if not exists public.parent_link_verify_attempts (
+  id bigserial primary key,
+  actor_profile_id uuid not null references public.profiles(id) on delete cascade,
+  child_unique_id text not null,
+  ip_hash text,
+  success boolean not null,
+  attempted_at timestamptz not null default now()
+);
+create index if not exists parent_link_verify_actor_time on public.parent_link_verify_attempts(actor_profile_id,attempted_at);
+create index if not exists parent_link_verify_ip_time on public.parent_link_verify_attempts(ip_hash,attempted_at) where ip_hash is not null;

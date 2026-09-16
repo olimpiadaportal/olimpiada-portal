@@ -1299,8 +1299,8 @@ If anything doesn't match, tell me the **KK-#** + what you saw.
 - Edit Child: saved city → rayon → school preselected; changing the school to another rayon updates consistently (the DB guard refuses contradictions).
 - Existing children were backfilled from their school's rayon automatically.
 
-## LL7. Admin "Yerlər" — unified location management
-- The sidebar's Cities/Districts/Schools entries are replaced by ONE **Yerlər** item; the old URLs redirect.
+## LL7. Admin "Şəhər / rayon" — unified location management
+- The sidebar's Cities/Districts/Schools entries are replaced by ONE **Şəhər / rayon** item (labelled **Yerlər** until 2026-09-16 — display name only, the route is still `/locations`); the old URLs redirect. The sidebar entry and the page title read the same string, so they always match.
 - Three columns: Şəhərlər → selected city's Rayonlar → selected rayon's Məktəblər. Each column: search, live counts, add button, edit/delete per row, proper empty states. A city without rayons lists its schools directly; a rayon-city also shows a **"Rayon təyin edilməyib"** review entry with the live count (the 7 pending Baku schools live there).
 - Create/edit open in modals and the lists refresh WITHOUT a full page reload; selection survives refresh (it's in the URL).
 - **Delete previews impact**: city → how many rayons would cascade + schools that BLOCK the delete (button disabled when blocked) + enrolled students; rayon → schools that would return to the review list; school → how many students get detached. All existing validations (rayon required for rayon-cities, school-number derivation, duplicate names) still enforced.

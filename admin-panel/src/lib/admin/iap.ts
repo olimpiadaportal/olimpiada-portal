@@ -1,7 +1,8 @@
 "use server";
 
 // ---------------------------------------------------------------------------
-// THE STORE PRODUCT MAP (public.iap_products) — Administrator-only.
+// THE STORE PRODUCT MAP (public.iap_products) — Administrator-only, READ-ONLY
+// except for one switch.
 //
 // WHAT THIS TABLE IS. Apple's signed transaction carries a productId and
 // nothing else about our catalogue. iap_products is the ONLY place that string
@@ -10,6 +11,24 @@
 // nothing is sellable until an admin turns a row on. Before this screen existed
 // that go-live step required raw SQL against production, which is not an
 // acceptable release procedure.
+//
+// WHY THERE IS NO CREATE, EDIT OR DELETE (owner decision, 2026-09-16).
+// Creating a row here NEVER created anything at Apple. Apple-side product
+// creation lives in mobile-app/scripts/create-iap-products.mjs, run by hand by
+// the owner, and this panel holds a READ client only. So an admin "adding a
+// product" was a workflow that changed nothing in the store and left a
+// permanent, unsellable id behind in our database — the screen's own preflight
+// would then refuse to activate it, correctly, forever. The create form is
+// gone. What is left is a MIRROR: our rows beside what App Store Connect
+// actually reports, with the disagreements named on the row.
+//
+// WHY setIapProductActive SURVIVED THE CUT. It is the only code path in this
+// repository that can set active = false, which is how a live iOS product is
+// withdrawn. Without it that operation is raw SQL against production during
+// whatever incident prompted it. It is a LOCAL decision — whether OUR app
+// offers the product — and it changes nothing in App Store Connect; every
+// string around it has to say so, because an admin who believes this button
+// pulled the product from Apple will stop looking for the real problem.
 //
 // WHY `active` IS DANGEROUS IN BOTH DIRECTIONS.
 //   * ON, with no approved App Store Connect product behind it → the iOS app
@@ -27,16 +46,15 @@
 // The Play build is consumption-only by store policy, not by preference
 // (docs/STORE_PAYMENTS_COMPLIANCE.md). With NO android/google_play rows in this
 // table the purchase endpoint has literally nothing to sell on Android, so the
-// silence is STRUCTURAL rather than a flag somebody can flip. That is why
-// `platform` below is a server-side constant (IOS_PLATFORM) and is never read
-// from the form: there is no request an admin can craft from this screen that
-// produces a google_play row. Do not add a platform <select> "for later" — the
-// day Google forces IAP is a deliberate migration plus a build, not a dropdown.
+// silence is STRUCTURAL rather than a flag somebody can flip. Nothing in this
+// module can produce a row at all any more, and the one write it has refuses a
+// non-ios row outright. The day Google forces IAP is a deliberate migration
+// plus a build, not a dropdown on an admin screen.
 //
-// WHY NO DELETE. A store product id is permanent and public — App Store Connect
-// never renames one and never lets the string be reused — and an intent row
-// pins the product (fk_iap_intent_product is ON DELETE RESTRICT), so a product
-// anybody ever tapped Buy on cannot be deleted anyway. Retirement is
+// WHY A ROW IS NEVER DELETED. A store product id is permanent and public — App
+// Store Connect never renames one and never lets the string be reused — and an
+// intent row pins the product (fk_iap_intent_product is ON DELETE RESTRICT), so
+// a product anybody ever tapped Buy on cannot be deleted anyway. Retirement is
 // deactivation; the row stays as the record of what that id sold.
 //
 // AUTHORIZATION: requireAdmin() is the FIRST statement of every export, before
@@ -48,15 +66,21 @@
 // records a before/after diff of every row change. The explicit writeAuditLog()
 // calls below are NOT redundant with it: the trigger records WHAT changed, this
 // records the admin's INTENT under a searchable action name
-// (admin.iap.product.activate / .deactivate / .create) together with the
-// product id, which is what somebody reconstructing a bad release day will
-// actually search for.
+// (admin.iap.product.activate / .deactivate) together with the product id,
+// which is what somebody reconstructing a bad release day will actually search
+// for.
 // ---------------------------------------------------------------------------
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
-import { preflightStoreProduct } from "@/lib/admin/appStoreConnect";
+import {
+  fetchStoreCatalogue,
+  preflightStoreProduct,
+  storeStateLabelKey,
+  storeStateVerdict,
+  type StoreStateVerdict,
+} from "@/lib/admin/appStoreConnect";
 import { getLocale } from "@/i18n/server";
 import {
   SUBJECT_DISPLAY_SELECT,
@@ -64,26 +88,16 @@ import {
   type SubjectTranslationRow,
 } from "@/lib/admin/subject-display";
 
-// The ONLY platform this screen can produce. Never read from client input.
+// The ONLY platform we offer. Never read from client input, and the one thing
+// the toggle checks that has nothing to do with the target being live.
 // See ANDROID PURCHASE-SILENCE above.
 const IOS_PLATFORM = "ios";
 
 const UUID_SHAPE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// The store-slug half of the product id. Must satisfy the DB's
-// ck_iap_product_id_shape ('^ai\.olympiq\.app\.(sub\.[a-z0-9]+\.(week|month|
-// year)|oly\.[a-z0-9]+)$'), so lowercase ASCII alphanumerics only — no dots, no
-// dashes, no underscores. Bounded at 40 so the composed id stays readable in
-// App Store Connect and in every Apple financial report that will print it
-// forever.
-const SLUG_SHAPE = /^[a-z0-9]{2,40}$/;
-
 export type IapScope = "subject" | "olympiad_package";
 export type IapInterval = "week" | "month" | "year";
-
-const SCOPES: readonly IapScope[] = ["subject", "olympiad_package"];
-const INTERVALS: readonly IapInterval[] = ["week", "month", "year"];
 
 /**
  * Why a row must not be activated. `null` = the target is live and sellable.
@@ -95,6 +109,41 @@ export type IapTargetProblem =
   | "targetMissing"
   | "targetArchived"
   | "gradeMissing";
+
+/**
+ * A disagreement between the two halves of this screen, named on the row.
+ *
+ * SILENT DIVERGENCE IS THE FAILURE MODE. Both halves looking plausible on their
+ * own is exactly how a build reaches App Review offering a product StoreKit
+ * cannot resolve. `null` means the two agree (or that Apple could not be read
+ * at all, which the page states once at the top rather than sixty times).
+ *
+ *   offeredMissing  — we offer it; Apple has no such product id. Every tap
+ *                     fails. This is the 3.1.1 shape.
+ *   offeredBlocked  — we offer it; Apple's state cannot produce a sale
+ *                     (rejected, removed, incomplete).
+ *   offeredUnknown  — we offer it; Apple reports a state we cannot classify.
+ *   approvedIdle    — Apple has it approved; we do not offer it. Usually a
+ *                     deliberate local decision, so it is stated, not alarmed.
+ *   absentAtApple   — we do not offer it, and Apple has never had this id. A
+ *                     row that can never be turned on as things stand.
+ */
+export type IapDivergence =
+  | null
+  | "offeredMissing"
+  | "offeredBlocked"
+  | "offeredUnknown"
+  | "approvedIdle"
+  | "absentAtApple";
+
+/** What App Store Connect says about one product, ready to render. */
+export type IapStoreState = {
+  /** i18n key carrying App Store Connect's OWN wording — never the API code. */
+  labelKey: string;
+  verdict: StoreStateVerdict;
+  /** Apple's reference name, shown when it disagrees with what we think it is. */
+  name: string | null;
+};
 
 export type IapProductRow = {
   id: string;
@@ -110,13 +159,37 @@ export type IapProductRow = {
   /** Only for grade-pinned package products (the rare case). */
   gradeLabel: string | null;
   problem: IapTargetProblem;
+  /** null when Apple has no such id, or when Apple could not be read at all. */
+  store: IapStoreState | null;
+  divergence: IapDivergence;
+};
+
+/** A product Apple holds that `iap_products` does not map to anything. */
+export type IapUnmappedProduct = {
+  productId: string;
+  name: string | null;
+  labelKey: string;
+  verdict: StoreStateVerdict;
+};
+
+/** How the App Store Connect half of the screen went, and when. */
+export type IapStoreStatus = {
+  ok: boolean;
+  /** Set when ok is false: "storeNotConfigured" | "storeUnreachable". */
+  problem: string | null;
+  /** ISO instant the read was attempted — the screen's "last refreshed". */
+  fetchedAt: string;
 };
 
 export type IapCatalogue = {
   rows: IapProductRow[];
-  /** Live targets an admin may create a NEW product for. */
-  subjects: { id: string; name: string }[];
-  packages: { id: string; title: string }[];
+  /**
+   * Apple ids with no row here. Invisible to any per-row check and worth its
+   * own section: a purchase of one of these reaches the server as a productId
+   * that maps to nothing, so the family is charged and granted nothing.
+   */
+  unmapped: IapUnmappedProduct[];
+  store: IapStoreStatus;
   /** A load failure is reported, never rendered as an empty catalogue. */
   loadFailed: boolean;
 };
@@ -166,42 +239,62 @@ function targetProblem(
 }
 
 /**
- * Everything the screen renders. Reads through the request-scoped client:
- * iap_products_select gives an admin every row (including the inactive ones,
- * which is the entire point of this screen), so no service-role client is used.
+ * Everything the screen renders — BOTH halves of it.
+ *
+ * Reads through the request-scoped client: iap_products_select gives an admin
+ * every row (including the inactive ones, which is the entire point of this
+ * screen), so no service-role client is used.
+ *
+ * App Store Connect is read on every call, uncached, because the screen's one
+ * promise is that it shows the latest truth. A stale mirror is worse than no
+ * mirror: it would show agreement that has already stopped being true. Apple
+ * being unreachable is NOT a page failure — our own rows are still the useful
+ * half, and the store column says it could not be read.
  */
 export async function listIapCatalogue(): Promise<IapCatalogue> {
   await requireAdmin();
   const supabase = await createClient();
 
-  const productsRes = await supabase
-    .from("iap_products")
-    .select(PRODUCT_COLUMNS)
-    .order("scope")
-    .order("product_id");
+  // Apple and Postgres have nothing to say to each other; waiting on them in
+  // series would just make the refresh slower.
+  const [productsRes, storeRes] = await Promise.all([
+    supabase
+      .from("iap_products")
+      .select(PRODUCT_COLUMNS)
+      .order("scope")
+      .order("product_id"),
+    fetchStoreCatalogue(),
+  ]);
+
+  const store: IapStoreStatus = {
+    ok: storeRes.ok,
+    problem: storeRes.ok ? null : storeRes.problem,
+    fetchedAt: storeRes.fetchedAt,
+  };
+  const storeByProductId = new Map(
+    storeRes.ok ? storeRes.products.map((p) => [p.productId, p]) : [],
+  );
 
   if (productsRes.error) {
     // Never surface a raw Postgres message; the detail goes to the server log
     // and the screen shows a load error instead of an empty, reassuring table.
     console.error("[admin] iap products load failed", productsRes.error.message);
-    return { rows: [], subjects: [], packages: [], loadFailed: true };
+    return { rows: [], unmapped: [], store, loadFailed: true };
   }
 
   const products = (productsRes.data ?? []) as ProductRecord[];
 
-  const subjectIds = Array.from(
-    new Set(products.map((p) => p.subject_id).filter((v): v is string => !!v)),
-  );
-  const packageIds = Array.from(
-    new Set(products.map((p) => p.package_id).filter((v): v is string => !!v)),
-  );
+  // Only the grade ids are collected: the subject and package catalogues are
+  // read in full below (both are small, and the archived ones are exactly what
+  // this screen has to be able to name), so narrowing them by id would buy
+  // nothing. Grade-pinned products are the rare case, so that one IS narrowed.
   const gradeIds = Array.from(
     new Set(products.map((p) => p.grade_id).filter((v): v is string => !!v)),
   );
 
-  // The "what could a NEW product point at" lists are LIVE targets only: a
-  // product for an archived subject could never be activated anyway, so
-  // offering it would only invite a permanent, useless store id.
+  // Both catalogues in full, not just the live ones: this screen exists to
+  // NAME the bad states, and a product pointing at an archived subject has to
+  // be able to say which subject it is.
   const [allSubjectsRes, allPackagesRes] = await Promise.all([
     supabase.from("subjects").select(SUBJECT_DISPLAY_SELECT),
     supabase
@@ -288,6 +381,15 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
     const targetStatus =
       p.scope === "subject" ? (subject?.status ?? null) : (pkg?.status ?? null);
 
+    const snapshot = storeByProductId.get(p.product_id);
+    const storeState: IapStoreState | null = snapshot
+      ? {
+          labelKey: storeStateLabelKey(snapshot.state),
+          verdict: storeStateVerdict(snapshot.state),
+          name: snapshot.name,
+        }
+      : null;
+
     return {
       id: p.id,
       platform: p.platform,
@@ -299,8 +401,32 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
       targetStatus,
       gradeLabel: grade ? (grade.name ?? String(grade.level ?? "")) : null,
       problem: targetProblem(p, targetStatus, !p.grade_id || !!grade),
+      store: storeState,
+      divergence: divergenceOf(store.ok, p.active, storeState),
     };
   });
+
+  // The other direction: what Apple has that we cannot map. Only meaningful
+  // when the store read SUCCEEDED — an unreachable Apple would otherwise
+  // report an empty catalogue as "nothing unmapped", which is agreement we
+  // never established.
+  const known = new Set(products.map((p) => p.product_id));
+  const unmapped: IapUnmappedProduct[] = storeRes.ok
+    ? storeRes.products
+        .filter((p) => !known.has(p.productId))
+        .map((p) => ({
+          productId: p.productId,
+          name: p.name,
+          labelKey: storeStateLabelKey(p.state),
+          verdict: storeStateVerdict(p.state),
+        }))
+        // Byte order, not collation: a store product id is a machine string
+        // (ASCII, no case, no diacritics) and every admin must see the same
+        // sequence regardless of their locale.
+        .sort((a, b) =>
+          a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0,
+        )
+    : [];
 
   // Sort within scope: subject products by subject name then week/month/year
   // (the order a human reads a price list in), packages by title.
@@ -314,19 +440,34 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
     );
   });
 
-  return {
-    rows,
-    subjects: subjectRows
-      .filter((s) => s.status === "active")
-      .map((s) => ({ id: s.id, name: s.name })),
-    packages: packageRows
-      .filter((p) => p.status === "active")
-      .map((p) => ({
-        id: p.id,
-        title: packageById.get(p.id)?.title ?? p.code,
-      })),
-    loadFailed,
-  };
+  return { rows, unmapped, store, loadFailed };
+}
+
+/**
+ * The one rule for "do these two halves agree?", in one place.
+ *
+ * When Apple could not be read there is NO verdict to give: the page says so
+ * once at the top, and claiming a disagreement we never observed would train an
+ * admin to ignore the column on every outage.
+ */
+function divergenceOf(
+  storeOk: boolean,
+  active: boolean,
+  store: IapStoreState | null,
+): IapDivergence {
+  if (!storeOk) return null;
+  if (active) {
+    if (!store) return "offeredMissing";
+    if (store.verdict === "blocked") return "offeredBlocked";
+    if (store.verdict === "unknown") return "offeredUnknown";
+    return null;
+  }
+  if (!store) return "absentAtApple";
+  // Deliberately narrow: only a product Apple has APPROVED (verdict "sellable"
+  // covers the review pipeline too) is worth pointing at as "ready, and we are
+  // not offering it". Flagging one that is still in review would put a notice
+  // on every row during a submission.
+  return store.labelKey === "iap.store.state.approved" ? "approvedIdle" : null;
 }
 
 /**
@@ -441,111 +582,6 @@ export async function setIapProductActive(
     },
     // Turning a product ON is the moment the app starts taking money for it.
     severity: next ? "warning" : "info",
-  });
-
-  revalidatePath("/iap");
-  return { ok: true };
-}
-
-/**
- * Create ONE new inactive iOS store product.
- *
- * Migration 164 seeded every subject product but deliberately left the olympiad
- * ones out ("their slugs are an owner naming decision this file cannot make on
- * their behalf") and named this screen as where they would be entered.
- *
- * THREE THINGS ARE NOT NEGOTIABLE HERE, and all three are server-side:
- *   1. platform is IOS_PLATFORM, a constant. The form has no platform field, so
- *      a google_play row cannot be produced by this code path at all.
- *   2. `active` is false. A product is never born sellable — the App Store
- *      Connect product has to exist and be approved first, which is a fact this
- *      server cannot check and must not assume.
- *   3. product_id is COMPOSED here from a validated slug, never accepted from
- *      the client. The id is permanent and public; App Store Connect will not
- *      rename it and will not let the string be reused.
- */
-export async function createIapProduct(
-  _prev: IapActionState,
-  formData: FormData,
-): Promise<IapActionState> {
-  const ctx = await requireAdmin();
-
-  const scopeRaw = String(formData.get("__scope") ?? "").trim();
-  const targetId = String(formData.get("__target") ?? "").trim();
-  const slug = String(formData.get("__slug") ?? "").trim().toLowerCase();
-  const intervalRaw = String(formData.get("__interval") ?? "").trim();
-
-  if (!SCOPES.includes(scopeRaw as IapScope)) return { error: "iap.err.scope" };
-  const scope = scopeRaw as IapScope;
-
-  if (!UUID_SHAPE.test(targetId)) return { error: "iap.err.target" };
-  if (!SLUG_SHAPE.test(slug)) return { error: "iap.err.slug" };
-
-  let interval: IapInterval | null = null;
-  if (scope === "subject") {
-    if (!INTERVALS.includes(intervalRaw as IapInterval)) {
-      return { error: "iap.err.interval" };
-    }
-    interval = intervalRaw as IapInterval;
-  }
-
-  const supabase = await createClient();
-
-  // The target must exist AND be live. Minting a permanent store id for an
-  // archived subject buys nothing but a row that can never be activated.
-  const table = scope === "subject" ? "subjects" : "olympiad_packages";
-  const { data: target, error: targetError } = await supabase
-    .from(table)
-    .select("id, status")
-    .eq("id", targetId)
-    .maybeSingle();
-  if (targetError) {
-    console.error("[admin] iap create target read failed", targetError.message);
-    return { error: "iap.err.server" };
-  }
-  if (!target) return { error: "iap.err.targetMissing" };
-  if ((target as { status: string | null }).status !== "active") {
-    return { error: "iap.err.targetArchived" };
-  }
-
-  const productId =
-    scope === "subject"
-      ? `ai.olympiq.app.sub.${slug}.${interval}`
-      : `ai.olympiq.app.oly.${slug}`;
-
-  const { error: insertError } = await supabase.from("iap_products").insert({
-    platform: IOS_PLATFORM,
-    product_id: productId,
-    scope,
-    subject_id: scope === "subject" ? targetId : null,
-    package_id: scope === "olympiad_package" ? targetId : null,
-    // grade_id stays NULL: the entitled grade is resolved from the CHILD named
-    // in the purchase intent (see the column comment in migration 164). Pinning
-    // one grade to one store product is a real but unusual product shape, and
-    // it is not something to offer by default on a screen whose mistakes are
-    // permanent.
-    interval,
-    active: false,
-  });
-
-  if (insertError) {
-    const duplicate =
-      insertError.code === "23505" || /uq_iap_product/.test(insertError.message ?? "");
-    console.error("[admin] iap product create failed", productId, insertError.message);
-    return { error: duplicate ? "iap.err.duplicateId" : "iap.err.server" };
-  }
-
-  await writeAuditLog({
-    actorProfileId: ctx.profileId,
-    action: "admin.iap.product.create",
-    targetTable: "iap_products",
-    metadata: {
-      product_id: productId,
-      platform: IOS_PLATFORM,
-      scope,
-      interval,
-      target_id: targetId,
-    },
   });
 
   revalidatePath("/iap");

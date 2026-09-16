@@ -75,11 +75,18 @@ export const PRIVACY_POLICY: PrivacyPolicyStatus = {
   // Set 2026-08-04. Also admin-editable (migration 097); this literal is the
   // offline/first-paint fallback. See resolvePrivacyPolicyStatus below.
   effectiveDate: "04.08.2026",
-  // 10.09.2026 — store-declaration accuracy pass: purchases described per
-  // platform, the location denial replaced by the device-vs-parent-typed
-  // distinction, delete-a-child no longer website-only. (08.09.2026 was the
-  // optional child gender, migration 169, entering section 5.)
-  lastUpdated: "10.09.2026",
+  // 16.09.2026 — the child gender field became MANDATORY (migration 178):
+  // sections 4 and 5 no longer say the question can be skipped or answered
+  // "prefer not to say", in az, en and ru together. The answer still decides
+  // nothing about the child — not access, not which questions are served, not
+  // how hard they are, not ranking — and the policy still says so. (Earlier:
+  // 11.09.2026 Sentry named as a processor, which moved the document but missed
+  // this literal; 10.09.2026 the store-declaration accuracy pass — purchases
+  // described per platform, the location denial replaced by the
+  // device-vs-parent-typed distinction, delete-a-child no longer website-only;
+  // 08.09.2026 the then-optional child gender, migration 169, entering
+  // section 5.)
+  lastUpdated: "16.09.2026",
   // Registered 2026-07-30 (Namecheap). The apex serves the site; www redirects
   // to it at the host level, so the canonical form carries no "www".
   websiteUrl: "olympiq.ai",

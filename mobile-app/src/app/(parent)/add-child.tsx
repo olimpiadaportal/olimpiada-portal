@@ -15,7 +15,7 @@
 // and kept across retries — a failed free activation or an abandoned plan
 // never duplicates the child. Every money step is re-validated by the BFF;
 // this flow is presentation only.
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { PartyPopper } from "lucide-react-native";
@@ -37,6 +37,7 @@ import {
   ChildInfoForm,
   EMPTY_CHILD_INFO,
   buildAddChildFields,
+  hasGenderChoice,
   rayonsOfCity,
   validateChildInfo,
   type ChildInfo,
@@ -52,6 +53,7 @@ import {
   decidePrefill,
   isPristineChildInfo,
   pickPrefillSource,
+  type SourceLocation,
 } from "@/features/parent/childPrefill";
 import { extractChildUniqueId, groupChildId, resolvePosture } from "@/features/parent/commerce";
 import {
@@ -104,13 +106,6 @@ export default function AddChildScreen() {
   const [avatar, setAvatar] = useState<ChildAvatarChoice>({ kind: "default" });
   const [errors, setErrors] = useState<ChildInfoErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
-  // What the server could NOT save even though the child was created (today:
-  // the optional gender). Not an error — the child exists — but it stays on
-  // screen for the rest of the flow, because a parent who answered a question
-  // is owed the news that the answer is missing and is the only one who can
-  // restore it. Rendered OUTSIDE the phase branches (see the render below):
-  // the wizard does not always reach "done" after a warning is set.
-  const [warnings, setWarnings] = useState<string[]>([]);
   const [studentProfileId, setStudentProfileId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("info");
   const [doneId, setDoneId] = useState<string | null>(null);
@@ -141,31 +136,42 @@ export default function AddChildScreen() {
     from: null,
   });
 
-  // Whether the SOURCE child's city has rayons — i.e. whether this form will
-  // render the rayon field and require it for the seeded city.
-  const sourceCityHasRayons =
-    rayonsOfCity(districts.data, prefillSource?.district_id ?? "").length > 0;
-  const sourceCityActive = (cities.data ?? []).some((c) => c.id === prefillSource?.district_id);
-  const sourceRayonValid = !sourceCityHasRayons || rayonsOfCity(
-    districts.data,
-    prefillSource?.district_id ?? "",
-  ).some((r) => r.id === (rayonQ.data ?? ""));
-  const sourceSchoolValid = (sourceSchools.data ?? []).some(
-    (s) => s.id === prefillSource?.school_id && (!sourceCityHasRayons || s.city_district_id === rayonQ.data),
-  );
+  // WHAT THE CATALOGUE SAYS ABOUT THE SOURCE CHILD'S LOCATION *TODAY* — the
+  // rule that consumes it is pure and lives in childPrefill.ts. Nothing here
+  // judges the source: it reports what the same catalogues this form renders
+  // from currently hold, and the school row is passed WHOLE (including a NULL
+  // `city_district_id`, which is a real and selectable kind of school) instead
+  // of being reduced to a valid/invalid flag. Collapsing it to a boolean is
+  // what used to cost the parent the city and the school as well as the rayon.
+  const sourceCityId = prefillSource?.district_id ?? "";
+  const sourceLocation: SourceLocation = useMemo(() => {
+    const rayons = rayonsOfCity(districts.data, sourceCityId);
+    const school =
+      (sourceSchools.data ?? []).find((s) => s.id === prefillSource?.school_id) ?? null;
+    return {
+      cityActive: !!sourceCityId && (cities.data ?? []).some((c) => c.id === sourceCityId),
+      cityHasRayons: rayons.length > 0,
+      rayonIds: rayons.map((r) => r.id),
+      school: school ? { id: school.id, rayonId: school.city_district_id ?? "" } : null,
+    };
+  }, [cities.data, districts.data, sourceSchools.data, sourceCityId, prefillSource?.school_id]);
 
   useEffect(() => {
     if (prefill.decided) return;
     const decision = decidePrefill({
       childrenReady: childrenQ.isSuccess && !childrenQ.isFetching,
       source: prefillSource,
-      catalogReady: cities.isSuccess && districts.isSuccess && sourceSchools.isSuccess,
+      // `useSchools("")` is DISABLED and never succeeds, so a sibling with no
+      // city on file would leave this false forever and the decision would
+      // wait for a read that is not running. Ask for that query only when it
+      // was actually started.
+      catalogReady:
+        cities.isSuccess && districts.isSuccess && (!sourceCityId || sourceSchools.isSuccess),
       rayon: {
         status: rayonQ.isPending ? "pending" : rayonQ.isError ? "error" : "ready",
         id: rayonQ.data ?? "",
       },
-      cityHasRayons: sourceCityHasRayons,
-      sourceCatalogValid: sourceCityActive && sourceRayonValid && sourceSchoolValid,
+      location: sourceLocation,
       // The reads land after the first render, so the parent can already be
       // typing. Their input wins — and the seed is settled for good rather
       // than left armed, so nothing appears under their fingers later.
@@ -191,14 +197,11 @@ export default function AddChildScreen() {
     prefillSource,
     cities.isSuccess,
     districts.isSuccess,
-    districts.data,
     rayonQ.isPending,
     rayonQ.isError,
     rayonQ.data,
-    sourceCityHasRayons,
-    sourceCityActive,
-    sourceRayonValid,
-    sourceSchoolValid,
+    sourceCityId,
+    sourceLocation,
     sourceSchools.isSuccess,
     info,
   ]);
@@ -255,7 +258,12 @@ export default function AddChildScreen() {
     setServerError(null);
     const v = validateChildInfo(info, hasDistricts);
     setErrors(v);
-    if (Object.keys(v).length > 0) return;
+    // ONE refusal, two readers. The first clause is the parent's: the form has
+    // an unanswered required field and `v` says which. The second is the
+    // COMPILER's — it narrows `info` to the shape buildAddChildFields accepts,
+    // which is how the gender key below stopped being a conditional spread that
+    // could silently drop itself. They refuse exactly the same forms.
+    if (Object.keys(v).length > 0 || !hasGenderChoice(info)) return;
 
     setPending(true);
     try {
@@ -279,9 +287,6 @@ export default function AddChildScreen() {
           return;
         }
         setStudentProfileId(sid);
-        // A success that stored less than it was given says so — from here on,
-        // in whatever phase the wizard ends up in.
-        setWarnings(res.data?.warnings ?? []);
         // The id comes back with the child now. Capturing it here (rather
         // than only in the free-access branch below) is what lets the
         // success screen be the same screen in every payment posture.
@@ -327,7 +332,6 @@ export default function AddChildScreen() {
     setAvatar({ kind: "default" });
     setErrors({});
     setServerError(null);
-    setWarnings([]);
     setStudentProfileId(null);
     setDoneId(null);
     setPhase("info");
@@ -368,38 +372,17 @@ export default function AddChildScreen() {
         <>
           <StepProgress steps={[...STEPS]} activeIdx={activeIdx} />
 
-          {/* SAVED LESS THAN IT WAS ASKED — OUTSIDE EVERY PHASE BRANCH, the
-              same placement decision the web wizard makes and for the same
-              reason: by the time this can exist the child is already created,
-              so the notice belongs to the PARENT, not to whichever phase
-              happened to be on screen when it was set.
-
-              It lived on the Done card, which reads as "on the success screen
-              because it is a success" until you find the path that never gets
-              there: in the free flow `bffAddChild` succeeds (warnings set,
-              child created) and `bffActivateFree` then fails, which returns
-              early and leaves the wizard on "info". The parent was shown a
-              server error about the grant, retried it, and was never told
-              their gender answer had been dropped — the answer is gone and
-              they are the only one who can put it back from Edit-Child.
-
-              Do not nest it back inside a branch. There are two phases today
-              and a warning can be pending in BOTH; a third would inherit the
-              same obligation for free from here. */}
-          {warnings.length > 0 ? (
-            <Card
-              variant="flat"
-              style={{ gap: spacing.xs, borderColor: tokens.warn }}
-              accessibilityRole="alert"
-              accessibilityLiveRegion="polite"
-            >
-              {warnings.map((w) => (
-                <AppText key={w} variant="muted" color={tokens.warn}>
-                  {t(w)}
-                </AppText>
-              ))}
-            </Card>
-          ) : null}
+          {/* NO "SAVED LESS THAN IT WAS ASKED" NOTICE ANY MORE, and the reason
+              is the migration rather than a change of mind about telling the
+              parent. The only warning this screen could ever receive was a
+              gender that the core wrote AFTER the provisioning transaction and
+              failed to store; migration 178 gives create_child_account a
+              p_gender argument, so the answer is committed with the child or
+              the child is not created at all. There is no partial save left to
+              report. If a future field is ever written outside that
+              transaction, the notice comes back OUTSIDE every phase branch —
+              a warning can be pending on "info" too, because the free flow can
+              create the child and then fail its grant. */}
 
           {phase === "info" ? (
             <>
@@ -568,9 +551,6 @@ export default function AddChildScreen() {
               <AppText variant="muted" style={{ textAlign: "center" }}>
                 {t("parent.child.idNote")}
               </AppText>
-              {/* No warning block here on purpose — it renders above the
-                  phases so it is also visible when the wizard never reaches
-                  this card. Duplicating it would show it twice on "done". */}
               {/* goToTab(), not replace(): replacing this screen with the
                   tab route mounts a SECOND tab navigator over the one already
                   under this wizard, and the next back press then lands on Home

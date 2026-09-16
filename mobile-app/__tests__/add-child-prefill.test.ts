@@ -11,10 +11,14 @@
 //     because a preselected value is indistinguishable from a real answer once
 //     it is in the column, and a prefilled one would record an answer the
 //     parent never gave, about a DIFFERENT child.
-//   * A HALF-SEEDED LOCATION. The rayon is required whenever the chosen city
-//     has active rayons, so a city seeded without its rayon hands the parent a
-//     form that fails validation on a field they never touched. "Populated" is
-//     not the goal; VALID is.
+//   * A LOCATION THE SERVER WOULD REJECT. "Populated" is not the goal; VALID
+//     is. A rayon that contradicts the school's own rayon is refused by
+//     student_district_guard, and a rayon the catalogue no longer lists is one
+//     the select cannot even show. The opposite failure is just as real, and is
+//     the one that was REPORTED: the rule used to drop the whole location at
+//     the first doubt, so a school with no rayon recorded — a perfectly
+//     ordinary row — cost the parent the city and the school as well, leaving
+//     "it prefills the surname but not the school".
 //   * A SEED THAT OVERWRITES THE PARENT. The reads land after the first render.
 //     A seed that fires whenever the data arrives can wipe what is already
 //     being typed — and one that re-fires can undo a deliberate clear.
@@ -73,6 +77,7 @@ import {
   siblingPrefillPatch,
   type PrefillCandidate,
   type PrefillInputs,
+  type SourceLocation,
 } from "@/features/parent/childPrefill";
 
 const read = (...parts: string[]) => readFileSync(resolve(__dirname, "..", ...parts), "utf8");
@@ -102,6 +107,19 @@ function child(over: Partial<Fake> = {}): Fake {
   };
 }
 
+/** What the catalogue says about the source child's saved location — the happy
+ *  case: the city is active, it has rayons, and the school sits in the very
+ *  rayon the sibling's own row records. */
+function location(over: Partial<SourceLocation> = {}): SourceLocation {
+  return {
+    cityActive: true,
+    cityHasRayons: true,
+    rayonIds: ["rayon-nesimi", "rayon-sebail"],
+    school: { id: "school-7", rayonId: "rayon-nesimi" },
+    ...over,
+  };
+}
+
 /** decidePrefill inputs with every read settled and the form untouched. */
 function ready(over: Partial<PrefillInputs<Fake>> = {}): PrefillInputs<Fake> {
   return {
@@ -109,7 +127,7 @@ function ready(over: Partial<PrefillInputs<Fake>> = {}): PrefillInputs<Fake> {
     source: child(),
     catalogReady: true,
     rayon: { status: "ready", id: "rayon-nesimi" },
-    cityHasRayons: true,
+    location: location(),
     pristine: true,
     ...over,
   };
@@ -182,53 +200,128 @@ describe("a second child", () => {
   // The point of the all-or-nothing location: what is filled is also VALID.
   // Only the fields the prefill deliberately left blank may still be flagged.
   it("passes validation on every field it filled", () => {
+    // `gender` belongs in this list and must stay there: it is REQUIRED now,
+    // and the prefill must still never answer it — see CHILD_ONLY_FIELDS above.
     const errors = validateChildInfo(seeded(), true);
-    expect(Object.keys(errors).sort()).toEqual(["firstName", "gradeId", "password"]);
+    expect(Object.keys(errors).sort()).toEqual(["firstName", "gender", "gradeId", "password"]);
   });
 
   it("puts the seeded ids on the wire unchanged", () => {
-    const fields = buildAddChildFields(seeded(), EMPTY_CATALOGS);
+    // The gender is supplied HERE, by the parent, because the payload builder
+    // accepts nothing else — which is the point: the seed could not have
+    // supplied it, and the form would not have submitted without it.
+    const fields = buildAddChildFields({ ...seeded(), gender: "female" }, EMPTY_CATALOGS);
     expect(fields.last_name).toBe("Əliyeva");
     expect(fields.district_id).toBe("city-baku"); // the CITY (naming trap)
     expect(fields.city_district_id).toBe("rayon-nesimi"); // the RAYON
     expect(fields.school_id).toBe("school-7");
-    // The optional gender must be ABSENT, not null: an untouched control that
-    // sends a value would write a column nobody answered.
-    expect("gender" in fields).toBe(false);
+    expect(seeded().gender).toBe("");
   });
 
   it("never carries a rayon into a city that has none", () => {
-    const form = seeded(ready({ cityHasRayons: false, rayon: { status: "ready", id: "stale" } }));
+    const form = seeded(
+      ready({
+        rayon: { status: "ready", id: "stale" },
+        location: location({
+          cityHasRayons: false,
+          rayonIds: [],
+          school: { id: "school-7", rayonId: "" },
+        }),
+      }),
+    );
     expect(form.cityDistrictId).toBe("");
     expect(form.cityId).toBe("city-baku");
+    expect(form.schoolId).toBe("school-7");
     expect(validateChildInfo(form, false).cityDistrictId).toBeUndefined();
   });
 
-  // A city whose rayon is unknown (NULL on a legacy row) cannot be seeded
-  // without producing a form that fails on a field the parent never saw. The
-  // trio is dropped whole; the surname still helps.
-  it("drops the whole location rather than seeding half of it", () => {
-    const form = seeded(ready({ rayon: { status: "ready", id: "" } }));
-    expect(form).toEqual({ ...EMPTY_CHILD_INFO, lastName: "Əliyeva" });
-    const errors = validateChildInfo(form, true);
-    expect(errors.cityId).toBe("addchild.err.cityRequired");
-    expect(errors.schoolId).toBe("addchild.err.schoolRequired");
+  // THE REPORTED BUG, PINNED. A school with no rayon recorded is an ordinary
+  // row — filterSchoolsByRayon keeps those selectable under every rayon, and
+  // the server accepts them under any rayon of their city — but it did not
+  // match the sibling's saved rayon, so the source was judged invalid and the
+  // city and the school were dropped with it. The parent was left retyping the
+  // school they had entered minutes earlier.
+  it("still prefills the city and the school when the school has no rayon", () => {
+    const form = seeded(
+      ready({
+        rayon: { status: "ready", id: "" },
+        location: location({ school: { id: "school-7", rayonId: "" } }),
+      }),
+    );
+    expect(form.cityId).toBe("city-baku");
+    expect(form.schoolId).toBe("school-7");
+    // The one field that cannot be derived is left to the parent — and it is
+    // required, so they are ASKED for it rather than submitting a half-form.
+    expect(form.cityDistrictId).toBe("");
+    expect(validateChildInfo(form, true).cityDistrictId).toBe("addchild.err.districtRequired");
   });
 
-  it("drops the location when the sibling has no school on file", () => {
-    const form = seeded(ready({ source: child({ school_id: null }) }));
+  // The same missing answer, but this school HAS a rayon: take it. That is the
+  // database's own rule — student_district_guard auto-fills the student's rayon
+  // from the school — so the pair can never be one the server refuses.
+  it("takes the rayon from the school when the sibling's row does not have one", () => {
+    const form = seeded(ready({ rayon: { status: "ready", id: "" } }));
+    expect(form.cityDistrictId).toBe("rayon-nesimi");
+    expect(form.schoolId).toBe("school-7");
+  });
+
+  // An admin moved the school after the sibling was created, so the saved rayon
+  // is stale and posting it would be refused ("district % contradicts the
+  // school's district"). The school's current rayon wins.
+  it("prefers the school's rayon over a stale saved one", () => {
+    const form = seeded(
+      ready({
+        rayon: { status: "ready", id: "rayon-sebail" },
+        location: location({ school: { id: "school-7", rayonId: "rayon-nesimi" } }),
+      }),
+    );
+    expect(form.cityDistrictId).toBe("rayon-nesimi");
+  });
+
+  // A rayon the catalogue no longer lists is one the select cannot show:
+  // seeding it would leave the trigger reading "not selected" over a state that
+  // holds an id, and satisfy the required check on a value nobody can see.
+  it("never seeds a rayon the form could not display", () => {
+    const form = seeded(
+      ready({ location: location({ school: { id: "school-7", rayonId: "rayon-archived" } }) }),
+    );
+    expect(form.cityDistrictId).toBe("");
+    expect(form.schoolId).toBe("school-7");
+  });
+
+  it("carries the city without a school when the sibling has none on file", () => {
+    const form = seeded(
+      ready({ source: child({ school_id: null }), location: location({ school: null }) }),
+    );
+    expect(form.cityId).toBe("city-baku");
+    expect(form.cityDistrictId).toBe("rayon-nesimi");
+    expect(form.schoolId).toBe("");
+  });
+
+  // The city anchors the other two — a rayon belongs to one city and a school
+  // belongs to one city — so a city the catalogue has dropped takes them with
+  // it.
+  it("carries no location at all once the city is gone from the catalogue", () => {
+    const form = seeded(ready({ location: location({ cityActive: false }) }));
+    expect(form).toEqual({ ...EMPTY_CHILD_INFO, lastName: "Əliyeva" });
+  });
+
+  it("carries no location when the sibling's row never had a city", () => {
+    const form = seeded(ready({ source: child({ district_id: null }) }));
     expect(form).toEqual({ ...EMPTY_CHILD_INFO, lastName: "Əliyeva" });
   });
 
   it("skips entirely when there is nothing worth carrying", () => {
     const bare = child({ last_name: null, district_id: null, school_id: null });
-    expect(decidePrefill(ready({ source: bare })).kind).toBe("skip");
+    expect(decidePrefill(ready({ source: bare, location: location({ school: null }) })).kind).toBe(
+      "skip",
+    );
   });
 
   it("trims a surname rather than seeding its padding", () => {
-    expect(siblingPrefillPatch(child({ last_name: "  Əliyeva  " }), "r", true).lastName).toBe(
-      "Əliyeva",
-    );
+    expect(
+      siblingPrefillPatch(child({ last_name: "  Əliyeva  " }), "rayon-nesimi", location()).lastName,
+    ).toBe("Əliyeva");
   });
 });
 
@@ -269,7 +362,11 @@ describe("which sibling wins when they disagree", () => {
       child({ profile_id: "b", school_id: "school-new" }),
     ];
     expect(pickPrefillSource(list, PARENT)?.profile_id).toBe("b");
-    expect(seeded(ready({ source: pickPrefillSource(list, PARENT) })).schoolId).toBe("school-new");
+    // `location.school` is the catalogue row for the SOURCE child's school_id,
+    // so it moves with the source — that is the invariant the screen keeps.
+    const from = pickPrefillSource(list, PARENT);
+    const loc = location({ school: { id: "school-new", rayonId: "rayon-nesimi" } });
+    expect(seeded(ready({ source: from, location: loc })).schoolId).toBe("school-new");
   });
 
   it("skips a linked row even when it is the newest", () => {
@@ -292,9 +389,6 @@ describe("the seed never fights the parent", () => {
     ["the children list has not answered", ready({ childrenReady: false }), "wait"],
     ["the rayon catalogue has not answered", ready({ catalogReady: false }), "wait"],
     ["the rayon read is in flight", ready({ rayon: { status: "pending", id: "" } }), "wait"],
-    // A failed read cannot tell a NULL column from an unread one, and guessing
-    // either way risks a populated-but-invalid form.
-    ["the rayon read failed", ready({ rayon: { status: "error", id: "" } }), "skip"],
     // The reads land after the first render; whatever is already typed wins,
     // and the decision is settled for good so nothing appears later under the
     // parent's fingers.
@@ -311,6 +405,19 @@ describe("the seed never fights the parent", () => {
       const d = decidePrefill(inputs);
       expect(d).not.toHaveProperty("patch");
     }
+  });
+
+  // A FAILED rayon read used to skip the whole seed, on the grounds that it
+  // "cannot tell a NULL column from an unread one". True — and no longer
+  // decisive, because the rayon is taken from the SCHOOL: both cases are just
+  // "the sibling's row did not supply one", which the resolution already
+  // handles. Losing the city and the school over it is the same surname-only
+  // bug by another route.
+  it("degrades to the school's rayon when the per-child read fails", () => {
+    const form = seeded(ready({ rayon: { status: "error", id: "" } }));
+    expect(form.cityId).toBe("city-baku");
+    expect(form.schoolId).toBe("school-7");
+    expect(form.cityDistrictId).toBe("rayon-nesimi");
   });
 });
 
@@ -336,7 +443,7 @@ describe("a cleared field stays cleared", () => {
   });
 
   it("submits empty — nothing of the sibling survives into the payload", () => {
-    const fields = buildAddChildFields(cleared, EMPTY_CATALOGS);
+    const fields = buildAddChildFields({ ...cleared, gender: "male" }, EMPTY_CATALOGS);
     expect(fields.last_name).toBe("");
     expect(fields.district_id).toBe("");
     expect(fields.city_district_id).toBe("");
@@ -391,6 +498,25 @@ describe("the parent is told it happened", () => {
     );
     expect(bodies).toHaveLength(3);
     for (const b of bodies) expect(b).toContain("{name}");
+  });
+
+  it("hands the rule the catalogue row, not a verdict about it", () => {
+    // The screen REPORTS what the catalogues currently hold; every judgement
+    // lives in childPrefill.ts, where it can be tested. The school is passed
+    // whole — a NULL city_district_id included, because that is a real and
+    // selectable kind of school — instead of being collapsed into a
+    // valid/invalid flag, which is the shape that lost the city and the school
+    // along with the rayon.
+    expect(ADD_CHILD).not.toContain("sourceCatalogValid");
+    expect(ADD_CHILD.replace(/\s+/g, " ")).toContain(
+      'school: school ? { id: school.id, rayonId: school.city_district_id ?? "" } : null,',
+    );
+    // `useSchools("")` is disabled and never succeeds: demanding it for a
+    // sibling with no city on file would wait forever on a read that is not
+    // running.
+    expect(ADD_CHILD.replace(/\s+/g, " ")).toContain(
+      "cities.isSuccess && districts.isSuccess && (!sourceCityId || sourceSchools.isSuccess)",
+    );
   });
 
   it("keeps the per-child rayon read off the shared children list", () => {

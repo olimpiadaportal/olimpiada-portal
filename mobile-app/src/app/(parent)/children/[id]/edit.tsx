@@ -7,12 +7,14 @@
 // the rayon field shows only when the city has active rayons (required then,
 // narrows the school list, preselected from the student's saved
 // city_district_id — read directly, RLS-scoped) and posts city_district_id
-// through the ownership-checked BFF. Migration 169 adds ONE optional field,
-// gender: no "*", no validation, and — the part that matters on an EDIT screen
-// — the key is omitted from the request when the parent leaves it alone, so
-// opening this form and pressing Save can never erase an answer given earlier
-// (on the web, or here). The only field on the screen that can go from empty
-// to filled but never back to empty.
+// through the ownership-checked BFF. Gender (migration 169, REQUIRED since
+// migration 178) behaves like every other required select here: a "*", a
+// validation entry, an error slot, and a key that is always on the wire. The
+// erase hazard it was written around is gone with the conditional spread —
+// "" now stops the save instead of quietly omitting the key — but its other
+// half still holds: a saved answer this build cannot OFFER (the legacy
+// "unspecified") whitelists down to the placeholder, so the parent is asked
+// rather than shown a row that does not exist.
 import React, { useMemo, useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -37,18 +39,14 @@ import { TabRedirect } from "@/lib/TabRedirect";
 import { type ChildRow } from "@/lib/data";
 import { resolveChildAvatarSource } from "@/lib/childAvatar";
 import { supabase } from "@/lib/supabase";
-import {
-  bffDeleteChild,
-  bffEditChild,
-  bffResetChildPassword,
-  type ChildGender,
-} from "@/lib/api";
+import { bffDeleteChild, bffEditChild, bffResetChildPassword } from "@/lib/api";
 import {
   GENDER_LABEL_KEYS,
   GENDER_VALUES,
   asChildGender,
   filterSchoolsByRayon,
   rayonsOfCity,
+  type ChildGenderChoice,
 } from "@/features/parent/ChildInfoForm";
 import {
   ChildAvatarPicker,
@@ -78,7 +76,7 @@ const childEditFieldsKey = (studentId: string) =>
   accountScoped(["child-edit-fields"] as const, studentId);
 
 type FieldErrors = Partial<
-  Record<"first" | "last" | "city" | "district" | "school" | "grade", string>
+  Record<"first" | "last" | "city" | "district" | "school" | "grade" | "gender", string>
 >;
 
 /** The saved students row → the picker's initial selection. */
@@ -168,9 +166,10 @@ function EditForm({
   child: ChildRow;
   /** The student's saved rayon (students.city_district_id) — preselection. */
   initialCityDistrictId: string;
-  /** The student's saved gender, or "" for a NULL column (never asked) or a
-   *  value this build does not know. "" renders as the placeholder. */
-  initialGender: ChildGender | "";
+  /** The student's saved gender, or "" for a NULL column (never asked), the
+   *  legacy "unspecified", or a value this build does not know. "" renders as
+   *  the placeholder and the required check then asks for a real answer. */
+  initialGender: ChildGenderChoice | "";
 }) {
   const { t, locale } = useT();
   const { tokens } = useTheme();
@@ -182,10 +181,10 @@ function EditForm({
   const [cityDistrictId, setCityDistrictId] = useState(initialCityDistrictId); // the rayon
   const [schoolId, setSchoolId] = useState(child.school_id ?? "");
   const [gradeId, setGradeId] = useState(child.grade_id ?? "");
-  // Optional, and NOT part of FieldErrors — there is no state of this field
-  // that can fail. Seeded from the saved column so the parent sees their own
-  // earlier answer rather than a blank that invites re-answering.
-  const [gender, setGender] = useState<ChildGender | "">(initialGender);
+  // Seeded from the saved column so the parent sees their own earlier answer
+  // rather than a blank that invites re-answering. A `const` binding, which is
+  // what lets the early return in submit() narrow it — see the payload below.
+  const [gender, setGender] = useState<ChildGenderChoice | "">(initialGender);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -253,10 +252,9 @@ function EditForm({
     level: number;
     name: string;
   }[]).map((g) => ({ id: String(g.id), label: formatGradeLabel(g.level, locale, g.name) }));
-  // Three rows, no "clear" row: the wire has no spelling for NULL, so an
-  // answer can be CHANGED here but never taken back to the un-asked state —
-  // which is what keeps a mis-tap from destroying the distinction migration
-  // 169 exists to preserve.
+  // Two rows, no "clear" row: an answer can be CHANGED here but never taken
+  // back to the un-chosen state — the wire has no spelling for NULL, and a
+  // mis-tap must not be able to empty a required field.
   const genderOptions: SelectOption[] = GENDER_VALUES.map((g) => ({
     id: g,
     label: t(GENDER_LABEL_KEYS[g]),
@@ -276,8 +274,13 @@ function EditForm({
     if (!schoolId || (schoolsQ.isSuccess && !citySchools.some((s) => s.id === schoolId)))
       errs.school = t("addchild.err.schoolRequired");
     if (!gradeId) errs.grade = t("addchild.err.gradeRequired");
+    if (!gender) errs.gender = t("mob.child.gender.required");
     setFieldErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    // ONE refusal, two readers. The first clause is the parent's — `errs` says
+    // which field is unanswered. The second is the COMPILER's: it narrows
+    // `gender` away from "", which is what lets the payload below carry the key
+    // unconditionally instead of spreading it in. They refuse the same forms.
+    if (Object.keys(errs).length > 0 || !gender) return;
 
     setPending(true);
     const res = await bffEditChild(child.profile_id, {
@@ -294,11 +297,13 @@ function EditForm({
         ((gradesQ.data ?? []) as { id: string; name: string }[]).find(
           (g) => String(g.id) === gradeId,
         )?.name ?? "",
-      // Spread, never `gender: gender || null`: an untouched field must leave
-      // the KEY off the body, because absent is the only thing the BFF reads
-      // as "do not write this column". Sending null would overwrite a real
-      // answer with "never asked" — the one thing migration 169 forbids.
-      ...(gender ? { gender } : {}),
+      // NOT a conditional spread. `...(gender ? { gender } : {})` was correct
+      // while the field was optional — an ABSENT key is the only thing the BFF
+      // reads as "do not write this column" — and is exactly wrong now: the one
+      // value it dropped is "", which the save above refuses outright, and an
+      // omission would turn that refusal into a silent no-op on a required
+      // field. Never `gender: gender || null` either: a null WOULD erase.
+      gender,
     });
     setPending(false);
     if (!res.ok) {
@@ -375,18 +380,18 @@ function EditForm({
         onChange={setGradeId}
         error={fieldErrors.grade}
       />
-      {/* Optional (migration 169) — the one label on this screen without a
-          "*", and it saves with the form's existing Save button rather than
-          growing a second submit. `gap: spacing.xs` matches the label/field
-          rhythm the other selects already use, so the hint reads as part of
-          this field and not as a note about the card below it. */}
+      {/* Required, and it saves with the form's existing Save button rather
+          than growing a second submit. `gap: spacing.xs` matches the
+          label/field rhythm the other selects already use, so the hint reads as
+          part of this field and not as a note about the card below it. */}
       <View style={{ gap: spacing.xs }}>
         <SelectField
-          label={`${t("mob.child.gender.label")} ${t("field.optional")}`}
+          label={`${t("mob.child.gender.label")} *`}
           value={gender}
           options={genderOptions}
-          placeholder={t("mob.child.gender.none")}
+          placeholder={t("mob.child.gender.select")}
           onChange={(g) => setGender(asChildGender(g))}
+          error={fieldErrors.gender}
         />
         <AppText variant="muted">{t("mob.child.gender.hint")}</AppText>
       </View>
@@ -753,7 +758,7 @@ export default function EditChildScreen() {
   const savedQ = useQuery({
     queryKey: childEditFieldsKey(id),
     enabled: !!child,
-    queryFn: async (): Promise<{ cityDistrictId: string; gender: ChildGender | "" }> => {
+    queryFn: async (): Promise<{ cityDistrictId: string; gender: ChildGenderChoice | "" }> => {
       const { data, error } = await supabase
         .from("students")
         .select("city_district_id, gender")
@@ -763,8 +768,9 @@ export default function EditChildScreen() {
       const row = data as { city_district_id?: string | null; gender?: string | null } | null;
       return {
         cityDistrictId: typeof row?.city_district_id === "string" ? row.city_district_id : "",
-        // NULL (nobody asked yet) and an unrecognised value both land on "",
-        // which renders as the placeholder — never as one of the three answers.
+        // NULL (nobody asked yet), the legacy "unspecified" and an unknown
+        // value all land on "", which renders as the placeholder — never as one
+        // of the two answers.
         gender: asChildGender(row?.gender),
       };
     },

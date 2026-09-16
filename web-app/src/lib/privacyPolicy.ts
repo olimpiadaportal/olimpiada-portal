@@ -83,16 +83,27 @@ export const PRIVACY_POLICY: PrivacyPolicyStatus = {
   // literal is the fallback a request renders before the settings row is read,
   // and the value an offline phone shows. See resolvePrivacyPolicyStatus below.
   effectiveDate: "04.08.2026",
-  // 10.09.2026: the store-declaration accuracy pass. Sections 1, 5, 7, 8, 11
-  // and 12 were corrected — purchases are now described per platform (iOS sells
-  // through the App Store, Android sells nothing, the web rail is the bank), the
-  // bare "we never ask for your location" became the true distinction between a
-  // device sensor and a parent-typed city/rayon, and the delete-a-child right no
-  // longer points at the website only. 08.09.2026 was the previous bump
-  // (migration 169, the optional child gender in section 5). The effective date
-  // is NOT moved — the policy has been in force since 04.08; these are
-  // amendments to it, and section 13 promises exactly this date is what we bump.
-  lastUpdated: "10.09.2026",
+  // 16.09.2026: the child gender field became MANDATORY (migration 178), so
+  // sections 4 and 5 no longer tell a parent the question can be left blank or
+  // answered "prefer not to say" — corrected in az, en and ru together. A
+  // policy promising an optional question while the binary refuses to create
+  // the child without an answer is the same contradiction the 1.16.0
+  // gender-declaration blocker existed for, and a store reviewer reads this
+  // page. What the policy still says, because it is still true: the answer
+  // decides nothing about the child — not access, not which questions are
+  // served, not how hard they are, not ranking.
+  //
+  // Earlier bumps: 11.09.2026 (Sentry named as a processor in all three
+  // languages — that change moved docs/PRIVACY_POLICY.md and missed this
+  // literal, which is why the document and the page had drifted a day apart
+  // until now), 10.09.2026 (the store-declaration accuracy pass: purchases
+  // described per platform, the bare "we never ask for your location" replaced
+  // by the device-sensor vs parent-typed distinction, delete-a-child no longer
+  // website-only), 08.09.2026 (migration 169, which introduced the gender field
+  // as optional). The effective date is NOT moved — the policy has been in
+  // force since 04.08; these are amendments to it, and section 13 promises
+  // exactly this date is what we bump.
+  lastUpdated: "16.09.2026",
   // Registered 2026-07-30 (Namecheap). The apex serves the site; www redirects
   // to it at the host level, so the canonical form carries no "www".
   websiteUrl: "olympiq.ai",

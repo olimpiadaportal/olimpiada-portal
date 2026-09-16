@@ -7,7 +7,7 @@
 
 import { isUuid } from "@/lib/uuid";
 import { checkNewPassword } from "@/lib/auth/passwordPolicy";
-import { parseStudentGender } from "@/lib/studentGender";
+import { parseStudentGender, parseStudentGenderRequired } from "@/lib/studentGender";
 
 export const CHILD_ID_RE = /^\d{8}$/;
 export const CHILD_PASSWORD_MIN = 8;
@@ -46,11 +46,17 @@ export type ChildInfo = {
   // (create RPC / updateChildProfileCore) against city_districts — never by
   // the client.
   cityDistrictId?: string | null;
-  // Migration 169: OPTIONAL gender, for aggregate reporting only. A raw client
-  // string — lib/studentGender whitelists it. Absent/blank means "not
-  // answered" and no column is written; see that module for why NULL and
-  // 'unspecified' must never be collapsed.
-  gender?: string | null;
+  // MANDATORY since 2026-09-16 (owner) — Qız or Oğlan, for aggregate reporting
+  // only. A raw client string; lib/studentGender whitelists it.
+  //
+  // NOT OPTIONAL IN THIS TYPE ANY MORE, even though the column is still
+  // nullable. Every surface that builds a ChildInfo now has to DECIDE about
+  // this field: an optional member is a decision a caller can skip without
+  // noticing, which is how a client ends up posting nothing while its form
+  // believes it asked. The value may still be `null` — that is a surface
+  // saying "the parent gave me nothing" out loud, and validateChildInfo
+  // refuses it below rather than the type pretending it cannot happen.
+  gender: string | null;
 };
 
 export type ValidationResult =
@@ -86,7 +92,13 @@ export function validateChildPassword(
 // guarantee) and the picker ids must LOOK like UUIDs before reaching the RPC.
 const CHILD_NAME_MAX = 80;
 
-export function validateChildInfo(info: ChildInfo): ValidationResult {
+/** Options that only a caller with a good reason may set - see the gender note below. */
+export type ChildInfoValidationOptions = { genderOptional?: boolean };
+
+export function validateChildInfo(
+  info: ChildInfo,
+  opts?: ChildInfoValidationOptions,
+): ValidationResult {
   const errors: string[] = [];
   if (!info.firstName?.trim()) errors.push("auth.child.err.firstNameRequired");
   if (!info.lastName?.trim()) errors.push("auth.child.err.lastNameRequired");
@@ -115,12 +127,44 @@ export function validateChildInfo(info: ChildInfo): ValidationResult {
   if (!isUuid(info.gradeId?.trim() ?? "")) {
     errors.push("addchild.err.gradeRequired");
   }
-  // Migration 169: the gender is NEVER required — a missing one is not an
-  // error and never will be. Optional is not unvalidated, though: a value that
-  // IS sent has to be one the enum accepts, so a forged string is refused here
-  // rather than reaching the column (where it would be a 22P02 the parent sees
-  // as a generic failure).
-  const gender = parseStudentGender(info.gender);
+  // REQUIRED since 2026-09-16 (owner). This is the server half of the rule —
+  // the forms ask for it, and this is what makes asking mean something: the
+  // mobile BFF, a stale cached bundle and a hand-rolled POST all land here.
+  //
+  // TWO REFUSALS, DELIBERATELY DIFFERENT KEYS, and neither replaces the other.
+  // `genderRequired` means "you did not answer" (nothing sent, or the retired
+  // 'unspecified'); `genderInvalid` means "that is not a value this column
+  // knows" and is what a forged string still gets. Error keys are a CONTRACT
+  // shared with the mobile BFF, so the new rule ADDED a key rather than
+  // repurposing the one that already had a meaning.
+  //
+  // NOTE FOR THE EDIT PATH: this same check runs on updateChildProfileCore, so
+  // a legacy child whose gender is NULL can still be saved — by ANSWERING.
+  // That is the only way the 51 pre-rule rows ever get a value, and it is why
+  // the column stays nullable instead of being backfilled with a guess.
+  // THE ONE EXEMPTION, AND IT IS NOT A LOOPHOLE. A binary already installed on
+  // someone's phone cannot be made to comply retroactively. This rule ships to
+  // mobile as an over-the-air update, which downloads in the background and
+  // applies on the NEXT launch — so between the server deploy and that launch a
+  // 1.16.0 parent is running a bundle whose gender control still offers
+  // "Bildirmək istəmirəm", and a 1.15.x parent is running one that sends no
+  // gender key at all and never will, because this update cannot reach them.
+  //
+  // Enforcing here would not make those parents answer. It would make Add-Child
+  // fail outright, with a refusal their app has no control capable of
+  // satisfying, and the only escape would be a store update they did not know
+  // they needed. So the two mobile BFF routes pass genderOptional and the value
+  // lands as NULL — exactly the "nobody has been asked yet" state the column was
+  // designed to hold, and the same reasoning that makes p_gender nullable in
+  // create_child_account (migration 178).
+  //
+  // WHAT IS NOT EXEMPT: a value that is PRESENT and wrong still fails, on every
+  // caller. And the web forms, which are served fresh on every load and so can
+  // always comply, get the strict parser. The requirement is real everywhere a
+  // client exists that can honour it.
+  const gender = opts?.genderOptional
+    ? parseStudentGender(info.gender)
+    : parseStudentGenderRequired(info.gender);
   if (!gender.ok) errors.push(gender.errorKey);
   return result(errors);
 }

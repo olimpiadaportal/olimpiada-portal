@@ -14122,3 +14122,492 @@ body[data-site-typography] .btn-ghost {
 .cms-link:focus-visible {
   text-decoration-thickness: 2px;
 }
+
+/* ===========================================================================
+   NIGHT SKY — a slow, low-contrast star field behind DARK mode only.
+   ---------------------------------------------------------------------------
+   No component and no JavaScript: the field is two pseudo-elements on hosts
+   that already exist on every page, so nothing has to be mounted in a layout
+   and the effect costs zero bytes of client bundle.
+
+   TWO HOSTS, because one is provably not enough:
+     - `body` carries the public, auth and parent shells. In dark mode nothing
+       between <body> and the page content paints a background of its own (only
+       `[data-theme="light"] .app-shell` does), so a z-index:-1 layer here lands
+       above the canvas colour and below every card, input and line of text.
+     - `.app-shell > .arena` — the student shell — needs its OWN layer. The
+       arena paints an opaque composite background (the `.arena` block in the
+       ARENA section above), which swallows anything painted beneath it. The
+       `.stk-layer` comment reached the same conclusion and settled for
+       z-index:0 confined to the side gutters; a full-bleed field cannot do
+       that, so the arena is given a stacking context instead — see `isolation`
+       below, including what that costs.
+
+   The arena selector is deliberately `.app-shell > .arena`, not `.arena`: the
+   public login page reuses the class as a TOKEN SCOPE on a small centred box
+   with an inline `background: transparent`. That page is already covered by the
+   body layer, and a second field there would only double the star density.
+
+   READABILITY is the whole constraint. Every card, panel, nav and footer in
+   dark mode paints an opaque --surface / --panel, so the stars are only ever
+   visible in the empty page margins — never through a form or a paragraph. The
+   dots are 1–1.6px at 0.28–0.62 alpha over a near-black ground: a texture you
+   notice when you look for it, not while you are reading.
+
+   MOTION is two whole-layer opacity fades on deliberately mismatched periods
+   (19s and 27s, the far layer started mid-cycle), so the two star sets are
+   never at the same brightness and the sky shimmers instead of pulsing as one.
+   Opacity is compositor-driven — no layout, no repaint, nothing tied to scroll
+   — and an infinite opacity animation promotes the layer on its own, so
+   `will-change` would only buy a permanent memory cost. prefers-reduced-motion
+   freezes both layers at a mid brightness: the field stays, the motion is gone.
+
+   No existing dark token or rule is touched here; this block only ADDS a layer
+   behind them, and every selector is gated on [data-theme="dark"] so light mode
+   cannot see any of it.
+   =========================================================================== */
+
+[data-theme="dark"] body::before,
+[data-theme="dark"] body::after,
+[data-theme="dark"] .app-shell > .arena::before,
+[data-theme="dark"] .app-shell > .arena::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  /* Belt and braces: a z-index:-1 layer is already behind everything, but this
+     guarantees it can never swallow a click even if a later rule raises it. */
+  pointer-events: none;
+  background-repeat: repeat;
+}
+
+/* Near field — small, dense, the brighter of the two. Star colour is a single
+   blue-white (a cooled --ink); only alpha and radius vary, which is what keeps
+   a tiled pattern from reading as a grid. */
+[data-theme="dark"] body::before,
+[data-theme="dark"] .app-shell > .arena::before {
+  background-image:
+    radial-gradient(circle at 18px 42px, rgba(214, 228, 255, 0.15) 0 1px, rgba(214, 228, 255, 0) 1.8px),
+    radial-gradient(circle at 63px 189px, rgba(214, 228, 255, 0.11) 0 1px, rgba(214, 228, 255, 0) 1.8px),
+    radial-gradient(circle at 96px 27px, rgba(214, 228, 255, 0.17) 0 1.2px, rgba(214, 228, 255, 0) 2px),
+    radial-gradient(circle at 131px 118px, rgba(214, 228, 255, 0.09) 0 1px, rgba(214, 228, 255, 0) 1.8px),
+    radial-gradient(circle at 152px 265px, rgba(214, 228, 255, 0.14) 0 1px, rgba(214, 228, 255, 0) 1.8px),
+    radial-gradient(circle at 187px 74px, rgba(214, 228, 255, 0.13) 0 1.2px, rgba(214, 228, 255, 0) 2px),
+    radial-gradient(circle at 209px 224px, rgba(214, 228, 255, 0.1) 0 1px, rgba(214, 228, 255, 0) 1.8px),
+    radial-gradient(circle at 241px 152px, rgba(214, 228, 255, 0.16) 0 1px, rgba(214, 228, 255, 0) 1.8px),
+    radial-gradient(circle at 266px 46px, rgba(214, 228, 255, 0.08) 0 1px, rgba(214, 228, 255, 0) 1.8px),
+    radial-gradient(circle at 288px 291px, rgba(214, 228, 255, 0.13) 0 1.2px, rgba(214, 228, 255, 0) 2px),
+    radial-gradient(circle at 47px 303px, rgba(214, 228, 255, 0.1) 0 1px, rgba(214, 228, 255, 0) 1.8px),
+    radial-gradient(circle at 112px 236px, rgba(214, 228, 255, 0.08) 0 1px, rgba(214, 228, 255, 0) 1.8px),
+    radial-gradient(circle at 178px 161px, rgba(214, 228, 255, 0.12) 0 1px, rgba(214, 228, 255, 0) 1.8px),
+    radial-gradient(circle at 305px 133px, rgba(214, 228, 255, 0.14) 0 1px, rgba(214, 228, 255, 0) 1.8px);
+  background-size: 320px 320px;
+  animation: sky-twinkle-near 19s ease-in-out infinite;
+}
+
+/* Far field — sparser, marginally larger, on a tile size that shares no useful
+   factor with the near tile, so the two never line up into a visible lattice.
+   Two stars carry a faint accent tint (the arena blue and gold) purely so the
+   field is not one flat hue; at these alphas they read as depth, not as
+   coloured dots. */
+[data-theme="dark"] body::after,
+[data-theme="dark"] .app-shell > .arena::after {
+  background-image:
+    radial-gradient(circle at 44px 96px, rgba(214, 228, 255, 0.14) 0 1.5px, rgba(214, 228, 255, 0) 2.4px),
+    radial-gradient(circle at 158px 331px, rgba(214, 228, 255, 0.11) 0 1.3px, rgba(214, 228, 255, 0) 2.2px),
+    radial-gradient(circle at 233px 58px, rgba(163, 196, 255, 0.56) 0 1.6px, rgba(163, 196, 255, 0) 2.6px),
+    radial-gradient(circle at 301px 214px, rgba(214, 228, 255, 0.1) 0 1.3px, rgba(214, 228, 255, 0) 2.2px),
+    radial-gradient(circle at 388px 428px, rgba(214, 228, 255, 0.12) 0 1.5px, rgba(214, 228, 255, 0) 2.4px),
+    radial-gradient(circle at 466px 119px, rgba(255, 224, 170, 0.38) 0 1.3px, rgba(255, 224, 170, 0) 2.2px),
+    radial-gradient(circle at 519px 362px, rgba(214, 228, 255, 0.14) 0 1.4px, rgba(214, 228, 255, 0) 2.3px),
+    radial-gradient(circle at 97px 486px, rgba(214, 228, 255, 0.09) 0 1.3px, rgba(214, 228, 255, 0) 2.2px),
+    radial-gradient(circle at 351px 512px, rgba(214, 228, 255, 0.12) 0 1.5px, rgba(214, 228, 255, 0) 2.4px),
+    radial-gradient(circle at 12px 262px, rgba(214, 228, 255, 0.08) 0 1.2px, rgba(214, 228, 255, 0) 2.1px);
+  background-size: 540px 540px;
+  animation: sky-twinkle-far 27s ease-in-out infinite;
+  /* Start the far layer mid-cycle so the two are out of phase from first paint
+     instead of converging on a shared bright moment. */
+  animation-delay: -9s;
+}
+
+@keyframes sky-twinkle-near {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes sky-twinkle-far {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.38;
+  }
+}
+
+/* z-index:-1 only resolves INSIDE a stacking context, and `.arena` is a plain
+   in-flow block — without this its layers would escape to the root context and
+   the arena background would paint straight over them. That is exactly the trap
+   the `.stk-layer` comment documents.
+
+   `isolation` is the cheapest way to create the context: unlike transform,
+   filter or contain it does NOT make the element a containing block for
+   `position: fixed`, so the drawer, the sticky test topbar and the overlays
+   inside the arena keep behaving as before, and their order relative to each
+   other is unchanged because they all live inside the arena.
+
+   ONE accepted consequence: the arena now stacks as a single unit against the
+   only thing rendered outside it, the body-portalled `.modal-overlay`
+   (z-index 90). A notification toast (`.ntf-toast`, z-index 120, rendered
+   inside the arena) that fires while a modal is open therefore sits behind that
+   modal instead of over it. It is still announced (role="status"
+   aria-live="polite"), and a modal on top is the order most people expect. */
+/* UNCONDITIONAL, not dark-only. Gating this on the theme would make the arena a
+   stacking context in dark mode and a plain block in light mode - the app would
+   then layer differently in the two themes, and light is the path with less
+   traffic, so a z-index surprise there would survive longest. Containing nothing
+   costs nothing. */
+.app-shell > .arena {
+  isolation: isolate;
+}
+
+/* Under the student shell the body layers are invisible — the arena background
+   covers the viewport — so drop them rather than composite and animate a second
+   field nobody can see. Progressive enhancement: an engine without :has() just
+   keeps painting them out of sight, which is wasteful and never wrong. */
+[data-theme="dark"] body:has(.app-shell > .arena)::before,
+[data-theme="dark"] body:has(.app-shell > .arena)::after {
+  content: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="dark"] body::before,
+  [data-theme="dark"] body::after,
+  [data-theme="dark"] .app-shell > .arena::before,
+  [data-theme="dark"] .app-shell > .arena::after {
+    /* Keep the sky, remove the motion entirely — a mid brightness so neither
+       layer is frozen at its dimmest or its brightest frame. */
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* --- P12: the parent area's layout primitives -------------------------------
+   `.stack`, `.row`, `.grid2`, `.notice` and `.page` are written across
+   /children/new, /children/link and the parent dashboard, and NOT ONE of them
+   had a definition anywhere in this file. Every element carrying them fell back
+   to a bare block: no gap, no alignment, no callout colour, no measure. That —
+   not a bad layout — is why the existing-child screen reads as an unstyled
+   dump. The classes were inert, so there was nothing to restyle.
+
+   Additive by construction: nothing above declares any of these names, so no
+   rule already on screen changes meaning. Exactly three selector groups below
+   reach a PRE-EXISTING class, each deliberately narrow and each carrying its
+   own note — `.field`'s own controls, a bare `<label>` inside `.field`, and
+   `.btn.secondary`. Every colour is an existing token (no token value is
+   redefined, so the owner's dark reference palette is byte-identical), and
+   nothing here sets position/z-index/isolation, so the dark star-field layers
+   keep compositing exactly as they do today.
+   --------------------------------------------------------------------------- */
+
+/* Vertical flow. The gap is the ONLY spacing mechanism here, so a caller that
+   wants a different rhythm sets `gap` inline and nothing else has to move —
+   which is precisely how the two call sites already use it (`style={{gap:20}}`). */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+/* A flex column stretches its items across the cross axis, which would blow
+   every button out to the full width of its card. Buttons keep their intrinsic
+   size; text and cards still stretch. */
+.stack > .btn,
+.stack > .btn-ghost,
+.stack > button {
+  align-self: flex-start;
+}
+/* `.card` carries `margin-top: 20px` for the margin-stacked pages that predate
+   these primitives. Inside a gapped container that margin is double spacing. */
+.page > .card,
+.stack > .card,
+.grid2 > .card {
+  margin-top: 0;
+}
+/* Same reason: heading/paragraph margins fight a gap-spaced column. */
+.stack > h1,
+.stack > h2,
+.stack > h3,
+.stack > p {
+  margin: 0;
+}
+
+/* Horizontal flow. Wrapping is mandatory, not a nicety: the link panel pairs
+   unbounded text (a child's full name, an adult's email) with a button inside a
+   card that has ~244px of content box at a 320px viewport. Without the wrap the
+   button is pushed off the card. */
+.row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  min-width: 0;
+}
+
+/* Two equal columns that become one BEFORE they can squeeze. `minmax(0, 1fr)`
+   rather than `1fr` so a long Azerbaijani heading cannot push a track past its
+   share. 640px is on the approved scale — src/app/__tests__/breakpoints.test.ts
+   fails the build on a sixth value. */
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: stretch;
+}
+@media (max-width: 640px) {
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Callout. Both variants tint FROM the same token their text comes from, so
+   neither theme needs a second palette: `color-mix` keeps the wash and the ink
+   proportional to whatever --ok / --danger resolve to under the active theme,
+   and the ratios are chosen so the LIGHT theme — where --danger and --ok are
+   saturated colours on near-white — still clears 4.5:1 for body text. */
+.notice {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--chip-bg);
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+.notice.success {
+  border-color: color-mix(in srgb, var(--ok) 42%, var(--border));
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+  color: color-mix(in srgb, var(--ok) 62%, var(--text));
+}
+.notice.danger {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: color-mix(in srgb, var(--danger) 62%, var(--text));
+}
+
+/* The page container. Parent pages already sit inside `.site-main` (960px cap,
+   20px gutters), so this adds MEASURE and rhythm and never a second gutter.
+   Declared after `.stack` on purpose: both call sites write `page stack`
+   together, and at equal specificity source order decides the gap — the
+   page-level 20px is the one that should win. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  min-width: 0;
+}
+/* `.page-head` is shared with the public marketing pages, where it is a block
+   with a bottom margin and no second child. Inside `.page` it holds a title AND
+   a secondary action (the link page's "Dashboard"), so the row treatment is
+   scoped to that context only and the public pages keep the rule they were
+   written against. */
+.page > .page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 0;
+}
+.page > .page-head h1 {
+  margin: 0;
+}
+
+/* `.field` is defined above, but it only ever styled its CONTROL through
+   `.form input` — i.e. only when the field happened to sit inside a `.form`.
+   The link panel's fields do not, so its inputs rendered as raw UA widgets: a
+   different font, a different height, and a box that ignored the card's radius
+   entirely. Every declaration here is identical to the `.form` ones above, so a
+   field already inside a `.form` renders exactly as it does today; what changes
+   is only the fields that were getting nothing at all. Checkbox/radio/file are
+   excluded — a 10px/14px pad on a checkbox is not a text box — and `>` keeps
+   composed controls (PhoneField's `.phone-row`, the avatar picker's hidden file
+   input) out of it. */
+.field > input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.field > select,
+.field > textarea {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  min-width: 0;
+  max-width: 100%;
+}
+.field > input::placeholder,
+.field > textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.field > input:focus,
+.field > select:focus,
+.field > textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.field > input:focus-visible,
+.field > select:focus-visible,
+.field > textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+/* A `<div class="field">` labels its control with a real `<label for=...>`
+   instead of the `<span class="field-label">` the `<label class="field">`
+   spelling uses. Give it the same typography so the two spellings look alike;
+   `:not(.field-label)` keeps the already-labelled ones (PhoneField) out. */
+.field > label:not(.field-label) {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* `btn secondary` is written on the dashboard, on /children/new and in the link
+   panel, and `secondary` was never defined — so the secondary action rendered as
+   a SECOND filled accent button next to the primary one, with nothing to tell a
+   parent which is which. It takes the ghost treatment this file already uses for
+   exactly that role. */
+.btn.secondary {
+  background: transparent;
+  color: var(--text);
+  /* 7px/13px, not the base 8px/14px: the base .btn carries border:0, so adding a
+     1px border here would make the secondary button 2px taller and wider than
+     the primary sitting beside it. Trading one pixel of padding per side for the
+     border keeps the pair the same size. */
+  padding: 7px 13px;
+  border: 1px solid var(--border);
+  /* [data-theme="light"] .btn (STEP 7b) lifts FILLED buttons on a saturated
+     purple drop shadow. A transparent outline button inheriting it floats on a
+     purple glow with nothing casting it - so the lift is cancelled here rather
+     than by narrowing that rule, which several other light-mode surfaces rely
+     on. :focus-visible below re-establishes its own ring. */
+  box-shadow: none;
+}
+.btn.secondary:hover:not(:disabled) {
+  background: var(--chip-bg);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.btn.secondary:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+/* Nothing in this file gave a disabled `.btn` a disabled LOOK, and the link
+   panel's submit stays disabled until an 8-digit id AND a password are present
+   — the one screen where "why is nothing happening?" is the whole question.
+   Scoped under `.stack` so no button anywhere else in the product changes. */
+.stack .btn:disabled,
+.stack button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* ---- The existing-child access panel (/children/link) --------------------- */
+
+/* The credentials card. `.field`'s own 14px top margin would stack on top of the
+   column gap, so the gap alone spaces this form. */
+.link-form {
+  gap: 12px;
+}
+.link-form > .field {
+  margin-top: 0;
+  /* An 8-digit id and a password do not need 800px of input. Capping the FIELD
+     rather than the input keeps the label and the box the same width, and the
+     cap is inert below ~380px of container, so phones still fill the card. */
+  max-width: 340px;
+}
+.link-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  max-width: 56ch;
+}
+
+/* Child card header: name + login id on the left, the owner/linked pill right.
+   `flex-start` because the left side is two lines and the pill is one — centring
+   floats the pill against the name's descender instead of its cap height. */
+.link-child-head {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.link-child-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  overflow-wrap: break-word;
+}
+.link-child-head p {
+  margin: 2px 0 0;
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+}
+
+/* "Who has access" — a labelled section INSIDE the card, so it earns a hairline
+   above it rather than relying on the column gap alone to separate it from the
+   header it belongs under. */
+.link-access-title {
+  margin: 2px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+.link-access-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  /* The rounded corners have to clip the first and last row's own edges. */
+  overflow: hidden;
+}
+.link-access-row {
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+.link-access-list > .link-access-row + .link-access-row {
+  border-top: 1px solid var(--border);
+}
+/* Name over email over role, each on its own line. Three inline spans running
+   together on one line is what made this block unreadable. `anywhere` — not
+   `break-word` — because an email address offers no break opportunity at all,
+   and this column has a real 320px floor to respect. */
+.link-access-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.link-access-who .muted {
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+/* The revoke button never shrinks; the text column is what gives way, and when
+   there is no room left the row wraps it onto its own line. */
+.link-access-row > .btn {
+  flex: none;
+}

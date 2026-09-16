@@ -274,6 +274,18 @@ export function bffAuthedPost<T>(
   return bffJsonPost<T>(path, body, fallbackErrorKey, true, extraHeaders, timeoutMs);
 }
 
+// ---- Existing-child access (migration 177: credentials, not approval) ------
+
+const CHILD_LINK_PATH = "/api/mobile/v1/children/link";
+
+/**
+ * The parent's children and which of them they created.
+ *
+ * `parent_link_state` still returns the retired approval flow's invitation and
+ * pending-request rows — migration 177 deprecated their USAGE, it did not drop
+ * the tables — and this type deliberately omits them. A field the client cannot
+ * see is a field no screen can grow an Approve button out of again.
+ */
 export type ChildLinkState = {
   children: {
     id: string;
@@ -281,25 +293,65 @@ export type ChildLinkState = {
     child_id: string | null;
     is_creator: boolean;
     creator_name: string | null;
-    adults: { parent_id: string; name: string | null }[];
-    invitations: {
-      id: string;
-      status: "open" | "pending";
-      expires_at: string;
-      name?: string | null;
-      masked_email?: string | null;
-    }[];
   }[];
-  pending: { id: string; expires_at: string }[];
 };
 
-export type ChildLinkResult =
-  | { state: "pending" | "saved" }
-  | { code: string; expiresAt: string; childId: string };
+/** One adult who can reach a child, for the "who has access" list (177). */
+export type ChildAccessAdult = {
+  profile_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  /** The canonical label. The two parts above fall back to it: rows predating
+   *  177 were backfilled by SPLITTING this, so it is the one that always exists. */
+  display_name: string | null;
+  email: string | null;
+  role: "creator" | "linked";
+  since: string | null;
+};
 
-export function bffChildLink(body: Record<string, unknown>) {
-  return bffAuthedPost<ChildLinkState | ChildLinkResult>(
-    "/api/mobile/v1/children/link",
+export function bffChildLinkState() {
+  return bffAuthedPost<ChildLinkState>(
+    CHILD_LINK_PATH,
+    { action: "state" },
+    "link.err.generic",
+  );
+}
+
+/**
+ * Grant this parent access to an existing child by verifying that CHILD's own
+ * credentials (8-digit id + the password their parent set).
+ *
+ * The password crosses this function and is never kept: not cached, not retried,
+ * never logged, and the screen clears its field on every outcome. The BFF answers
+ * a wrong pair with 400 + `link.err.credentialsInvalid` rather than 401 —
+ * deliberately, because classifyBffResponse above reads a 401 on a Bearer call as
+ * an expired session and would sign the parent out over a mistyped password.
+ */
+export function bffChildLinkByCredentials(childId: string, password: string) {
+  return bffAuthedPost<{ studentProfileId: string; childName: string }>(
+    CHILD_LINK_PATH,
+    { action: "credentials", child_id: childId, password },
+    "link.err.generic",
+  );
+}
+
+/** The adults who can reach ONE child. The RPC behind it refuses a caller with
+ *  no access of their own, so this can never enumerate the adults around a minor
+ *  the caller does not already reach. */
+export function bffChildAccessAdults(studentId: string) {
+  return bffAuthedPost<{ adults: ChildAccessAdult[] }>(
+    CHILD_LINK_PATH,
+    { action: "access", student_id: studentId },
+    "link.err.generic",
+  );
+}
+
+/** Take access away (`revoke`, creator only) or walk away from it (`leave`).
+ *  Both still ride migration 176's manage_child_link — removing the approval step
+ *  did not remove the two ways access ends. */
+export function bffChildLinkManage(body: Record<string, unknown>) {
+  return bffAuthedPost<{ state: "pending" | "saved" }>(
+    CHILD_LINK_PATH,
     body,
     "link.err.generic",
   );

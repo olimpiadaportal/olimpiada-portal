@@ -6,6 +6,7 @@ import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useContentGutter } from "@/lib/useContentWidth";
 import { ActionArea, ActionAreaShell } from "./ActionArea";
+import { StarField } from "./StarField";
 import { scrollBodyBottomInset } from "./actionAreaLayout";
 import { scrollPaddingBottom } from "./keyboardLayout";
 import {
@@ -79,8 +80,15 @@ function StaticScreen({ children, padded = true, background, actions }: ScreenPr
   // below grows for the keyboard — which is what keeps that measurement from
   // feeding back on itself. Same node in both branches, so a screen without
   // actions renders exactly the tree it always did.
+  //
+  // The StarField goes FIRST, so it sits on the background paint and under
+  // everything else. The padded body below it carries no background of its own,
+  // which is what lets the field show through; the ActionArea at the bottom is
+  // deliberately opaque, so the bar stays a solid ledge. Light mode and reduced
+  // motion are handled inside the component — see components/StarField.tsx.
   return (
     <View {...viewProps} style={{ flex: 1, backgroundColor: bg }}>
+      <StarField />
       <View style={[{ flex: 1 }, bodyPadding]}>{children}</View>
       {hasActions ? (
         <ActionArea
@@ -114,7 +122,11 @@ function ScrollScreen({
   const hasActions = Boolean(actions);
 
   const body = (
+    // The ScrollView carries no background of its own here, so the field
+    // painted under it shows through the gutters between panels — and stays
+    // put while the content scrolls over it, which is the whole effect.
     <View style={{ flex: 1, backgroundColor: bg }}>
+      <StarField />
       <ScrollView
         {...scrollProps}
         contentContainerStyle={{

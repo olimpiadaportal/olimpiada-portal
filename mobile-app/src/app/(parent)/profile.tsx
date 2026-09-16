@@ -2,13 +2,20 @@
 // identity (avatar + name/email/phone), the phone add/edit module, security
 // (self-service password change), help links (FAQ / Contact) and the
 // double-confirm danger zone wired to the audited BFF delete flow.
+//
+// This screen is PUSHED OVER the parent tabs, so the tab bar is hidden while it
+// is open and every back affordance returns to the tab the parent came FROM —
+// which left no route to Home at all. The header carries one, and only that;
+// see components/HeaderHomeButton.tsx for why it is a header glyph and why it
+// pops rather than navigates.
 import React from "react";
 import { View } from "react-native";
-import { useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { CircleHelp, Mail } from "lucide-react-native";
 import { Screen } from "@/components/Screen";
 import { Card } from "@/components/Card";
+import { HeaderHomeButton } from "@/components/HeaderHomeButton";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
@@ -36,46 +43,64 @@ export default function ParentProfile() {
   const { refreshing, onRefresh } = usePullRefresh([profileQ]);
 
   return (
-    <Screen scroll refreshing={refreshing} onRefresh={onRefresh}>
-      <View style={{ gap: spacing.lg }}>
-        {profileQ.isPending ? (
-          <View style={{ gap: spacing.md }}>
-            <Skeleton height={120} />
-            <Skeleton height={80} />
-          </View>
-        ) : profileQ.isError ? (
-          <ErrorRetry
-            message={t("mob.boot.error")}
-            retryLabel={t("mob.retry")}
-            onRetry={() => void profileQ.refetch()}
+    <>
+      {/* Merged into the options the (parent) Stack already declares for this
+          route, so the layout's back chevron and title are untouched. */}
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <HeaderHomeButton
+              href="/(parent)/(tabs)/home"
+              icon="home"
+              label={t("nav.home")}
+              color={tokens.accent}
+              background={tokens.chipBg}
+              borderColor={tokens.border}
+            />
+          ),
+        }}
+      />
+      <Screen scroll refreshing={refreshing} onRefresh={onRefresh}>
+        <View style={{ gap: spacing.lg }}>
+          {profileQ.isPending ? (
+            <View style={{ gap: spacing.md }}>
+              <Skeleton height={120} />
+              <Skeleton height={80} />
+            </View>
+          ) : profileQ.isError ? (
+            <ErrorRetry
+              message={t("mob.boot.error")}
+              retryLabel={t("mob.retry")}
+              onRetry={() => void profileQ.refetch()}
+            />
+          ) : (
+            <IdentityCard profile={profileQ.data} t={t} />
+          )}
+
+          <PhoneSection
+            current={profileQ.data?.phone ?? null}
+            t={t}
+            onSaved={() => void queryClient.invalidateQueries({ queryKey: ["own-profile"] })}
           />
-        ) : (
-          <IdentityCard profile={profileQ.data} t={t} />
-        )}
 
-        <PhoneSection
-          current={profileQ.data?.phone ?? null}
-          t={t}
-          onSaved={() => void queryClient.invalidateQueries({ queryKey: ["own-profile"] })}
-        />
+          <PasswordSection t={t} />
 
-        <PasswordSection t={t} />
+          <Card>
+            <LinkRow
+              icon={<CircleHelp size={18} color={tokens.accent} strokeWidth={2} />}
+              label={t("nav.faq")}
+              onPress={() => router.push("/(public)/faq" as never)}
+            />
+            <LinkRow
+              icon={<Mail size={18} color={tokens.accent} strokeWidth={2} />}
+              label={t("nav.contact")}
+              onPress={() => router.push("/(public)/contact" as never)}
+            />
+          </Card>
 
-        <Card>
-          <LinkRow
-            icon={<CircleHelp size={18} color={tokens.accent} strokeWidth={2} />}
-            label={t("nav.faq")}
-            onPress={() => router.push("/(public)/faq" as never)}
-          />
-          <LinkRow
-            icon={<Mail size={18} color={tokens.accent} strokeWidth={2} />}
-            label={t("nav.contact")}
-            onPress={() => router.push("/(public)/contact" as never)}
-          />
-        </Card>
-
-        <DangerZone t={t} onDeleted={() => void signOut()} />
-      </View>
-    </Screen>
+          <DangerZone t={t} onDeleted={() => void signOut()} />
+        </View>
+      </Screen>
+    </>
   );
 }

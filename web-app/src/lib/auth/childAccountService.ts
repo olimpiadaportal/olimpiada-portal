@@ -7,9 +7,10 @@
 //   subscribe step allocates the ID and sets the canonical synthetic email
 //   (see allocateChildIdFromSubscribe + subscriptionService.subscribeChild).
 //   On any post-createUser failure we delete the orphaned auth user (the RPC's own
-//   transaction already rolled back its DB writes). What CANNOT fail the call —
-//   the optional gender, written after the transaction — comes back as a
-//   `warnings` key instead of a log line nobody reads.
+//   transaction already rolled back its DB writes). The result still carries a
+//   `warnings` array — i18n keys for anything that failed AFTER the child was
+//   committed — but nothing populates it today: its one member was the optional
+//   gender, and migration 178 moved that value inside the transaction.
 // resetChildPassword: THE CREATING parent restores their child's ability to
 //   sign in: refuse an id-less account, reconcile the synthetic login email,
 //   set the password, void the failed-login lockout. See the comment above the
@@ -28,7 +29,7 @@ import {
   validateChildPassword,
 } from "@/lib/auth/children";
 import { writeAuditLog } from "@/lib/audit";
-import { parseStudentGender, type StudentGender } from "@/lib/studentGender";
+import { parseStudentGenderRequired } from "@/lib/studentGender";
 
 export type CreateChildResult =
   // childUniqueId is now allocated on subscribe, so it is null at create time.
@@ -37,6 +38,13 @@ export type CreateChildResult =
   // committed — the account is real and must be kept, but the parent is not
   // being told everything worked. Every surface renders them; ignoring the
   // array is how this field's one member became invisible in the first place.
+  //
+  // EMPTY IN EVERY PATH TODAY. That member was the optional gender, written as
+  // its own patch once the provisioning transaction had closed; it is now the
+  // RPC's 12th argument and cannot fail separately from the child. The array
+  // stays because the SHAPE recurs — the surfaces, the mobile BFF envelope and
+  // the app all carry it end to end — and because deleting a channel is how the
+  // next partial save gets swallowed again.
   | {
       ok: true;
       childUniqueId: string | null;
@@ -49,18 +57,33 @@ export async function createChild(params: {
   parentProfileId: string;
   password: string;
   info: ChildInfo;
+  /**
+   * Accept a child created WITHOUT a gender. Set by the mobile BFF only, and
+   * never by a web surface - see the long note in validateChildInfo. A binary
+   * already on a parent's phone cannot be made to answer a question its build
+   * does not ask, and refusing would break Add-Child for them entirely.
+   */
+  genderOptional?: boolean;
 }): Promise<CreateChildResult> {
-  const { parentProfileId, password, info } = params;
+  const { parentProfileId, password, info, genderOptional } = params;
 
   // Validate inputs (the final 8-digit ID is allocated server-side, so the
   // password!=id rule is re-checked after allocation below).
-  const infoCheck = validateChildInfo(info);
+  const infoCheck = validateChildInfo(info, { genderOptional });
   const pwCheck = validateChildPassword(password);
   const errors = [
     ...(infoCheck.ok ? [] : infoCheck.errors),
     ...(pwCheck.ok ? [] : pwCheck.errors),
   ];
   if (errors.length) return { ok: false, errors };
+
+  // The gender for the RPC. validateChildInfo has already refused an absent or
+  // forged one, so this is a re-parse for the TYPE, not a second opinion: the
+  // required parser's success value is a real enum label and never null, which
+  // is what lets it be passed straight into p_gender below with no fallback and
+  // no `?? null` for a later reader to misread as "optional".
+  const gender = parseStudentGenderRequired(info.gender);
+  if (!gender.ok) return { ok: false, errors: [gender.errorKey] };
 
   const admin = getAdminClient();
 
@@ -95,6 +118,21 @@ export async function createChild(params: {
       p_district_id: info.districtId ?? null,
       p_school_id: info.schoolId ?? null,
       p_city_district_id: info.cityDistrictId || null,
+      // MIGRATION 178 — the 12th argument. The gender used to be a SEPARATE
+      // service-role patch on the row this call had just created, because the
+      // RPC's 11-arg signature was fixed and versioned (migration 064) and
+      // validation check 66 asserted exactly that arity. A follow-up write can
+      // fail on its own, so the field came back as a non-fatal `warnings` key —
+      // right for something a parent could decline, and wrong the moment the
+      // answer became mandatory: a required field whose loss is a warning is a
+      // required field the platform does not actually have. It now rides inside
+      // the provisioning transaction and fails WITH the child or not at all.
+      //
+      // DATABASE FIRST, THEN PUSH. Migration 178 is applied to staging AND
+      // production; naming an argument the database has not got yet does not
+      // degrade quietly — it fails the RPC outright and turns Add-Child into a
+      // dead button on every surface at once.
+      p_gender: gender.value,
     });
     if (rpcErr) {
       // Round 21: surface the RPC's rayon validation as a FIELD error instead
@@ -113,35 +151,11 @@ export async function createChild(params: {
     const studentProfileId: string | undefined = row?.new_student_profile_id;
     if (!studentProfileId) throw new Error("provisioning returned no student id");
 
-    // Migration 169 — the OPTIONAL gender, written as its own patch on the row
-    // the RPC just created, because create_child_account CANNOT carry it: its
-    // 11-arg signature is fixed and versioned (since migration 064) and
-    // validation check 66 asserts precisely that arity exists and the older one
-    // does not. Adding p_gender is therefore a migration + a canonical backport
-    // + a check edit, and all three must reach staging AND production BEFORE
-    // this file is pushed — Vercel deploys on push, so code that names an
-    // argument the database has not got yet fails the RPC outright and turns a
-    // missing optional statistic into a dead Add-Child. Out here it stays.
-    //
-    // ABSENT WRITES NOTHING — `value: null` means the parent left the control
-    // alone, and the column's own meaning of NULL ("never asked") is already
-    // what a fresh row carries.
-    //
-    // NOT FATAL, AND NOT SILENT EITHER. The child, the login and the family
-    // link are all committed by this point, so failing here would send the saga
-    // below into deleting a perfectly good account over an optional statistic —
-    // that must not happen. But neither may this be swallowed: a dropped answer
-    // leaves the column NULL, which reads as "never asked", and telling the two
-    // apart is the entire reason migration 169 kept them distinct. The parent
-    // who DID answer is also the only person who can put it back, so the miss
-    // travels home as a warning. Logged without the value — it is a minor's
-    // personal data and does not belong in a server log.
+    // NOTHING IS WRITTEN AFTER THE TRANSACTION ANY MORE. The gender was the
+    // only thing out here, and it is p_gender above. Anything added below this
+    // line inherits the problem that move solved: a write the parent is told
+    // succeeded, because the child did.
     const warnings: string[] = [];
-    const gender = parseStudentGender(info.gender);
-    if (gender.ok && gender.value && !(await storeChildGender(studentProfileId, gender.value))) {
-      console.error("[child] optional gender not stored for", studentProfileId);
-      warnings.push("addchild.warn.genderNotSaved");
-    }
 
     await writeAuditLog(parentProfileId, "parent.child_create", {
       targetTable: "students",
@@ -177,30 +191,6 @@ export async function createChild(params: {
     const key = (e as { i18nKey?: string }).i18nKey ?? "auth.child.err.createFailed";
     return { ok: false, errors: [key], detail: (e as Error).message };
   }
-}
-
-// Store the optional gender on the freshly created student row and PROVE it
-// landed. True only when the column now holds the submitted value.
-//
-// THE READ-BACK IS NOT BELT AND BRACES. A PostgREST UPDATE whose filter matches
-// no row is not an error — it is a 204 with an empty body — so "the call did not
-// complain" is evidence of nothing, and this update is filtered on an id that
-// came back from another statement. The returned row is the only thing that says
-// the answer survived. Same rule as deleteAuthUserVerified in parentCore:
-// success means the state is what we claimed, not that the API stayed quiet.
-async function storeChildGender(
-  studentProfileId: string,
-  value: StudentGender,
-): Promise<boolean> {
-  const admin = getAdminClient();
-  const { data, error } = await admin
-    .from("students")
-    .update({ gender: value })
-    .eq("profile_id", studentProfileId)
-    .select("gender")
-    .maybeSingle();
-  if (error) return false;
-  return (data as { gender?: string | null } | null)?.gender === value;
 }
 
 export type ResetChildPasswordResult =

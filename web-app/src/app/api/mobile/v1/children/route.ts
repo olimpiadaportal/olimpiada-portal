@@ -41,17 +41,25 @@ export async function POST(request: Request): Promise<Response> {
       // city has active rayons (mobile sends it from the M3.1 wizard update).
       cityDistrictId: bodyStr(body, "city_district_id").trim() || null,
       schoolId: bodyStr(body, "school_id").trim() || null,
-      // Migration 169 — the OPTIONAL gender, passed through UNVALIDATED on
-      // purpose: `validateChildInfo` runs lib/studentGender's whitelist inside
-      // createChild, so the enum is enforced in exactly ONE place for the web
-      // action and this route alike. A forged value comes back as
-      // addchild.err.genderInvalid rather than reaching the column.
+      // The gender, passed through UNVALIDATED on purpose: `validateChildInfo`
+      // runs lib/studentGender's whitelist inside createChild, so the enum is
+      // enforced in exactly ONE place for the web action and this route alike.
+      // A forged value still comes back as addchild.err.genderInvalid rather
+      // than reaching the column.
       //
-      // ABSENT MUST STAY ABSENT. `bodyStr` answers "" for a missing field (and
-      // for a non-string one, which is a client bug and lands on the safe side
-      // — "not answered" — instead of writing something wrong), and "" || null
-      // is the null the core reads as "leave the column alone". The app omits
-      // the key entirely when the parent never touched the control.
+      // REQUIRED SINCE 2026-09-16 (owner) — BUT NOT ON THIS ROUTE, and that is
+      // deliberate. `genderOptional` is set on the createChild call below
+      // because the caller is a binary already installed on a parent's phone.
+      // The control that asks the question reaches them as an over-the-air
+      // update which applies on the NEXT launch, and 1.15.x installs never
+      // receive it at all. Enforcing here would not make those parents answer;
+      // it would make Add-Child fail with a refusal their app cannot satisfy.
+      // The web forms, served fresh every load, get the strict rule.
+      //
+      // ABSENT THEREFORE STILL MEANS ABSENT. `bodyStr` answers "" for a missing
+      // field (and for a non-string one, which is a client bug landing on the
+      // safe side), and "" || null is the null the column holds as "nobody has
+      // been asked yet".
       gender: bodyStr(body, "gender").trim() || null,
     };
 
@@ -59,6 +67,8 @@ export async function POST(request: Request): Promise<Response> {
       parentProfileId: parent.profileId,
       password,
       info,
+      // See the gender note above: an installed bundle cannot be made to ask.
+      genderOptional: true,
     });
     if (!result.ok) {
       // All validation keys at once (the wizard shows them per-field); `error`

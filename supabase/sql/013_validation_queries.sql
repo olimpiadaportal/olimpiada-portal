@@ -283,15 +283,24 @@ where t.table_name is null;
 
 -- 17) Child provisioning is secure: the lockout log table exists AND the atomic
 --     create_child_account() function is NOT EXECUTE-grantable by clients
---     (authenticated/anon) — it is service_role only. (Signature = the 11-arg
---     Round-21 v2 with p_city_district_id.)
+--     (authenticated/anon) — it is service_role only. (Signature = the 12-arg
+--     form since migration 178, which carries p_gender.)
+--
+--     RESOLVED THROUGH to_regprocedure, NOT a text signature passed straight to
+--     has_function_privilege. The latter casts to regprocedure internally and
+--     RAISES when the function is absent, so when migration 178 dropped the
+--     11-arg overload this check stopped failing and started ERRORING - which
+--     aborted its statement and quietly removed it from the run. A check that
+--     deletes itself the moment its subject changes is worse than one that goes
+--     red, so existence is now tested first and privileges only on what exists.
 select '17_child_provisioning_secure' as check_name,
        case when exists (select 1 from information_schema.tables
                           where table_schema='public' and table_name='child_login_attempts')
+             and to_regprocedure('public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid,text)') is not null
              and has_function_privilege('authenticated',
-                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid)', 'EXECUTE') = false
+                   to_regprocedure('public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid,text)'), 'EXECUTE') = false
              and has_function_privilege('anon',
-                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid)', 'EXECUTE') = false
+                   to_regprocedure('public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid,text)'), 'EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
 -- -----------------------------------------------------------------------------
@@ -1170,9 +1179,11 @@ select '65_question_delete_guard' as check_name,
             then 'PASS' else 'FAIL' end as status;
 
 -- 66) Student city-district (migration 064): the rayon is stored on students
---     with the consistency guard attached; create_child_account is the 11-arg
---     v2 (rayon validated + required when the city has rayons) and stays
---     service-role-only; leaderboard rows fall back to the stored rayon.
+--     with the consistency guard attached; create_child_account is the 12-arg
+--     form (rayon validated + required when the city has rayons, plus p_gender
+--     since migration 178) and stays service-role-only; leaderboard rows fall
+--     back to the stored rayon. BOTH superseded arities are pinned as absent:
+--     restoring either would silently write no gender.
 select '66_student_city_district' as check_name,
        case when exists (select 1 from information_schema.columns
                           where table_schema='public' and table_name='students'
@@ -1180,10 +1191,11 @@ select '66_student_city_district' as check_name,
              and exists (select 1 from pg_trigger
                           where tgname='trg_student_district_guard'
                             and tgrelid='public.students'::regclass)
-             and to_regprocedure('public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid)') is not null
+             and to_regprocedure('public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid,text)') is not null
+             and to_regprocedure('public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid)') is null
              and to_regprocedure('public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid)') is null
              and has_function_privilege('authenticated',
-                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid)','EXECUTE') = false
+                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid,text)','EXECUTE') = false
              and position('st.city_district_id' in
                    pg_get_functiondef('public.lb_rows(text,text,uuid,text)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
@@ -5078,6 +5090,56 @@ select '133_coparent_linking_contract' as check_name,
    and position('digest(v_code' in coalesce((select prosrc from pg_proc where oid=to_regprocedure(
      'public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)')),''))>0
  then 'PASS' else 'FAIL' end as status;
+
+-- 135. Credential-verified child linking is sealed, throttled and announced.
+-- The four properties below are the ones whose loss would be silent. The one
+-- that matters most is ledger_not_child_lockout: if this flow ever starts
+-- recording into child_login_attempts, a hostile adult can lock a real minor out
+-- of their own app for 15 minutes with eight deliberate wrong guesses, from a
+-- parent-facing endpoint. Reading is_child_login_locked is correct; writing to
+-- it is the bug. notifies_creator is the second: the approval step WAS the
+-- notification, so with approval gone a link that emits nothing forms in total
+-- silence on the account owner.
+with facts as (
+  select
+    to_regprocedure('public.link_child_by_verified_credentials(uuid,text,text)') is not null
+      and to_regprocedure('public.child_access_adults(uuid,uuid)') is not null
+      and to_regprocedure('public.is_parent_link_verify_locked(uuid,text)') is not null
+      and to_regprocedure('public.record_parent_link_verify_attempt(uuid,text,text,boolean)') is not null
+      as rpcs_present,
+    not has_function_privilege('anon', to_regprocedure(
+        'public.link_child_by_verified_credentials(uuid,text,text)'), 'EXECUTE')
+      and not has_function_privilege('authenticated', to_regprocedure(
+        'public.link_child_by_verified_credentials(uuid,text,text)'), 'EXECUTE')
+      and not has_function_privilege('authenticated', to_regprocedure(
+        'public.child_access_adults(uuid,uuid)'), 'EXECUTE')
+      as service_only,
+    to_regclass('public.parent_link_verify_attempts') is not null
+      and not has_table_privilege('anon','public.parent_link_verify_attempts','SELECT')
+      and not has_table_privilege('authenticated','public.parent_link_verify_attempts','SELECT')
+      and not has_table_privilege('authenticated','public.parent_link_verify_attempts','INSERT')
+      as ledger_private,
+    position('child_login_attempts' in coalesce((select prosrc from pg_proc where oid=to_regprocedure(
+        'public.record_parent_link_verify_attempt(uuid,text,text,boolean)')),'x'))=0
+      as ledger_not_child_lockout,
+    position('create_notification' in coalesce((select prosrc from pg_proc where oid=to_regprocedure(
+        'public.link_child_by_verified_credentials(uuid,text,text)')),''))>0
+      as notifies_creator,
+    position('audit_logs' in coalesce((select prosrc from pg_proc where oid=to_regprocedure(
+        'public.link_child_by_verified_credentials(uuid,text,text)')),''))>0
+      as audits_the_grant,
+    (select count(*) from information_schema.columns
+      where table_schema='public' and table_name='profiles'
+        and column_name in ('first_name','last_name'))=2
+      as structured_names
+)
+select '135_credential_link_security' as check_name,
+ case when rpcs_present and service_only and ledger_private and ledger_not_child_lockout
+        and notifies_creator and audits_the_grant and structured_names
+  then 'PASS' else 'FAIL' end as status,
+ rpcs_present,service_only,ledger_private,ledger_not_child_lockout,
+ notifies_creator,audits_the_grant,structured_names
+from facts;
 
 -- 134. One sibling-rank implementation feeds all subscription mutations.
 select '134_sibling_rank_single_source' as check_name,

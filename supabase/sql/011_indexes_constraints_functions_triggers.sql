@@ -14606,6 +14606,245 @@ $fn$;
 revoke all on function public.parent_link_state(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.parent_link_state(uuid,uuid) to service_role;
 
+-- =============================================================================
+-- MIGRATION 177 -- LINKING A CHILD BY VERIFIED CREDENTIALS
+-- The invite/approval flow above is RETAINED for 'revoke' and 'leave' and for
+-- its history, but is no longer how a link is created. It never completed one
+-- in production: issuing a new code revokes any pending redemption, so a parent
+-- who redeemed and then generated a fresh code destroyed their own request.
+-- The owner removed the approval step entirely on 2026-09-16.
+-- =============================================================================
+-- 3. The lockout read. --------------------------------------------------------
+-- Two ceilings, because they answer different attacks. The actor ceiling stops
+-- one parent grinding many children; the IP ceiling stops one host grinding from
+-- many throwaway parent accounts, which are free to create.
+create or replace function public.is_parent_link_verify_locked(
+  p_actor   uuid,
+  p_ip_hash text default null
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $fn$
+  select
+    (select count(*) from public.parent_link_verify_attempts a
+      where a.actor_profile_id = p_actor
+        and a.success = false
+        and a.attempted_at > now() - interval '1 hour') >= 5
+    or (p_ip_hash is not null and
+        (select count(*) from public.parent_link_verify_attempts a
+          where a.ip_hash = p_ip_hash
+            and a.success = false
+            and a.attempted_at > now() - interval '1 hour') >= 15)
+$fn$;
+
+create or replace function public.record_parent_link_verify_attempt(
+  p_actor           uuid,
+  p_child_unique_id text,
+  p_ip_hash         text,
+  p_success         boolean
+)
+returns void
+language sql
+security definer
+set search_path = public, pg_temp
+as $fn$
+  insert into public.parent_link_verify_attempts(actor_profile_id, child_unique_id, ip_hash, success)
+  values (p_actor, p_child_unique_id, p_ip_hash, p_success);
+$fn$;
+
+revoke all on function public.is_parent_link_verify_locked(uuid, text) from public, anon, authenticated;
+grant execute on function public.is_parent_link_verify_locked(uuid, text) to service_role;
+revoke all on function public.record_parent_link_verify_attempt(uuid, text, text, boolean) from public, anon, authenticated;
+grant execute on function public.record_parent_link_verify_attempt(uuid, text, text, boolean) to service_role;
+
+-- 4. The link itself. ---------------------------------------------------------
+-- CALLED ONLY AFTER Node has verified the child's password against Supabase Auth
+-- on a bare token client. SQL cannot check a password, so this function trusts
+-- its caller - which is safe only because EXECUTE is service_role-only and the
+-- service key never leaves the server. Do not grant it to authenticated.
+create or replace function public.link_child_by_verified_credentials(
+  p_actor           uuid,
+  p_child_unique_id text,
+  p_ip_hash         text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $fn$
+declare
+  v_student   uuid;
+  v_creator   uuid;
+  v_child_nm  text;
+  v_actor_nm  text;
+  v_actor_em  text;
+  v_count     int;
+begin
+  if p_actor is null or p_child_unique_id is null then
+    return jsonb_build_object('ok', false, 'code', 'invalid');
+  end if;
+
+  -- The actor must be an ACTIVE parent. A suspended account must not be able to
+  -- attach itself to a minor.
+  if not exists (
+    select 1 from public.parents pa
+      join public.profiles pr on pr.id = pa.profile_id
+     where pa.profile_id = p_actor and pr.status = 'active'
+  ) then
+    return jsonb_build_object('ok', false, 'code', 'forbidden');
+  end if;
+
+  select s.profile_id, s.created_by_parent_profile_id, pr.display_name
+    into v_student, v_creator, v_child_nm
+    from public.students s
+    join public.profiles pr on pr.id = s.profile_id
+   where s.child_unique_id = p_child_unique_id;
+
+  -- ONE GENERIC ANSWER for "no such child". Both existing child-login paths
+  -- refuse to distinguish absent from wrong, because an endpoint that
+  -- distinguishes them turns a 10^8 id space into an enumerable directory of
+  -- real minors. That reasoning does not stop applying because the caller is an
+  -- adult.
+  if v_student is null then
+    return jsonb_build_object('ok', false, 'code', 'invalid');
+  end if;
+
+  -- The creator already has full access through students.created_by_parent_profile_id
+  -- and needs no link row. Saying so plainly is safe: the caller proved they hold
+  -- this child's password, so they learn nothing here they did not already know.
+  if v_creator = p_actor then
+    return jsonb_build_object('ok', false, 'code', 'alreadyOwner');
+  end if;
+
+  if exists (
+    select 1 from public.parent_student_links
+     where parent_profile_id = p_actor
+       and student_profile_id = v_student
+       and status = 'active'
+  ) then
+    return jsonb_build_object('ok', false, 'code', 'alreadyLinked');
+  end if;
+
+  -- The 4-adult cap from 176, unchanged. It is the only thing bounding how many
+  -- adults one leaked credential can admit.
+  select count(*) + 1 into v_count
+    from public.parent_student_links
+   where student_profile_id = v_student
+     and status = 'active'
+     and parent_profile_id <> v_creator;
+  if v_count >= 4 then
+    return jsonb_build_object('ok', false, 'code', 'limit');
+  end if;
+
+  insert into public.parent_student_links(parent_profile_id, student_profile_id, status, verified_at, created_by)
+  values (p_actor, v_student, 'active', now(), p_actor)
+  on conflict (parent_profile_id, student_profile_id) do update
+    set status = 'active', verified_at = now(), updated_at = now();
+
+  select coalesce(nullif(btrim(coalesce(pr.first_name, '') || ' ' || coalesce(pr.last_name, '')), ''), pr.display_name),
+         pr.email::text
+    into v_actor_nm, v_actor_em
+    from public.profiles pr where pr.id = p_actor;
+
+  -- Audit at WARNING: this is an access grant over a minor, performed without
+  -- the account owner present. It must never contain the submitted password in
+  -- any form, including a hash.
+  insert into public.audit_logs(actor_profile_id, action, entity_type, entity_id, severity, metadata)
+  values (p_actor, 'child.access.credentialLink', 'students', v_student, 'warning',
+          jsonb_build_object('child_unique_id', p_child_unique_id, 'granted_to', p_actor, 'method', 'credentials'));
+
+  -- THE NOTIFICATION IS THE REPLACEMENT FOR APPROVAL, not a courtesy. Without it
+  -- a link forms with zero signal to the account owner. Priority 1 because that
+  -- level is exempt from the platform-wide notification master switch and from
+  -- the recipient's own mute - it is reserved for payment and security, and
+  -- "another adult now has access to your child" is the second.
+  --
+  -- Category 'announcement' rather than a new 'security' one: the web processor
+  -- sends channelId = category and the Android channel ids in the shipped binary
+  -- must match byte-for-byte. A new category would land on a channel that
+  -- 1.16.0 installs do not define.
+  if v_creator is not null then
+    perform public.create_notification(
+      v_creator,
+      'child_access_granted',
+      v_child_nm,
+      v_actor_nm,
+      jsonb_build_object('student_profile_id', v_student, 'parent_profile_id', p_actor,
+                         'parent_name', v_actor_nm, 'parent_email', v_actor_em),
+      array['in_app', 'push'],
+      'child_access_granted:' || v_student::text || ':' || p_actor::text,
+      1,
+      null,
+      'announcement',
+      null
+    );
+  end if;
+
+  return jsonb_build_object('ok', true, 'student_profile_id', v_student, 'child_name', v_child_nm);
+end;
+$fn$;
+
+revoke all on function public.link_child_by_verified_credentials(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.link_child_by_verified_credentials(uuid, text, text) to service_role;
+
+-- 5. Who has access to this child. -------------------------------------------
+-- Answers the spec's "the child record must show that access has been granted
+-- and identify the parent by first name, last name and email". Readable only by
+-- an adult who already has access to that child - creator or active link - so it
+-- never becomes a way to discover the adults around an arbitrary minor.
+create or replace function public.child_access_adults(p_actor uuid, p_student uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $fn$
+declare
+  v_creator uuid;
+  v_rows    jsonb;
+begin
+  select created_by_parent_profile_id into v_creator
+    from public.students where profile_id = p_student;
+
+  if v_creator is distinct from p_actor
+     and not exists (select 1 from public.parent_student_links
+                      where parent_profile_id = p_actor
+                        and student_profile_id = p_student
+                        and status = 'active')
+     and not public.is_admin() then
+    return jsonb_build_object('ok', false, 'code', 'forbidden');
+  end if;
+
+  select coalesce(jsonb_agg(r order by r ->> 'role', r ->> 'last_name'), '[]'::jsonb) into v_rows
+  from (
+    select jsonb_build_object(
+             'profile_id',   pr.id,
+             'first_name',   pr.first_name,
+             'last_name',    pr.last_name,
+             'display_name', pr.display_name,
+             'email',        pr.email::text,
+             'role',         case when pr.id = v_creator then 'creator' else 'linked' end,
+             'since',        coalesce(l.verified_at, l.created_at)
+           ) as r
+      from public.profiles pr
+      left join public.parent_student_links l
+             on l.parent_profile_id = pr.id
+            and l.student_profile_id = p_student
+            and l.status = 'active'
+     where pr.id = v_creator
+        or l.id is not null
+  ) s;
+
+  return jsonb_build_object('ok', true, 'adults', v_rows);
+end;
+$fn$;
+
+revoke all on function public.child_access_adults(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.child_access_adults(uuid, uuid) to service_role;
+
 
 create or replace function public.admin_child_link_state(p_student uuid)
 returns jsonb language plpgsql stable security definer set search_path=public,pg_temp

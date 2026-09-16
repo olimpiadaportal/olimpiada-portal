@@ -30,7 +30,7 @@ import {
   ChildGenderField,
   type ChildGenderChoice,
 } from "@/components/ChildGenderField";
-import { isStudentGender } from "@/lib/studentGender";
+import { isCollectedStudentGender } from "@/lib/studentGender";
 
 type City = { id: string; name: string };
 // NAMING (Round 21): `districts` is the CITIES table (historic naming) —
@@ -50,7 +50,10 @@ type Grade = { id: string; level: number; name: string };
 // Per-field client validation messages (i18n KEYS — the server returns the
 // same keys, so both layers localize identically).
 type FieldErrors = Partial<
-  Record<"first" | "last" | "city" | "district" | "school" | "grade", string>
+  Record<
+    "first" | "last" | "city" | "district" | "school" | "grade" | "gender",
+    string
+  >
 >;
 
 export function ChildInfoEditForm({
@@ -73,7 +76,11 @@ export function ChildInfoEditForm({
     cityDistrictId: string;
     schoolId: string;
     gradeId: string;
-    /** Migration 169: the stored gender, or "" when it was never answered. */
+    /**
+     * The stored gender, or "" when the column is NULL. A legacy value the
+     * select no longer offers (NULL, or the retired 'unspecified') shows as the
+     * placeholder, so the next save asks the question — see the state below.
+     */
     gender: string;
   };
   /** Parent-managed avatar state (photoUrl = short-lived signed URL). */
@@ -101,15 +108,33 @@ export function ChildInfoEditForm({
   const [cityDistrictId, setCityDistrictId] = useState(initial.cityDistrictId); // the rayon
   const [schoolId, setSchoolId] = useState(initial.schoolId);
   const [gradeId, setGradeId] = useState(initial.gradeId);
-  // Migration 169 — OPTIONAL gender, seeded from what is stored so the parent
-  // is not asked twice. An unrecognised value (an older enum, a hand-edited
-  // row) falls back to the placeholder rather than being shown as a broken
-  // option; leaving it there posts "" and the core touches nothing, so the
-  // stored value survives a save that could not display it.
+  // REQUIRED gender (owner, 2026-09-16), seeded from what is stored so a parent
+  // who already answered is not asked twice.
+  //
+  // SEEDED FROM THE COLLECTABLE VALUES, NOT THE FULL ENUM, and that is the
+  // whole legacy story in one line. A child created before the rule carries
+  // NULL ("never asked") or 'unspecified' ("asked, declined") — neither is an
+  // option in this select any more, so both fall back to the placeholder and
+  // the next save of this form asks the question. That is the ONLY way those
+  // rows ever get a value: the column stayed nullable precisely because
+  // inventing one for a minor is not an option, so it is answered by a parent
+  // or not at all. The cost is real and was accepted — a parent correcting a
+  // school name on a legacy child has to answer this before they can save.
   const [gender, setGender] = useState<ChildGenderChoice>(
-    isStudentGender(initial.gender) ? initial.gender : "",
+    isCollectedStudentGender(initial.gender) ? initial.gender : "",
   );
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+
+  // The server's own gender refusal, pulled out of the flat `state.errors` list
+  // so it can be shown UNDER the select as well as in that list. It is the same
+  // two keys the client check produces, and the server is the one that counts:
+  // a stale bundle, a re-post or a hand-rolled request all get here with the
+  // client check never having run.
+  const serverGenderError =
+    state?.errors?.find(
+      (e) =>
+        e === "addchild.err.genderRequired" || e === "addchild.err.genderInvalid",
+    ) ?? null;
 
   // Avatar (parent-managed): the picker mirrors the stored state; Save only
   // dispatches the avatar action when the selection actually changed.
@@ -199,6 +224,11 @@ export function ChildInfoEditForm({
     }
     if (!schoolId) errs.school = "addchild.err.schoolRequired";
     if (!gradeId) errs.grade = "addchild.err.gradeRequired";
+    // Owner, 2026-09-16: required here too, and this is the check that makes a
+    // legacy NULL/'unspecified' child answerable — the select seeded itself to
+    // the placeholder, so saving anything else about that child now asks the
+    // question first. Same key updateChildProfileCore returns.
+    if (!gender) errs.gender = "addchild.err.genderRequired";
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
@@ -213,9 +243,9 @@ export function ChildInfoEditForm({
     fd.set("city_district_id", cityDistrictId); // the rayon ("" → null server-side)
     fd.set("school_id", schoolId);
     fd.set("grade_id", gradeId);
-    // Migration 169 — OPTIONAL. "" means LEAVE IT ALONE: the core writes the
-    // column only when a value is actually chosen, so saving a corrected school
-    // name can never blank an answer the parent gave earlier.
+    // Required — the guard above already refused "", and the core refuses it
+    // again and then writes the column UNCONDITIONALLY. There is no longer a
+    // path where a save succeeds while quietly omitting this field.
     fd.set("gender", gender);
     fd.set("city", cities.find((c) => c.id === districtId)?.name ?? "");
     fd.set("school_name", citySchools.find((s) => s.id === schoolId)?.name ?? "");
@@ -405,15 +435,16 @@ export function ChildInfoEditForm({
         )}
       </label>
 
-      {/* Optional gender (migration 169) — never required, never gates
-          anything. Leaving it on the placeholder writes nothing at all, and the
-          placeholder cannot be chosen BACK: on this form that would have read
-          as "erase the answer" and done nothing. Withdrawing an answer is
-          "prefer not to say", which is an answer the column can hold. */}
+      {/* Required gender (owner, 2026-09-16). A legacy child shows the
+          placeholder — see the state above — so the parent answers once and the
+          row stops being one of the 51 the platform can say nothing about.
+          There is no "prefer not to say" to withdraw into any more; the two
+          collectable answers are the only ones the select offers. */}
       <ChildGenderField
         value={gender}
         onChange={setGender}
         disabled={pending}
+        error={fieldErrors.gender ?? serverGenderError}
         dict={dict}
       />
 

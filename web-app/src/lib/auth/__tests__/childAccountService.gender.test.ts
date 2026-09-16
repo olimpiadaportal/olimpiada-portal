@@ -1,26 +1,30 @@
-// The optional child gender (migration 169) is written AFTER the provisioning
-// transaction, and that is not going to change: create_child_account is a
-// SECURITY DEFINER function whose 11-arg signature validation check 66 asserts
-// exactly, so carrying the value inside the transaction is a migration that has
-// to land on both databases before this code deploys. The follow-up write is
-// therefore permanent — which makes how it FAILS the whole question.
+// The child gender now rides INSIDE the provisioning transaction, and this file
+// pins that it cannot quietly go back to riding outside it.
 //
-// WHAT THIS PINS. A failed gender write must never come back as a bare success.
-// The child is created, the login works, the wizard advances — and the answer
-// the parent gave lands in the column as NULL, which is the value that means
-// "nobody has been asked". The two states the migration went to the trouble of
-// keeping apart are collapsed, by the one code path where the parent is
-// standing right there and could fix it in ten seconds if anybody told them.
+// WHAT THIS FILE USED TO SAY. Until 2026-09-16 the gender was written as its own
+// service-role patch AFTER create_child_account committed, because that RPC's
+// 11-arg signature was fixed and versioned (migration 064) and validation check
+// 66 asserted exactly that arity. A follow-up write can fail on its own, so this
+// test's whole job was to prove the failure reached the parent as a warning
+// rather than as a clean success. That was the right design for a field a parent
+// could decline.
 //
-// TWO FAILURE SHAPES, BOTH SILENT. An error from PostgREST is the obvious one.
-// The other is an UPDATE that matches no row: that is not an error, it is a
-// 204 with an empty body, so a plain `if (error)` check calls it a save. The
-// filter is `profile_id = <id returned by another statement>`, so "matched
-// nothing" is exactly the shape a mismatch would take.
+// WHY IT NO LONGER IS. The field is MANDATORY (owner, 2026-09-16). A required
+// answer whose loss is reported as a warning is a required answer the platform
+// does not actually have: the child is created, the wizard advances, and the
+// column holds the NULL that means "nobody was ever asked". Migration 178 added
+// p_gender as the 12th argument, so the value now commits with the child or not
+// at all — and the failure mode this file was written about stops existing
+// instead of being handled.
 //
-// WHAT MUST NOT HAPPEN EITHER: the saga deleting the child. An account is worth
-// far more than a statistic, so this stays a warning on a success — never an
-// error, never a rollback.
+// SO WHAT IS PINNED NOW:
+//   * the value reaches the RPC, as p_gender, with the exact string submitted;
+//   * NOTHING patches `students` after the transaction — a reintroduced
+//     follow-up write is the regression, and it would look like a fix;
+//   * a create with no gender is REFUSED BEFORE an auth user exists, so a
+//     refusal leaves nothing behind to clean up;
+//   * the success still carries `warnings`, now always empty. The array stays
+//     because the shape recurs and the mobile BFF and app carry it end to end.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // `server-only` is a BUILD-TIME guard with no runtime behaviour and no package
@@ -40,14 +44,9 @@ const GOOD_PASSWORD = "Xelil!2026";
 type Update = { table: string; values: Record<string, unknown> };
 
 const updates: Update[] = [];
+const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
+const createdAuthUsers: string[] = [];
 const deletedAuthUsers: string[] = [];
-
-/** What the students UPDATE answers. `error` = PostgREST refused it; `row` =
- *  what came back, and `null` is the row-matched-nothing case (NOT an error). */
-let genderUpdate: {
-  error: { message: string } | null;
-  row: { gender: string | null } | null;
-} = { error: null, row: { gender: "female" } };
 
 function builder(table: string) {
   const call: Update = { table, values: {} };
@@ -58,7 +57,7 @@ function builder(table: string) {
     eq: () => b,
     maybeSingle: async () => {
       updates.push(call);
-      return { data: genderUpdate.row, error: genderUpdate.error };
+      return { data: null, error: null };
     },
     // Chains awaited without a terminal read (nothing here does, today).
     then(resolve: (v: { data: unknown; error: unknown }) => unknown) {
@@ -71,13 +70,18 @@ function builder(table: string) {
 
 const adminClient = {
   from: (table: string) => builder(table),
-  rpc: async () => ({
-    data: [{ new_student_profile_id: CHILD, new_child_unique_id: CHILD_ID }],
-    error: null,
-  }),
+  rpc: async (fn: string, args: Record<string, unknown>) => {
+    rpcCalls.push({ fn, args });
+    return {
+      data: [{ new_student_profile_id: CHILD, new_child_unique_id: CHILD_ID }],
+      error: null,
+    };
+  },
   auth: {
     admin: {
-      createUser: async () => ({ data: { user: { id: AUTH_USER } }, error: null }),
+      createUser: async () => (
+        createdAuthUsers.push(AUTH_USER), { data: { user: { id: AUTH_USER } }, error: null }
+      ),
       // Already the canonical login address, so the reconcile is a no-op read.
       getUserById: async (id: string) => ({
         data: { user: { id, email: SYNTHETIC } },
@@ -97,7 +101,7 @@ vi.mock("@/lib/audit", () => ({ writeAuditLog: async () => {} }));
 
 const { createChild } = await import("@/lib/auth/childAccountService");
 
-const create = (gender?: string | null) =>
+const create = (gender: string | null) =>
   createChild({
     parentProfileId: PARENT,
     password: GOOD_PASSWORD,
@@ -111,82 +115,99 @@ const create = (gender?: string | null) =>
     },
   });
 
+const provisioning = () => rpcCalls.find((c) => c.fn === "create_child_account");
 const genderUpdates = () => updates.filter((u) => "gender" in u.values);
 
 beforeEach(() => {
   updates.length = 0;
+  rpcCalls.length = 0;
+  createdAuthUsers.length = 0;
   deletedAuthUsers.length = 0;
-  genderUpdate = { error: null, row: { gender: "female" } };
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
-describe("createChild — a gender that did not save is not a success story", () => {
-  it("warns when the write is REFUSED, and still keeps the child", async () => {
-    genderUpdate = { error: { message: "permission denied" }, row: null };
-
+describe("createChild — the gender commits with the child", () => {
+  it("passes the answer to the RPC as p_gender", async () => {
     const res = await create("female");
 
-    // The child is kept: a created account beats a failed registration over an
-    // optional statistic, and the saga must not have run.
     expect(res.ok).toBe(true);
     expect(res.ok === true && res.studentProfileId).toBe(CHILD);
-    expect(deletedAuthUsers).toHaveLength(0);
-    // ...but the parent is told. This is the assertion that fails if anyone
-    // goes back to logging the miss and returning a clean success.
-    expect(res.ok === true && res.warnings).toEqual(["addchild.warn.genderNotSaved"]);
+    expect(provisioning()?.args.p_gender).toBe("female");
   });
 
-  it("warns when the update matched NO ROW — which PostgREST calls success", async () => {
-    genderUpdate = { error: null, row: null };
+  it("writes NOTHING to students afterwards", async () => {
+    // THE REGRESSION THIS EXISTS FOR. A follow-up patch would look like a
+    // careful belt-and-braces write and would restore the exact failure mode
+    // migration 178 removed: a child that exists, a parent told everything
+    // worked, and a column holding "nobody was ever asked".
+    await create("male");
 
-    const res = await create("male");
-
-    expect(res.ok).toBe(true);
-    expect(res.ok === true && res.warnings).toEqual(["addchild.warn.genderNotSaved"]);
-  });
-
-  it("warns when the column came back holding something else", async () => {
-    // A value silently coerced or overwritten by a trigger is still an answer
-    // the parent gave and the platform does not have.
-    genderUpdate = { error: null, row: { gender: "unspecified" } };
-
-    const res = await create("male");
-
-    expect(res.ok === true && res.warnings).toEqual(["addchild.warn.genderNotSaved"]);
-  });
-
-  it("says nothing when the answer is actually stored", async () => {
-    genderUpdate = { error: null, row: { gender: "female" } };
-
-    const res = await create("female");
-
-    expect(res.ok === true && res.warnings).toEqual([]);
-    expect(genderUpdates()).toHaveLength(1);
-  });
-
-  it("writes nothing and warns about nothing when no answer was given", async () => {
-    // ABSENT IS NOT A FAILURE. An untouched control leaves the column at its
-    // "never asked" NULL, so there is no write to fail and nothing to report.
-    const res = await create("");
-
-    expect(res.ok === true && res.warnings).toEqual([]);
     expect(genderUpdates()).toHaveLength(0);
+    expect(updates.filter((u) => u.table === "students")).toHaveLength(0);
   });
 
-  it("never puts the value itself in the log — it is a minor's personal data", async () => {
-    genderUpdate = { error: { message: "permission denied" }, row: null };
+  it("reports no warnings — there is nothing left that can half-succeed", async () => {
+    const res = await create("female");
+    expect(res.ok === true && res.warnings).toEqual([]);
+  });
 
+  it("sends the value verbatim, never a default", async () => {
+    for (const gender of ["female", "male"] as const) {
+      rpcCalls.length = 0;
+      await create(gender);
+      expect(provisioning()?.args.p_gender).toBe(gender);
+    }
+  });
+});
+
+describe("createChild — a child is never created without an answer", () => {
+  it("REFUSES a missing gender, and before any auth user exists", async () => {
+    // Order matters: validation runs ahead of admin.createUser, so a refusal
+    // leaves no orphaned auth user for the saga to clean up — and the parent
+    // keeps their form.
+    const res = await create(null);
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.errors).toContain("addchild.err.genderRequired");
+    expect(createdAuthUsers).toHaveLength(0);
+    expect(rpcCalls).toHaveLength(0);
+    expect(deletedAuthUsers).toHaveLength(0);
+  });
+
+  it("REFUSES a blank one the same way", async () => {
+    const res = await create("");
+    expect(res.ok === false && res.errors).toContain("addchild.err.genderRequired");
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it("REFUSES the retired 'unspecified' rather than storing it", async () => {
+    // It stays a legal value for rows written before the rule; it is not a
+    // legal thing to create a NEW child with.
+    const res = await create("unspecified");
+    expect(res.ok === false && res.errors).toContain("addchild.err.genderRequired");
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it("REFUSES a forged value with the invalid key, never reaching the column", async () => {
+    // Out here it is a field error the parent can act on; at the column it
+    // would be a 22P02 they read as a generic failure.
+    const res = await create("Female");
+    expect(res.ok === false && res.errors).toContain("addchild.err.genderInvalid");
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it("never puts the value itself in a log — it is a minor's personal data", async () => {
     await create("female");
-
     const logged = vi.mocked(console.error).mock.calls.flat().join(" ");
     expect(logged).not.toContain("female");
   });
 });
 
-describe("createChild — the surfaces actually carry the warning", () => {
-  // Source-level (the child-delete-gate idiom): the core can report perfectly
-  // and the parent still learn nothing if the action, the wizard or the BFF
-  // drops the array. Each of those is a one-line omission that compiles.
+describe("createChild — the surfaces still carry the warnings channel", () => {
+  // Source-level (the child-delete-gate idiom): the array is empty today, and
+  // the path back to the parent is what made the OLD bug fixable. Dropping it
+  // now would have to be undone by the next partial save, and each of these is
+  // a one-line omission that compiles.
   const read = async (rel: string) => {
     const { readFileSync } = await import("node:fs");
     const { resolve } = await import("node:path");
@@ -207,11 +228,5 @@ describe("createChild — the surfaces actually carry the warning", () => {
   it("the mobile BFF forwards them in the success envelope", async () => {
     const src = await read("app/api/mobile/v1/children/route.ts");
     expect(src).toContain("warnings: result.warnings");
-  });
-
-  it("the warning exists in all three locales", async () => {
-    const src = await read("i18n/messages.ts");
-    const hits = src.match(/"addchild\.warn\.genderNotSaved"/g) ?? [];
-    expect(hits).toHaveLength(3); // az / en / ru
   });
 });

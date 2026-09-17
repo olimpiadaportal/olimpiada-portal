@@ -61,6 +61,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "link.title": "Uşaq profilinə qoşul",
     "link.choice.existing": "Mövcud uşaq profilinə qoşulun",
     "link.request": "Qoşul",
+    // Migration 180 put the invite code back, so that route's strings
+    // (link.way.*, link.code*, link.issue*) are on screen in a purchase-silent
+    // binary too. They were written in connect language in the web catalog and
+    // need no override here — the CTA above is the only one that did.
     "mob.welcome.tagline": "Olimpiadalara hazırlaşmağın ən əyləncəli yolu",
     "mob.welcome.studentLogin": "Şagird girişi",
     // ---- FIRST-LAUNCH LANGUAGE PICKER ----------------------------------
@@ -120,8 +124,12 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // invitation code — copy that would tell a parent to enter something the
     // screen no longer has a field for. Access language, no purchase verb:
     // linking grants a second adult reach, it buys nothing.
+    // Rewritten for migration 180: there are TWO routes in now (the child's own
+    // credentials, or an invite code the creating parent generates), and an
+    // intro naming only one of them sends a parent who has a code looking for a
+    // password they were never given. Still mobile-only, still no purchase verb.
     "mob.link.intro":
-      "Uşağın 8 rəqəmli ID-si və parolu ilə profilə dərhal giriş əldə edin. Təsdiq gözləmək lazım deyil — profili yaradan valideynə bildiriş göndərilir.",
+      "Uşaq artıq başqa valideyn tərəfindən yaradılıbsa, profilə iki yoldan biri ilə qoşula bilərsiniz. Giriş dərhal açılır — profili yaradan valideynə bildiriş göndərilir.",
     "mob.forgotOnWeb": "Şifrə bərpası veb saytda açılır.",
     "mob.placeholder.title": "Tezliklə",
     "mob.placeholder.body": "Bu bölmə növbəti mərhələdə əlavə olunacaq.",
@@ -385,7 +393,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.childIdPh": "1234 5678",
     "mob.parentPassword": "Password set by your parent",
     "mob.link.intro":
-      "Enter the child's 8-digit ID and password to reach their profile straight away. There is no approval to wait for — the parent who created the profile is notified.",
+      "If another parent already created the child, there are two ways to join the profile. Access opens straight away — the parent who created the profile is notified.",
     "mob.forgotOnWeb": "Password recovery opens on the website.",
     "mob.placeholder.title": "Coming soon",
     "mob.placeholder.body": "This section arrives in the next stage.",
@@ -609,7 +617,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.childIdPh": "1234 5678",
     "mob.parentPassword": "Пароль, заданный родителем",
     "mob.link.intro":
-      "Введите 8-значный ID ребёнка и его пароль, чтобы сразу получить доступ к профилю. Ждать подтверждения не нужно — родитель, создавший профиль, получит уведомление.",
+      "Если ребёнка уже создал другой родитель, подключиться к профилю можно двумя способами. Доступ открывается сразу — родитель, создавший профиль, получит уведомление.",
     "mob.forgotOnWeb": "Восстановление пароля откроется на сайте.",
     "mob.placeholder.title": "Скоро",
     "mob.placeholder.body": "Этот раздел появится на следующем этапе.",

@@ -274,7 +274,11 @@ export function bffAuthedPost<T>(
   return bffJsonPost<T>(path, body, fallbackErrorKey, true, extraHeaders, timeoutMs);
 }
 
-// ---- Existing-child access (migration 177: credentials, not approval) ------
+// ---- Existing-child access (two routes in, neither of them approved) ------
+//
+// Migration 177 replaced the approval flow with the child's own credentials;
+// migration 180 brought the invite CODE back beside it and made redeeming
+// create the link outright. Four calls, no pending state between any of them.
 
 const CHILD_LINK_PATH = "/api/mobile/v1/children/link";
 
@@ -282,9 +286,11 @@ const CHILD_LINK_PATH = "/api/mobile/v1/children/link";
  * The parent's children and which of them they created.
  *
  * `parent_link_state` still returns the retired approval flow's invitation and
- * pending-request rows — migration 177 deprecated their USAGE, it did not drop
- * the tables — and this type deliberately omits them. A field the client cannot
- * see is a field no screen can grow an Approve button out of again.
+ * pending-request rows — 177 deprecated their USAGE and 180 removed the state
+ * they described, but neither dropped the tables — and this type deliberately
+ * omits them. A field the client cannot see is a field no screen can grow an
+ * Approve button out of again. The code the ISSUE call returns is not in here
+ * either, and cannot be: only its sha256 is stored.
  */
 export type ChildLinkState = {
   children: {
@@ -346,11 +352,47 @@ export function bffChildAccessAdults(studentId: string) {
   );
 }
 
+/**
+ * Issue a one-time invite code for a child this parent CREATED.
+ *
+ * The raw code comes back exactly ONCE — the database keeps only its sha256 —
+ * so the screen renders what this returns and can never read it back out of
+ * `state`. Issuing again revokes whatever code is still outstanding for the
+ * same child, which is why the screen says so next to the button rather than
+ * letting a parent discover it when the code they already shared stops working.
+ */
+export function bffChildLinkIssue(studentId: string) {
+  return bffAuthedPost<{ code: string; expiresAt: string; childId: string }>(
+    CHILD_LINK_PATH,
+    { action: "issue", student_id: studentId },
+    "link.err.generic",
+  );
+}
+
+/**
+ * Redeem an invite code: the CHILD's 8-digit id plus the 20-character code the
+ * creating parent generated.
+ *
+ * NOTHING IS WAITING AFTERWARDS. Under migration 176 this raised a request the
+ * creating parent had to approve, and the flow completed zero links in
+ * production — issuing a fresh code revoked the redemption waiting on it, so a
+ * parent who retried destroyed their own request. Migration 180 makes `redeem`
+ * create the ACTIVE link itself and notify the creator, so `ok: true` here
+ * means access is already granted, never that something was submitted.
+ */
+export function bffChildLinkRedeem(childId: string, code: string) {
+  return bffAuthedPost<{ state: "saved" }>(
+    CHILD_LINK_PATH,
+    { action: "redeem", child_id: childId, code },
+    "link.err.generic",
+  );
+}
+
 /** Take access away (`revoke`, creator only) or walk away from it (`leave`).
- *  Both still ride migration 176's manage_child_link — removing the approval step
- *  did not remove the two ways access ends. */
+ *  Both still ride migration 176's manage_child_link — neither removing the
+ *  approval step nor restoring the code removed the two ways access ends. */
 export function bffChildLinkManage(body: Record<string, unknown>) {
-  return bffAuthedPost<{ state: "pending" | "saved" }>(
+  return bffAuthedPost<{ state: "saved" }>(
     CHILD_LINK_PATH,
     body,
     "link.err.generic",

@@ -6,6 +6,81 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## WAITING ON GOOGLE PLAY — two actions owed AFTER 1.16.0 publishes (2026-09-17)
+
+**Neither of these may be done while the Play review is open.** Submitted
+2026-09-13 (a Sunday); "In review" as of 2026-09-17. Google counts its review SLA
+"from the last submitted change to an app", and a change made during review
+pushes the submission to the BACK of the queue — so editing the Data safety form
+now would trade a four-day-old review for a fresh queue position. The draft is
+saved and loses nothing by waiting.
+
+### 1. Publish the Android half of the OTA
+
+The OTA for this round went out **iOS-only on purpose**:
+
+```
+eas update --branch production --platform ios --message "Child linking by credentials, gender question, prefill and navigation fixes"
+```
+
+`--platform ios` was not cosmetic. A Play reviewer testing the in-review build
+would otherwise have pulled a JS bundle that differs from the AAB they were
+handed, on a first production review. Android clients simply find no matching
+update and keep their embedded bundle.
+
+The Android AAB predates this round's work, so it DOES need the update — just not
+during review. Once 1.16.0 publishes, run the same command with the same message:
+
+```
+eas update --branch production --platform android --message "Child linking by credentials, gender question, prefill and navigation fixes"
+```
+
+Same message on purpose: one round, one description, two platforms.
+
+### 2. Submit the Data safety tweaks
+
+Saved as a draft in Play Console → Policy → App content → Data safety → Manage.
+Small additive corrections the owner made on 2026-09-17 — purposes that were
+missing from types already declared:
+
+* **Device or other IDs** — add *Account management*
+* **App activity → Other actions** — add *Analytics*
+
+These reviewed independently of any release and need no new build. They were NOT
+submitted on 2026-09-17 because Play warned that doing so would cancel and
+restart the in-progress release review. That was the right call: the app is not
+publicly downloadable yet, so an under-declared PURPOSE on a type that is already
+declared misleads nobody in the meantime.
+
+Full console checklist, if more turns out to be owed:
+`mobile-app/markdowns/STORE_LAUNCH_PACK.md` §6.1.
+
+### While waiting — what is normal and what is not
+
+Four days is inside the expected band, for a documented reason: Google applies
+**extended review to every update of an app whose target audience includes
+children**, and this is also a new developer account fresh out of the 12-tester
+closed-testing path. Both factors are named by Google. The children's-audience
+one never expires, so **build a week of buffer into every future Android
+release** — it is not a first-release effect.
+
+A problem arrives as an EMAIL plus a status change, never as prolonged silence.
+Watch for: status flipping to Rejected, Policy status showing "Issues found",
+**"Changes not yet sent for review" reappearing** (that means something was
+edited and the clock restarted), or a target-audience/Families questionnaire —
+which is not a rejection but STOPS THE CLOCK until answered.
+
+Escalate at ~day 10 (2026-09-23) via Play Console → Help, naming
+`ai.olympiq.app` and release 1.16.0. Day 14 (2026-09-27) with no email and no
+support reply is genuinely stuck rather than queued.
+
+**Not a warning sign, and it will look like one:** the dashboard checklist item
+"Publish your app on Google Play" stays unticked until the release actually goes
+live. With managed publishing OFF it ticks itself; it is a consequence of the
+review being open, not an action anybody has missed.
+
+---
+
 ## DECISION (2026-09-17) — the gender question is required; the DISCLOSURE is not
 
 **A required question and a required disclosure are different things, and only

@@ -1,10 +1,12 @@
 // Mobile BFF — existing-child access for a second adult.
 //
-// REWRITTEN 2026-09-16 alongside migration 177. The approval flow is gone: a
-// second parent no longer redeems a one-time code and waits to be approved,
-// they prove they may reach the child by entering that child's OWN credentials
-// (8-digit id + the password the creating parent set), and the grant is
-// immediate. Three actions live here:
+// TWO ROUTES IN, NEITHER OF THEM APPROVED. Migration 177 (2026-09-16) removed
+// the approval step: a second parent proved they may reach the child by
+// entering that child's OWN credentials (8-digit id + the password the creating
+// parent set), and the grant was immediate. Migration 180 (2026-09-17) brought
+// the invite CODE back beside it on the same terms — `redeem` now creates the
+// ACTIVE link itself and notifies the creator, returning {ok:true,
+// state:'saved'}. There is no pending state behind either route.
 //
 //   state        the caller's children and which of them they created. Wire
 //                shape UNCHANGED on purpose — this ships as an OTA update, and
@@ -15,13 +17,17 @@
 //                of their own, so this can never become a way to enumerate the
 //                adults around an arbitrary minor.
 //   credentials  verify the child's credentials, then link.
+//   issue        creator-only: mint a one-time code. The RAW code is in the
+//   redeem       response ONCE (only its sha256 is stored); redeem spends it.
+//                Both ride manage_child_link through the passthrough below,
+//                which re-validates the action and every id shape.
 //
-// The legacy invite actions (issue/redeem/approve/reject/revokeInvite) still
-// fall through to manage_child_link. They are dead in the new UI but NOT dead
-// on the wire, for the OTA reason above, and migration 177 deliberately left
-// the RPC and its tables in place rather than dropping a live function to prove
-// a point. `revoke` and `leave` are not legacy at all — they are the only way
-// access is ever taken away, and the new screen still uses both.
+// `approve`, `reject` and `revokeInvite` are NOT offered by any screen and are
+// not blocked here either. A binary older than the 177 update can still post
+// them, and the right answer to that is the database's — if 180 dropped those
+// branches the RPC rejects them with its own error code, which reaches the old
+// UI as an ordinary refusal. `revoke` and `leave` are not legacy at all — they
+// are the only way access is ever taken away, and the screen still uses both.
 //
 // WHAT THIS ROUTE MUST NEVER DO: call childLoginService.childLogin(). That
 // signs in on the SSR cookie client, which would write the CHILD's session
@@ -154,9 +160,12 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
-    // Legacy/manage passthrough: `revoke` and `leave` (live), plus the retired
-    // invite actions an un-updated bundle may still post. mutateChildLink
-    // re-validates the action against its own whitelist and every id shape.
+    // manage_child_link passthrough: `issue` and `redeem` (the code route),
+    // `revoke` and `leave` (the two ways access ends), plus the retired approval
+    // actions an un-updated bundle may still post. mutateChildLink re-validates
+    // the action against its own whitelist, normalizes the 8-digit id and the
+    // 20-character code, and checks every uuid shape — so nothing is trusted
+    // here that is not re-checked there and again in the RPC.
     const result = await mutateChildLink(parent.profileId, {
       action: action as ChildLinkAction,
       studentId: bodyStr(body, "student_id") || undefined,

@@ -29,6 +29,7 @@ import React, { useRef, useState } from "react";
 import { Pressable, TextInput, View, type TextInputProps } from "react-native";
 import { Eye, EyeOff } from "lucide-react-native";
 import { AppText } from "./AppText";
+import { iconButtonBox } from "./iconButtonLayout";
 import { useTheme } from "@/theme/ThemeProvider";
 import { fontSize, radius, spacing } from "@/theme/tokens";
 import { useFieldKeyboardFocus } from "@/lib/useKeyboardAware";
@@ -261,7 +262,14 @@ export function PasswordField({
           accessibilityRole="button"
           accessibilityLabel={visible ? hideLabel : showLabel}
           onPress={() => setVisible((v) => !v)}
-          style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}
+          // A FIXED SQUARE, centred, rather than padding around the glyph:
+          // the padding happened to centre a 20pt eye and would have stopped
+          // the day the glyph changed size. 44 is the same width the padding
+          // produced, so the field is unchanged; the height goes 36 -> 44 and
+          // fits inside the row's own 48pt minimum, and 4pt of slop takes the
+          // target to 52 — past Material 48dp as well as the iOS 44pt.
+          hitSlop={4}
+          style={iconButtonBox(44)}
         >
           <EyeIcon off={visible} color={tokens.muted} />
         </Pressable>

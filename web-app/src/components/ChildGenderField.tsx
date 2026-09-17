@@ -43,6 +43,11 @@ export type ChildGenderChoice = "" | CollectedStudentGender;
 const OPTION_KEY: Record<CollectedStudentGender, string> = {
   female: "addchild.gender.female",
   male: "addchild.gender.male",
+  // The non-answer. The question is MANDATORY - the select has no blank option
+  // that submits - but a parent is never forced to disclose. Apple 5.1.1(v)
+  // objects to REQUIRING personal data that is not directly relevant, and this
+  // field drives nothing. Do not remove this row; see lib/studentGender.ts.
+  unspecified: "addchild.gender.unspecified",
 };
 
 // The i18n keys this field needs are listed in each parent page's own KEYS

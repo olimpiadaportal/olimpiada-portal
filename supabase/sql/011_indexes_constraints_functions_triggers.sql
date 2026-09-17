@@ -1159,31 +1159,60 @@ create trigger trg_student_district_guard
 drop function if exists public.create_child_account(uuid, uuid, text, text, text, text, text);
 drop function if exists public.create_child_account(uuid, uuid, text, text, text, text, text, uuid);
 drop function if exists public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid);
-create or replace function public.create_child_account(
-  p_parent_profile_id uuid,
-  p_auth_user_id      uuid,
-  p_first_name        text,
-  p_last_name         text,
-  p_city              text default null,
-  p_school_name       text default null,
-  p_class_grade       text default null,
-  p_grade_id          uuid default null,
-  p_district_id       uuid default null,
-  p_school_id         uuid default null,
-  p_city_district_id  uuid default null
-)
--- OUT column names are deliberately non-colliding with table columns (else plpgsql
--- raises "ambiguous column reference" inside the body).
-returns table (new_student_profile_id uuid, new_child_unique_id text)
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
+-- MIGRATIONS 178 + 179 -- p_gender travels INSIDE the provisioning
+-- transaction, and the accepted values include the non-answer.
+--
+-- 178 moved the write here because a required field whose loss was only a
+-- warning is a field the platform does not actually have. 179 restored
+-- 'unspecified' to the whitelist: the FORM requires the parent to choose, but
+-- requiring the ANSWER and requiring the DISCLOSURE are different things, and
+-- Apple Guideline 5.1.1(v) only objects to the second on a field that drives
+-- nothing. This app already answered a 5.1.1(v) finding on 2026-08-31.
+--
+-- BODY TAKEN FROM pg_get_functiondef ON PRODUCTION. Do not retype it: the
+-- first hand-written attempt at 178 invented a profile insert and dropped
+-- three idempotency guards.
+CREATE OR REPLACE FUNCTION public.create_child_account(p_parent_profile_id uuid, p_auth_user_id uuid, p_first_name text, p_last_name text, p_city text DEFAULT NULL::text, p_school_name text DEFAULT NULL::text, p_class_grade text DEFAULT NULL::text, p_grade_id uuid DEFAULT NULL::uuid, p_district_id uuid DEFAULT NULL::uuid, p_school_id uuid DEFAULT NULL::uuid, p_city_district_id uuid DEFAULT NULL::uuid, p_gender text DEFAULT NULL::text)
+ RETURNS TABLE(new_student_profile_id uuid, new_child_unique_id text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
 declare
   v_child_id       text;
   v_profile_id      uuid;
   v_student_role_id uuid;
+  v_gender          public.student_gender;
 begin
+  -- MIGRATION 178. A present gender must be one of the two the product offers.
+  -- 'unspecified' still exists in the enum so children created before the
+  -- question did stay readable, but no form may submit it any more, so accepting
+  -- it here would let a stale client write a state the UI can no longer produce.
+  --
+  -- NULL IS ACCEPTED ON PURPOSE. Migrations apply before the code that needs
+  -- them deploys, so in that window the old client still calls this without the
+  -- argument. Raising on a missing gender would kill Add-Child on parent web,
+  -- mobile and the admin panel simultaneously for the length of the deploy.
+  -- Presence is enforced by the app, on the client and again on the server; this
+  -- function's job is to refuse a value that is present and wrong.
+  if p_gender is not null and btrim(p_gender) <> '' then
+    -- MIGRATION 179. 'unspecified' is accepted again, and it is not a loosening.
+    -- The product still REQUIRES the parent to answer - there is no blank option
+    -- and no placeholder that submits - but one of the answers is "prefer not to
+    -- say". Apple Guideline 5.1.1(v) forbids REQUIRING personal information that
+    -- is not directly relevant to core functionality, and this field drives
+    -- nothing: not access, not content, not ranking. This app already took a
+    -- 5.1.1(v) finding on 2026-08-31 and answered it by making the parent phone
+    -- optional; forcing a two-value disclosure about a MINOR would run that fix
+    -- backwards on the same guideline. Requiredness lives in the FORM; this
+    -- function's job is to refuse a value outside the enum.
+    if p_gender not in ('female', 'male', 'unspecified') then
+      raise exception 'create_child_account: gender must be female, male or unspecified'
+        using errcode = 'check_violation';
+    end if;
+    v_gender := p_gender::public.student_gender;
+  end if;
+
   -- The creator must be a registered parent (parents row exists).
   if not exists (select 1 from public.parents pa where pa.profile_id = p_parent_profile_id) then
     raise exception 'create_child_account: % is not a registered parent', p_parent_profile_id
@@ -1282,11 +1311,11 @@ begin
   insert into public.students (profile_id, created_by_parent_profile_id, grade_id,
                                district_id, city_district_id, school_id,
                                first_name, last_name, city, school_name, class_grade,
-                               access_status)
+                               gender, access_status)
   values (v_profile_id, p_parent_profile_id, p_grade_id,
           p_district_id, p_city_district_id, p_school_id,
           p_first_name, p_last_name, p_city, p_school_name, p_class_grade,
-          'inactive');
+          v_gender, 'inactive');
 
   -- 3) Assign the Student role.
   select r.id into v_student_role_id from public.roles r where r.code = 'student';
@@ -1332,17 +1361,18 @@ begin
   -- that step the child still cannot sign in, so it is not optional.
   return query select v_profile_id, v_child_id;
 end;
-$$;
+$function$
+;
 
-comment on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid) is
-  'Atomic parent-created child provisioning INCLUDING the 8-digit login ID (migration 146; it was deferred to the first subscription, which never happened while payments were off). Optional structured grade/city(district)/school stored on students; the intra-city district (rayon) is REQUIRED when the city has active rayons (Round 21). service_role EXECUTE only. Run AFTER admin.createUser (pending email).';
+comment on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid, text) is
+  'Atomic parent-created child provisioning INCLUDING the 8-digit login ID (migration 146; it was deferred to the first subscription, which never happened while payments were off). Optional structured grade/city(district)/school stored on students; the intra-city district (rayon) is REQUIRED when the city has active rayons (Round 21). The child gender (migration 178) travels in THIS transaction rather than a patch afterwards, and accepts female|male|unspecified (migration 179) - the form requires an answer, never a disclosure. service_role EXECUTE only. Run AFTER admin.createUser (pending email).';
 
 -- service_role only (the service layer runs admin.createUser then this).
 -- Revoke anon/authenticated EXPLICITLY: Supabase ALTER DEFAULT PRIVILEGES grants
 -- EXECUTE to anon/authenticated on every new function; revoking public is not enough.
 
-revoke all on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid) from public, anon, authenticated;
-grant execute on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid) to service_role;
+revoke all on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid, text) to service_role;
 
 -- -----------------------------------------------------------------------------
 -- advance_student_grades : yearly grade promotion (intended Sept 1 via pg_cron).

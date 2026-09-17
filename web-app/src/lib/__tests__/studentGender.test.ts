@@ -135,17 +135,22 @@ describe("the two catalogs — what a ROW may say vs what a PARENT may send", ()
     expect(isStudentGender("unspecified")).toBe(true);
   });
 
-  it("does not offer it as an answer any more", () => {
-    expect(COLLECTED_STUDENT_GENDERS).toEqual(["female", "male"]);
-    expect(isCollectedStudentGender("unspecified")).toBe(false);
+  it("OFFERS it as an answer — the question is required, the disclosure is not", () => {
+    // INVERTED FROM ITS FIRST VERSION ON PURPOSE. This used to demand the
+    // non-answer be absent. Removing it is what turns a required QUESTION into
+    // a required DISCLOSURE, which is the Apple 5.1.1(v) line on a field that
+    // drives nothing in the product — and this app already answered a 5.1.1(v)
+    // finding once. The test fails if the row disappears again.
+    expect(COLLECTED_STUDENT_GENDERS).toEqual(["female", "male", "unspecified"]);
+    expect(isCollectedStudentGender("unspecified")).toBe(true);
   });
 
-  it("keeps the collectable set a strict SUBSET of the enum", () => {
+  it("keeps every collectable answer inside the enum", () => {
     // A value a form can send that the column cannot hold is a 22P02 the parent
-    // reads as "server error"; the containment is what makes the two safe to
-    // keep apart.
+    // reads as "server error". The two catalogs happen to agree today; what must
+    // never happen is the collectable set growing BEYOND the enum.
     for (const g of COLLECTED_STUDENT_GENDERS) expect(isStudentGender(g)).toBe(true);
-    expect(COLLECTED_STUDENT_GENDERS.length).toBeLessThan(STUDENT_GENDERS.length);
+    expect(COLLECTED_STUDENT_GENDERS.length).toBeLessThanOrEqual(STUDENT_GENDERS.length);
   });
 });
 
@@ -193,12 +198,21 @@ describe("parseStudentGenderRequired — the mode every parent path uses", () =>
     }
   });
 
-  it("REFUSES the retired 'unspecified' — as unanswered, not as invalid", () => {
-    // It is a legal thing for a ROW to say and no longer a legal thing for a
-    // FORM to send, so the honest message is "choose one".
+  it("ACCEPTS 'unspecified' — a chosen non-answer is an answer", () => {
+    // The only refusal is ABSENCE. A parent who selected "prefer not to say"
+    // has answered the question; treating that as unanswered would be the
+    // required-disclosure behaviour this contract exists to avoid.
     const res = parseStudentGenderRequired("unspecified");
-    expect(res.ok).toBe(false);
-    expect(res.ok === false && res.errorKey).toBe("addchild.err.genderRequired");
+    expect(res.ok).toBe(true);
+    expect(res.ok === true && res.value).toBe("unspecified");
+  });
+
+  it("still refuses an ABSENT answer, which is the whole requirement", () => {
+    for (const absent of ["", "   ", null, undefined]) {
+      const res = parseStudentGenderRequired(absent);
+      expect(res.ok).toBe(false);
+      expect(res.ok === false && res.errorKey).toBe("addchild.err.genderRequired");
+    }
   });
 
   it("keeps genderInvalid for a value the column does not know", () => {
@@ -254,10 +268,9 @@ describe("validateChildInfo — required at the SERVER, not just on the form", (
     }
   });
 
-  it("refuses 'unspecified' — the UI cannot send it and neither can anything else", () => {
+  it("accepts 'unspecified' — the UI offers it and the column holds it", () => {
     const res = validateChildInfo({ ...info, gender: "unspecified" });
-    expect(res.ok).toBe(false);
-    expect(res.ok === false && res.errors).toEqual(["addchild.err.genderRequired"]);
+    expect(res.ok).toBe(true);
   });
 
   it("fails with the gender key — and only that key — on a forged value", () => {
@@ -352,9 +365,15 @@ describe("the surfaces ask the question they now require an answer to", () => {
   const code = (s: string) =>
     s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 
-  it("the field offers the two collectable values and no third option", () => {
+  it("the field derives its rows from the collectable catalog, non-answer included", () => {
+    // Deriving rather than listing is the whole guard: the field cannot offer a
+    // value the server refuses, and cannot silently LOSE one either. The second
+    // half matters more than it looks - dropping the non-answer is what turns a
+    // required question into a required disclosure (Apple 5.1.1(v)).
     expect(code(FIELD)).toContain("COLLECTED_STUDENT_GENDERS.map");
-    expect(code(FIELD)).not.toContain("unspecified");
+    expect(code(FIELD)).toContain("addchild.gender.unspecified");
+    // And no hand-written option list alongside the derived one.
+    expect(code(FIELD)).not.toMatch(/<option value="female"/);
   });
 
   it("the field has lost the '(optional)' suffix and gained the required mark", () => {

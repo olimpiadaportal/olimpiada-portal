@@ -152,6 +152,7 @@ export default async function FreeAccessPage() {
     gender: t("accounts.child.create.gender"),
     genderChoose: t("accounts.child.create.genderChoose"),
     genderFemale: t("accounts.child.create.genderFemale"),
+    genderUnspecified: t("accounts.child.create.genderUnspecified"),
     genderMale: t("accounts.child.create.genderMale"),
     city: t("accounts.child.create.city"),
     cityChoose: t("accounts.child.create.cityChoose"),

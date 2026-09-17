@@ -6,6 +6,85 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## DECISION (2026-09-17) — the gender question is required; the DISCLOSURE is not
+
+**A required question and a required disclosure are different things, and only
+the second one is a store problem.** The owner asked, before shipping, whether
+declaring the field mandatory carried any Apple or Google risk. It does, on one
+side only, and the answer changed the implementation.
+
+### What the research settled
+
+* **Google Play: nothing changes, and the team's reading was right.** Data safety
+  asks the optional-vs-required question **per data TYPE**, not per field. Gender
+  lives in *Personal info > Other info*, which already carries the child's
+  MANDATORY grade and school — so that type was already declared "Data collection
+  is required". There was no answer left to move.
+* **Apple App Privacy: nothing changes either**, for a different reason — the
+  questionnaire has **no optional-vs-required dimension at all**. It asks what is
+  collected, whether it is linked to identity, whether it is used for tracking,
+  and the purposes. Requiredness is not a question Apple asks.
+* **Apple Guideline 5.1.1(v) IS the risk, on the binary rather than the label.**
+  An app may not require personal information that is not directly relevant to
+  its core functionality. This field drives nothing — not access, not content,
+  not points, not ranking — and our own honest description of it ("it affects
+  nothing about the product") is the exact shape 5.1.1(iii) says you may not
+  collect. **This app already took a 5.1.1(v) finding on 2026-08-31 and answered
+  it by making the parent phone optional.** A forced two-value disclosure about a
+  MINOR runs that same fix backwards on the same guideline, and Apple has a
+  published rejection specifically about the ABSENCE of an opt-out path.
+
+### What shipped instead
+
+The question is **mandatory** — no blank placeholder that submits, no default
+selection, the form will not advance — and **"prefer not to say" is one of the
+three answers**. The owner's intent survives intact (a parent cannot skip the
+question) and 5.1.1(v) is satisfied in substance (a parent is never forced to
+disclose). **No console declaration moves.**
+
+Migration **179** restored `'unspecified'` to the create path's whitelist, one
+day after 178 removed it. 178's reasoning — "no form offers it any more" — was
+true of the form and wrong about the consequence.
+
+### Also corrected in this pass
+
+* **`eas.json` was broken by my own earlier edit** and blocked `eas update`:
+  `ascAppId` belongs under `submit.production.ios`, not directly on the profile.
+  `eas config` now validates clean.
+* **Migration 178 had never been backported** into canonical `011` (`p_gender`
+  appeared zero times). Both 178 and 179 are now backported from the LIVE
+  definition, and the stale `comment on function` naming the 11-argument
+  signature — which would have failed a from-zero rebuild — is repinned.
+* Four test files pinned the two-answer contract and were **repinned, not
+  deleted**: the assertions are inverted on purpose, so the day someone removes
+  the non-answer again the suite says why it matters.
+* The privacy policy now states the real rule in all three languages: answering
+  is required, and one of the answers is "prefer not to say". The English
+  paragraph initially lost the word "gender" — caught by the test that requires
+  the paragraph to name its own subject.
+
+### Gates
+
+web 1535 vitest / 73 files · admin 1157 / 52 · mobile 1410 jest / 68 suites ·
+three typechecks clean · both Next production builds compile · mobile
+`check-i18n` resolves 779 used keys against 1385 generated · 013 runs **140
+checks** against production with only the documented `88_import_media_orphans`
+exception (205, unchanged since 2026-09-14 — not growing).
+
+### Still owed before the next STORE submission (not before the OTA)
+
+* the `.md` half of the privacy policy and `STORE_LAUNCH_PACK` §2.6 still carry
+  stale prose in places the docs worker missed;
+* `privacyPolicy.ts` holds only the FALLBACK date — the live value is in
+  `system_settings` under `privacy.*`, edited at /settings → Privacy;
+* **verify in Play Console that the §6.1 Data safety pass is PUBLISHED, not
+  saved as a draft.** The repo contradicts itself about whether it was completed,
+  and an incomplete Data safety form on an app declaring a 6–8 age group is the
+  one item here with removal-tier consequences. Five minutes of reading the live
+  form settles it.
+
+---
+
 ## ROUND (2026-09-16) — ten-item change list, shipped as an OTA to 1.16.0
 
 **RELEASED AS AN EAS UPDATE, NOT A NEW VERSION, AND THAT WAS A DECISION.** Every

@@ -37,11 +37,24 @@
 //   absent        — nothing was submitted. Only the optional parser still has
 //                   a meaning for it.
 //
-// THREE ENUM LABELS, TWO COLLECTABLE ANSWERS. `STUDENT_GENDERS` is what the
-// COLUMN MAY CONTAIN — the export, the admin workbook and every reader of a
-// stored row need all three. `COLLECTED_STUDENT_GENDERS` is what a parent may
-// SEND — Qız or Oğlan, the two the UI offers. Reading the first where the
-// second is meant is exactly how a retired answer walks back into a form.
+// THREE ENUM LABELS, THREE COLLECTABLE ANSWERS — AND THE THIRD ONE IS LOAD-BEARING.
+// The parent must ANSWER the question (there is no silent skip and no blank
+// placeholder that submits), but one of the answers is "prefer not to say".
+//
+// WHY, AND DO NOT QUIETLY REMOVE IT AGAIN. Apple Guideline 5.1.1(v) forbids
+// REQUIRING personal information that is not directly relevant to core
+// functionality, and this field drives nothing — not access, not content, not
+// ranking. This app has ALREADY taken a 5.1.1(v) finding once, answered on
+// 2026-08-31 by making the parent phone optional; a two-value forced choice
+// about a MINOR would run that same fix backwards on the same guideline, and
+// Apple has a published rejection specifically about the absence of an opt-out
+// path. Keeping a non-answer satisfies the guideline in substance while the
+// control stays mandatory in the UI, which is what the owner asked for.
+//
+// So `COLLECTED_STUDENT_GENDERS` and `STUDENT_GENDERS` agree today. They are
+// still two names because they answer two different questions — what a row may
+// HOLD versus what a form may SEND — and the day those diverge again the
+// distinction is the thing that keeps a retired answer out of a form.
 //
 // A PRESENT VALUE IS WHITELISTED, NEVER COERCED. Anything outside the enum is
 // refused, because a save that silently drops what was sent reports success for
@@ -54,8 +67,8 @@
 /** Every label the DB enum holds — what a STORED row may say. */
 export const STUDENT_GENDERS = ["female", "male", "unspecified"] as const;
 
-/** What a parent may ANSWER today. A strict subset of the enum on purpose. */
-export const COLLECTED_STUDENT_GENDERS = ["female", "male"] as const;
+/** What a parent may ANSWER today. Includes the deliberate non-answer — see above. */
+export const COLLECTED_STUDENT_GENDERS = ["female", "male", "unspecified"] as const;
 
 export type StudentGender = (typeof STUDENT_GENDERS)[number];
 export type CollectedStudentGender = (typeof COLLECTED_STUDENT_GENDERS)[number];
@@ -131,9 +144,13 @@ export function parseStudentGender(raw: unknown): ParsedGender {
 export function parseStudentGenderRequired(raw: unknown): RequiredParsedGender {
   const parsed = parseStudentGender(raw);
   if (!parsed.ok) return parsed;
+  // ABSENT is the only refusal. "unspecified" is a real answer a parent chose,
+  // not a missing one: the requirement is that the question is ANSWERED, never
+  // that the parent must disclose. Refusing it here is what would re-create the
+  // 5.1.1(v) exposure the comment at the top of this file describes.
   if (parsed.value === null) return { ok: false, errorKey: "addchild.err.genderRequired" };
   if (!isCollectedStudentGender(parsed.value)) {
-    return { ok: false, errorKey: "addchild.err.genderRequired" };
+    return { ok: false, errorKey: "addchild.err.genderInvalid" };
   }
   return { ok: true, value: parsed.value };
 }

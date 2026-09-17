@@ -403,10 +403,15 @@ describe("the required gender is described as required and inert", () => {
     // two stay honest - the same reason every other claim here is per-language.
     const skipPromise: RegExp =
       locale === "az"
-        ? /boş buraxa|istəyə bağlıdır: valideyn|Bildirmək istəmirəm»/
+        ? /boş buraxa|istəyə bağlıdır: valideyn/
         : locale === "en"
-          ? /leave the question (blank|unanswered)|entirely optional: a parent|Prefer not to say»/
-          : /оставить (этот )?вопрос без ответа|не отвечать на этот вопрос|Указывать пол необязательно|Предпочитаю не указывать»/;
+          ? /leave the question (blank|unanswered)|entirely optional: a parent/
+          : /оставить (этот )?вопрос без ответа|не отвечать на этот вопрос|Указывать пол необязательно/;
+    // NOT in this list: the name of the non-answer itself. OFFERING «prefer not
+    // to say» is correct and required - it is what keeps a mandatory question
+    // from being a mandatory DISCLOSURE, which is the Apple 5.1.1(v) line. What
+    // stays banned is telling a parent the question can be SKIPPED, which it
+    // cannot: there is no blank option and the form will not advance.
     for (const key of ["privacy.s4.childTable", "privacy.s5.stored"] as const) {
       expect(messages[locale][key], `${key} still promises the gender question is skippable`)
         .not.toMatch(skipPromise);

@@ -67,25 +67,38 @@ export const EMPTY_CHILD_INFO: ChildInfo = {
 };
 
 /**
- * The two answers this form offers.
+ * The three answers this form offers.
  *
- * NARROWER THAN THE DATABASE ENUM, DELIBERATELY. `CHILD_GENDERS` still has
- * three members: "unspecified" is written on rows created while the question
- * was optional, and the column's type is not this build's to change. But the
- * question is mandatory now, and a "prefer not to say" row is an opt-out of a
- * required field — the optional field again, wearing a star. The `Exclude<>`
- * is what keeps the two in step: if the enum ever loses one of these members
- * this stops compiling, instead of quietly offering a value the server rejects.
+ * THE THIRD ONE IS LOAD-BEARING — DO NOT REMOVE IT AGAIN. The question is
+ * MANDATORY: there is no blank placeholder that submits and the parent cannot
+ * continue without choosing. But one of the choices is "prefer not to say",
+ * because REQUIRING the answer and requiring the DISCLOSURE are different
+ * things and only the second one is a problem.
+ *
+ * Apple Guideline 5.1.1(v) forbids requiring personal information that is not
+ * directly relevant to core functionality, and this field drives nothing: not
+ * access, not which questions a child is served, not points, not ranking. This
+ * app already took a 5.1.1(v) finding on 2026-08-31 and answered it by making
+ * the parent phone optional; a forced two-value disclosure about a MINOR would
+ * run that fix backwards on the same guideline, and Apple has a published
+ * rejection about the absence of an opt-out path on this exact kind of field.
+ *
+ * So the choice set now matches the enum. It stays its own named type because
+ * it answers a different question — what a FORM may offer, versus what a ROW
+ * may hold — and that distinction is what keeps a retired answer out of a form
+ * the day they diverge again.
  */
-export type ChildGenderChoice = Exclude<ChildGender, "unspecified">;
+export type ChildGenderChoice = ChildGender;
 
 export const GENDER_LABEL_KEYS: Record<ChildGenderChoice, string> = {
   female: "mob.child.gender.female",
   male: "mob.child.gender.male",
+  unspecified: "mob.child.gender.unspecified",
 };
 
-/** The option values, in the order both screens render them. */
-export const GENDER_VALUES: readonly ChildGenderChoice[] = ["female", "male"];
+/** The option values, in the order all screens render them. The non-answer is
+ *  LAST on purpose: it is a real choice, not the default the eye lands on. */
+export const GENDER_VALUES: readonly ChildGenderChoice[] = ["female", "male", "unspecified"];
 
 /** Whitelist an arbitrary string (a select callback, a column read straight
  *  from the database) down to a value this form can OFFER. Anything else — a

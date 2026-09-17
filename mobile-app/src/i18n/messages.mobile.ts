@@ -177,6 +177,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.child.gender.required": "Övladınızın cinsini seçin.",
     "mob.child.gender.female": "Qız",
     "mob.child.gender.male": "Oğlan",
+    // The non-answer is a REAL answer, not a skip. The question is mandatory;
+    // requiring the DISCLOSURE is what Apple 5.1.1(v) objects to on a field
+    // that drives nothing. Do not delete this row - see ChildInfoForm.tsx.
+    "mob.child.gender.unspecified": "Bildirmək istəmirəm",
     "mob.child.gender.hint":
       "Övladınızın profilində saxlanılır və ümumi statistika üçün istifadə olunur; səlahiyyətli əməkdaşlarımız onu profildə və daxili hesabatlarda görür. Girişinə, tapşırıqlarına və ya reytinqinə heç bir təsiri yoxdur.",
     "mob.select.cancel": "Ləğv et",
@@ -410,6 +414,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.child.gender.required": "Select your child's gender.",
     "mob.child.gender.female": "Girl",
     "mob.child.gender.male": "Boy",
+    // The non-answer is a REAL answer, not a skip. The question is mandatory;
+    // requiring the DISCLOSURE is what Apple 5.1.1(v) objects to on a field
+    // that drives nothing. Do not delete this row - see ChildInfoForm.tsx.
+    "mob.child.gender.unspecified": "Prefer not to say",
     "mob.child.gender.hint":
       "It is stored on your child's profile and used for overall statistics; our authorised staff see it there and in internal account reports. It never affects your child's access, their tasks or their ranking.",
     "mob.select.cancel": "Cancel",
@@ -630,6 +638,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.child.gender.required": "Укажите пол ребёнка.",
     "mob.child.gender.female": "Девочка",
     "mob.child.gender.male": "Мальчик",
+    // The non-answer is a REAL answer, not a skip. The question is mandatory;
+    // requiring the DISCLOSURE is what Apple 5.1.1(v) objects to on a field
+    // that drives nothing. Do not delete this row - see ChildInfoForm.tsx.
+    "mob.child.gender.unspecified": "Предпочитаю не указывать",
     "mob.child.gender.hint":
       "Хранится в профиле ребёнка и используется для общей статистики; наши уполномоченные сотрудники видят его там и во внутренних отчётах по аккаунтам. На доступ ребёнка, задания и рейтинг это никак не влияет.",
     "mob.select.cancel": "Отмена",

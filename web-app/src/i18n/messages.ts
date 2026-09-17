@@ -1453,7 +1453,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Şəhər və rayon | Bəli | Regional reytinq cədvəlləri üçün\n" +
       "Məktəbin adı | Bəli | Məktəb üzrə reytinq cədvəli üçün\n" +
       "Sinif | Bəli | Uşağa öz sinfinə uyğun sualların verilməsi üçün\n" +
-      "Cinsi | Bəli | Ümumi statistika üçün; profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür. Valideyn profil yaradılarkən «Qız» və ya «Oğlan» seçir və sonra dəyişə bilər; uşağın girişinə, ona verilən suallara və reytinqinə heç bir təsiri yoxdur\n" +
+      "Cinsi | Bəli | Ümumi statistika üçün; profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür. Valideyn profil yaradılarkən cavab seçməlidir — «Qız», «Oğlan» və ya «Bildirmək istəmirəm» — və sonra dəyişə bilər; uşağın girişinə, ona verilən suallara və reytinqinə heç bir təsiri yoxdur\n" +
       "8 rəqəmli giriş nömrəsi | Server verir | Uşağın giriş açarı. Bu nömrənin son 4 rəqəmi ictimai reytinq cədvəlində göstərilir\n" +
       "Parol | Bəli (valideyn təyin edir) | Giriş üçün. Parol yalnız autentifikasiya xidmətimizdə şifrələnmiş formada saxlanılır\n" +
       "Avatar | Xeyr | Hazır şəkillərdən biri, yaxud yüklənmiş foto. Foto həmişə qapalı saxlancda saxlanılır — «Avatar şəkilləri» hissəsinə baxın\n" +
@@ -1515,7 +1515,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.stored":
       "Yuxarıdakı «Uşaq profili» cədvəlindəki hər şey: ad, soyad, şəhər, rayon, məktəb, sinif, valideynin qeyd etdiyi cins, 8 rəqəmli giriş nömrəsi, seçilmiş avatar və görünüş, məşq nəticələri (cavablar, ballar, faizlər, seriyalar, aktiv günlər, reytinq mövqeyi).\n" +
       "\n" +
-      "Uşaq profili yaradılarkən cinsin qeyd edilməsi mütləqdir: valideyn «Qız» və ya «Oğlan» seçir və qeyd etdiyini sonradan istənilən vaxt dəyişə bilər — bunların heç biri uşağın hesabına təsir etmir. Qeyd edildikdən sonra cavab uşağın profilində saxlanılır və profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür; onların ixrac etdiyi daxili hesabat fayllarında da yer alır. Bu məlumat əsasında platformadan kimlərin istifadə etdiyini bütövlükdə görmək üçün ümumi statistika hazırlayırıq. Cins heç nəyi müəyyən etmir: uşağın girişinə, ona verilən suallara, ballarına və reytinq cədvəlindəki yerinə heç bir təsiri yoxdur; reytinq cədvəllərində də göstərilmir.",
+      "Uşaq profili yaradılarkən bu suala cavab vermək mütləqdir, lakin cavablardan biri «Bildirmək istəmirəm»dir: valideyn «Qız», «Oğlan» və ya «Bildirmək istəmirəm» seçir və seçdiyini sonradan istənilən vaxt dəyişə bilər — bunların heç biri uşağın hesabına təsir etmir. Qeyd edildikdən sonra cavab uşağın profilində saxlanılır və profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür; onların ixrac etdiyi daxili hesabat fayllarında da yer alır. Bu məlumat əsasında platformadan kimlərin istifadə etdiyini bütövlükdə görmək üçün ümumi statistika hazırlayırıq. Cins heç nəyi müəyyən etmir: uşağın girişinə, ona verilən suallara, ballarına və reytinq cədvəlindəki yerinə heç bir təsiri yoxdur; reytinq cədvəllərində də göstərilmir.",
     // "Məkan" USED TO STAND ALONE IN THIS LIST, and it was false: the child's
     // şəhər and rayon are in the «Uşaq profili» table one section up, they are
     // what groups the leaderboards, and the store forms declare them (Apple
@@ -3553,7 +3553,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "City and district (rayon) | Yes | For regional leaderboards\n" +
       "School name | Yes | For the school leaderboard\n" +
       "Grade | Yes | So the child is served questions that match their grade\n" +
-      "Gender | Yes | For overall statistics; visible to our authorised staff like the rest of the profile. A parent chooses «Girl» or «Boy» when creating the profile and can change it later; it has no effect on the child's access, on the questions they are served or on their ranking\n" +
+      "Gender | Yes | For overall statistics; visible to our authorised staff like the rest of the profile. A parent must choose an answer when creating the profile — «Girl», «Boy» or «Prefer not to say» — and can change it later; it has no effect on the child's access, on the questions they are served or on their ranking\n" +
       "8-digit login ID | Issued by our server | The child's login credential. The last 4 digits of this number are shown on the public leaderboard\n" +
       "Password | Yes (set by the parent) | To sign in. Held only by our authentication service, in hashed form\n" +
       "Avatar | No | Either a preset image or an uploaded photo. A photo is always kept in private storage — see «Avatar photos»\n" +
@@ -3602,7 +3602,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.stored":
       "Everything in the «Child profile» table above: first name, last name, city, district, school, grade, the gender a parent gives, the 8-digit login number, the chosen avatar and look, and practice results (answers, points, percentages, streaks, active days, leaderboard placement).\n" +
       "\n" +
-      "Giving a gender is required when a child profile is created: a parent chooses «Girl» or «Boy», and can change what they gave later at any time — none of which affects the child's account. Once given, the answer is stored on the child's profile and is visible to our authorised staff in the same way as the rest of that profile, including in the internal account reports they export. We use it to produce overall statistics about who uses the platform. It decides nothing about the child: it has no effect on their access, on the questions they are served, on their points or on their leaderboard position, and it is never shown on a leaderboard.",
+      "Answering the gender question is required when a child profile is created, but one of the answers is «Prefer not to say»: a parent chooses «Girl», «Boy» or «Prefer not to say», and can change what they chose later at any time — none of which affects the child's account. Once given, the answer is stored on the child's profile and is visible to our authorised staff in the same way as the rest of that profile, including in the internal account reports they export. We use it to produce overall statistics about who uses the platform. It decides nothing about the child: it has no effect on their access, on the questions they are served, on their points or on their leaderboard position, and it is never shown on a leaderboard.",
     // See the az block for why a bare "location" denial cannot stand here.
     "privacy.s5.notCollected":
       "What we never collect about a child: date of birth, email address, phone number, home address, device location, health data, financial data, contacts, browsing history, advertising identifiers or hardware identifiers.\n" +
@@ -5562,7 +5562,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Город и район | Да | Для региональных таблиц лидеров\n" +
       "Название школы | Да | Для школьной таблицы лидеров\n" +
       "Класс | Да | Чтобы ребёнку выдавались вопросы для его класса\n" +
-      "Пол | Да | Для общей статистики; виден нашим уполномоченным сотрудникам так же, как остальной профиль. Родитель выбирает «Девочка» или «Мальчик» при создании профиля и может изменить ответ позже; на доступ ребёнка, на выдаваемые ему вопросы и на рейтинг это никак не влияет\n" +
+      "Пол | Да | Для общей статистики; виден нашим уполномоченным сотрудникам так же, как остальной профиль. При создании профиля родитель должен выбрать ответ — «Девочка», «Мальчик» или «Предпочитаю не указывать» — и может изменить его позже; на доступ ребёнка, на выдаваемые ему вопросы и на рейтинг это никак не влияет\n" +
       "8-значный номер для входа | Выдаёт сервер | Логин ребёнка. Последние 4 цифры этого номера показываются в публичной таблице лидеров\n" +
       "Пароль | Да (задаёт родитель) | Для входа. Хранится только в сервисе аутентификации в виде хеша\n" +
       "Аватар | Нет | Готовое изображение или загруженное фото. Фото всегда хранится в закрытом хранилище — см. «Фотографии-аватары»\n" +
@@ -5613,7 +5613,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.stored":
       "Всё, что указано в таблице «Профиль ребёнка» выше: имя, фамилия, город, район, школа, класс, указываемый родителем пол, 8-значный номер для входа, выбранный аватар и оформление, а также результаты занятий (ответы, баллы, проценты, серии, активные дни, место в рейтинге).\n" +
       "\n" +
-      "При создании профиля ребёнка пол указывается обязательно: родитель выбирает «Девочка» или «Мальчик» и может изменить ответ позже в любое время — ничто из этого на аккаунт ребёнка не влияет. Указанный ответ хранится в профиле ребёнка и виден нашим уполномоченным сотрудникам так же, как и остальная часть этого профиля, в том числе во внутренних отчётах по аккаунтам, которые они выгружают. На основании этих данных мы готовим общую статистику о том, кто пользуется платформой. При этом пол ничего не определяет: на доступ ребёнка, на выдаваемые ему вопросы, на баллы и на место в таблице лидеров это не влияет никак, и в таблицах лидеров пол не отображается.",
+      "При создании профиля ребёнка ответ на этот вопрос обязателен, но один из ответов — «Предпочитаю не указывать»: родитель выбирает «Девочка», «Мальчик» или «Предпочитаю не указывать» и может изменить выбор позже в любое время — ничто из этого на аккаунт ребёнка не влияет. Указанный ответ хранится в профиле ребёнка и виден нашим уполномоченным сотрудникам так же, как и остальная часть этого профиля, в том числе во внутренних отчётах по аккаунтам, которые они выгружают. На основании этих данных мы готовим общую статистику о том, кто пользуется платформой. При этом пол ничего не определяет: на доступ ребёнка, на выдаваемые ему вопросы, на баллы и на место в таблице лидеров это не влияет никак, и в таблицах лидеров пол не отображается.",
     // См. блок az — почему голое отрицание «геолокации» здесь стоять не может.
     "privacy.s5.notCollected":
       "Что мы о ребёнке не собираем: дату рождения, адрес электронной почты, номер телефона, домашний адрес, геолокацию устройства, данные о здоровье, финансовые данные, контакты, историю браузера, рекламные и аппаратные идентификаторы.\n" +

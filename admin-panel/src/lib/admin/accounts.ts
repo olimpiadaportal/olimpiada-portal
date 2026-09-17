@@ -359,7 +359,11 @@ const ALLOWED_INTERVALS = new Set(["week", "month", "year"]);
 // is deliberately NOT in this set. The parent panel keeps the same two in
 // web-app/src/lib/studentGender.ts; there is no shared module across the two
 // Next apps, so the pair is twinned rather than imported.
-const ALLOWED_GENDERS = new Set(["female", "male"]);
+// Three values, not two. The admin form requires an ANSWER; "unspecified" is
+// one of the answers a parent-facing form may send, so the panel must accept it
+// too or the two surfaces disagree about the same column. See the note in
+// web-app/src/lib/studentGender.ts for why the non-answer exists (Apple 5.1.1(v)).
+const ALLOWED_GENDERS = new Set(["female", "male", "unspecified"]);
 const NAME_MAX = 80;
 const SUBJECTS_MAX = 20;
 

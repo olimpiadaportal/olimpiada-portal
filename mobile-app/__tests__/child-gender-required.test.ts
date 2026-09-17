@@ -1,4 +1,14 @@
-// THE CHILD'S GENDER IS A REQUIRED QUESTION WITH TWO ANSWERS.
+// THE CHILD'S GENDER IS A REQUIRED QUESTION WITH THREE ANSWERS.
+//
+// REQUIRING THE ANSWER IS NOT REQUIRING THE DISCLOSURE, and the difference is
+// the whole point of this file's shape. The parent MUST choose - there is no
+// blank placeholder that submits and no default - but one of the choices is
+// "prefer not to say". Apple Guideline 5.1.1(v) forbids REQUIRING personal data
+// that is not directly relevant to core functionality, and this field drives
+// nothing: not access, not content, not points, not ranking. This app already
+// took a 5.1.1(v) finding on 2026-08-31 and answered it by making the parent
+// phone optional; a forced two-value disclosure about a MINOR would run that
+// fix backwards on the same guideline (migration 179 restored the third value).
 //
 // It did not start that way. Migration 169 added it as an OPTIONAL reporting
 // column with three values, written by the create core AFTER the provisioning
@@ -12,9 +22,11 @@
 // Four ways a mandatory question can be mandatory in name only, all of them
 // diffs that still compile, still render and still save:
 //
-//   1. AN OPT-OUT ROW. Keep "unspecified" on the sheet and the field is
-//      optional again with a star on it — one tap produces a row that answers
-//      nothing, and the required check is satisfied.
+//   1. A BLANK THAT SUBMITS. A placeholder row with an empty value, or a
+//      validator that treats "" as an answer, makes the star decorative: the
+//      parent advances having chosen nothing. The non-answer is NOT this -
+//      "unspecified" is a value the parent selected on purpose and the column
+//      can hold; "" is the absence of a choice and must never reach the wire.
 //   2. A DEFAULT SELECTION. Seeding the state with "female" (or GENDER_VALUES[0],
 //      or a prefill from a SIBLING) satisfies "required" on behalf of a parent
 //      who never looked at the control. A guess is indistinguishable from an
@@ -126,39 +138,42 @@ const EMPTY_CATALOGS = { grades: [], cities: [], schools: [] };
 
 // ---------------------------------------------------------------------------
 
-describe("two answers, and no way back to none", () => {
-  it("offers exactly female and male", () => {
-    expect([...GENDER_VALUES]).toEqual(["female", "male"]);
-    expect(Object.keys(GENDER_LABEL_KEYS).sort()).toEqual(["female", "male"]);
+describe("three answers, and no way back to none", () => {
+  it("offers female, male and the non-answer, in that order", () => {
+    // ORDER IS PART OF THE CONTRACT: the non-answer is LAST, so it is a real
+    // choice rather than the one a hurried eye lands on first.
+    expect([...GENDER_VALUES]).toEqual(["female", "male", "unspecified"]);
+    expect(Object.keys(GENDER_LABEL_KEYS).sort()).toEqual(["female", "male", "unspecified"]);
   });
 
-  it("does not offer the legacy opt-out, and does not render its label", () => {
-    // The DATABASE enum keeps `unspecified` — rows written while the field was
-    // optional carry it and this build does not get to rewrite them. What is
-    // retired is the ROW and the string behind it.
+  it("renders the non-answer's label on both sheets", () => {
+    // THIS ASSERTION IS INVERTED FROM ITS FIRST VERSION ON PURPOSE. It used to
+    // demand the opt-out be ABSENT. Removing it is what turns a required
+    // question into a required disclosure, which is the Apple 5.1.1(v) line, so
+    // the test now fails if the row disappears again.
     expect(API).toContain(
       'export const CHILD_GENDERS = ["female", "male", "unspecified"] as const;',
     );
-    expect(GENDER_VALUES).not.toContain("unspecified");
-    expect(code(FORM)).not.toContain("mob.child.gender.unspecified");
-    expect(code(EDIT)).not.toContain("mob.child.gender.unspecified");
-    expect(MESSAGES).not.toContain("mob.child.gender.unspecified");
+    expect(GENDER_VALUES).toContain("unspecified");
+    expect(MESSAGES).toContain("mob.child.gender.unspecified");
   });
 
   it("ties the offered values to the database enum at compile time", () => {
-    // `Exclude<ChildGender, "unspecified">` is the join: an enum that loses
-    // "female" stops this file compiling instead of shipping a value the
-    // server rejects.
-    expect(FORM).toContain('export type ChildGenderChoice = Exclude<ChildGender, "unspecified">;');
+    // The choice set now equals the enum, so the join is the alias itself: an
+    // enum that loses a member stops this file compiling rather than shipping a
+    // value the server rejects.
+    expect(FORM).toContain("export type ChildGenderChoice = ChildGender;");
   });
 
-  it("whitelists a stored value this build cannot offer down to the placeholder", () => {
-    // A legacy "unspecified" row must read as "not answered yet" — the parent is
-    // then ASKED — and never as a select holding a value with no row on screen.
-    expect(asChildGender("unspecified")).toBe("");
+  it("whitelists an unknown stored value down to the placeholder", () => {
+    // "unspecified" is now an OFFERABLE answer, so it round-trips instead of
+    // collapsing to the placeholder - a parent who chose it must see it chosen.
+    expect(asChildGender("unspecified")).toBe("unspecified");
+    expect(asChildGender("female")).toBe("female");
+    // A NULL column ("never asked") and an enum member this build does not know
+    // still land on the placeholder, so the parent is ASKED.
     expect(asChildGender(null)).toBe("");
     expect(asChildGender("nonbinary")).toBe("");
-    expect(asChildGender("female")).toBe("female");
   });
 
   it("gives neither sheet a clear row", () => {

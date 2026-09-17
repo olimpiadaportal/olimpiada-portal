@@ -51,12 +51,15 @@ export type CreateChildStrings = {
   passwordHint: string;
   grade: string;
   gradeNone: string;
-  // Gender — REQUIRED since 2026-09-16 (owner). Two answers only; the DB enum's
-  // 'unspecified' is still readable on older rows and is offered nowhere.
+  // Gender — REQUIRED since 2026-09-16 (owner): an answer must be chosen, and
+  // one of the answers is "prefer not to say". Requiring the ANSWER and
+  // requiring the DISCLOSURE are different things, and only the second is an
+  // Apple 5.1.1(v) problem on a field that drives nothing in the product.
   gender: string;
   genderChoose: string;
   genderFemale: string;
   genderMale: string;
+  genderUnspecified: string;
   city: string;
   cityChoose: string;
   school: string;
@@ -424,6 +427,8 @@ function InnerForm({
             </option>
             <option value="female">{strings.genderFemale}</option>
             <option value="male">{strings.genderMale}</option>
+            {/* Last on purpose: a real choice, not the one the eye lands on. */}
+            <option value="unspecified">{strings.genderUnspecified}</option>
           </select>
         </label>
 

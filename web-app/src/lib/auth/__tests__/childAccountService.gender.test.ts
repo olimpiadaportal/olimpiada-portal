@@ -180,10 +180,20 @@ describe("createChild — a child is never created without an answer", () => {
     expect(rpcCalls).toHaveLength(0);
   });
 
-  it("REFUSES the retired 'unspecified' rather than storing it", async () => {
-    // It stays a legal value for rows written before the rule; it is not a
-    // legal thing to create a NEW child with.
+  it("STORES 'unspecified' — a chosen non-answer reaches the column", async () => {
+    // The parent picked "prefer not to say" from a required control. That is an
+    // answer, and it must be written: dropping it would leave the column NULL
+    // ("never asked"), which is a different and false statement about what the
+    // parent did. Requiring the QUESTION is not requiring the DISCLOSURE — the
+    // Apple 5.1.1(v) distinction, restored by migration 179.
     const res = await create("unspecified");
+    expect(res.ok).toBe(true);
+    expect(provisioning()).toBeDefined();
+    expect(provisioning()!.args.p_gender).toBe("unspecified");
+  });
+
+  it("still refuses an ABSENT answer before any auth user is created", async () => {
+    const res = await create("");
     expect(res.ok === false && res.errors).toContain("addchild.err.genderRequired");
     expect(rpcCalls).toHaveLength(0);
   });

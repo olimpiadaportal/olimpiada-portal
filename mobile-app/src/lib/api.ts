@@ -274,11 +274,15 @@ export function bffAuthedPost<T>(
   return bffJsonPost<T>(path, body, fallbackErrorKey, true, extraHeaders, timeoutMs);
 }
 
-// ---- Existing-child access (two routes in, neither of them approved) ------
+// ---- Existing-child access (one route in, and no approval behind it) ------
 //
 // Migration 177 replaced the approval flow with the child's own credentials;
-// migration 180 brought the invite CODE back beside it and made redeeming
-// create the link outright. Four calls, no pending state between any of them.
+// migration 180 brought the invite CODE back beside it and made redeeming create
+// the link outright; migration 181, the same day, withdrew the credential route
+// and `bffChildLinkByCredentials` with it. A code is a one-time, expiring secret
+// the CREATING parent hands over deliberately; a child's password is a standing
+// secret the child can pass to anyone. No pending state exists between any of
+// these calls, and no call here takes a password.
 
 const CHILD_LINK_PATH = "/api/mobile/v1/children/link";
 
@@ -319,24 +323,6 @@ export function bffChildLinkState() {
   return bffAuthedPost<ChildLinkState>(
     CHILD_LINK_PATH,
     { action: "state" },
-    "link.err.generic",
-  );
-}
-
-/**
- * Grant this parent access to an existing child by verifying that CHILD's own
- * credentials (8-digit id + the password their parent set).
- *
- * The password crosses this function and is never kept: not cached, not retried,
- * never logged, and the screen clears its field on every outcome. The BFF answers
- * a wrong pair with 400 + `link.err.credentialsInvalid` rather than 401 —
- * deliberately, because classifyBffResponse above reads a 401 on a Bearer call as
- * an expired session and would sign the parent out over a mistyped password.
- */
-export function bffChildLinkByCredentials(childId: string, password: string) {
-  return bffAuthedPost<{ studentProfileId: string; childName: string }>(
-    CHILD_LINK_PATH,
-    { action: "credentials", child_id: childId, password },
     "link.err.generic",
   );
 }

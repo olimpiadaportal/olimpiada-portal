@@ -1,6 +1,6 @@
 "use client";
 
-// THE EXISTING-CHILD ACCESS PANEL — TWO ROUTES IN, NO APPROVAL BEHIND EITHER.
+// THE EXISTING-CHILD ACCESS PANEL — ONE ROUTE IN, AND NO APPROVAL BEHIND IT.
 //
 // HISTORY, because most of this file is shaped by it. Migration 176 shipped an
 // invite flow where a second parent redeemed a one-time code and the CREATING
@@ -8,25 +8,26 @@
 // production: issuing a new code revoked any redemption already waiting, so a
 // parent who redeemed, saw no prompt and generated a fresh code destroyed their
 // own request. The owner removed approval on 2026-09-16 (migration 177) and
-// replaced the flow with the child's own credentials.
+// replaced the flow with the child's own credentials. Migration 180 brought the
+// CODE back beside it on 2026-09-17, this time WITHOUT approval — `redeem`
+// creates the ACTIVE link itself and notifies the creating parent.
 //
-// The owner brought the CODE back on 2026-09-17 (migration 180) — WITHOUT the
-// approval step. `redeem` now creates the ACTIVE link itself and notifies the
-// creating parent, so both routes below grant access the moment they succeed.
+// THE CREDENTIAL ROUTE IS GONE (owner, 2026-09-17 — migration 181). For two
+// days both routes were on this page; the owner wanted one, and the invite code
+// is the one that survives on its merits: it is a ONE-TIME, EXPIRING secret the
+// CREATING parent generates deliberately and hands to a named adult, while a
+// child's password is a STANDING secret the CHILD also knows and can hand to
+// anyone. Nothing was stranded — the credential path had completed zero links in
+// production when it was withdrawn. If a password field ever returns to this
+// panel, the weaker of two doors has been reopened.
+//
 // There is no pending state to render, no approve button and no reject button.
-// If one ever reappears here, the 176 bug has been rebuilt.
+// If one reappears here, the 176 bug has been rebuilt.
 //
-// WHY TWO CARDS RATHER THAN ONE FORM. Both routes open with the same 8-digit
-// child id and both take a secret as the second value, so an id over a password
-// box and an id over a code box are indistinguishable at a glance. Each route
-// therefore gets its own card, its own heading, its own sentence about who
-// holds the second value, and its own message slot — a rejection has to land
-// under the form that caused it, or the parent retries the wrong one.
-//
-// THE PASSWORD IS A CHILD'S CREDENTIAL, NOT A FORM VALUE: it is cleared on
-// every outcome, success and failure alike. The code is cleared on success for
-// a different reason — it is single-use, so a spent code left in the box only
-// invites a second submit that can never work.
+// THE CODE IS CLEARED ON SUCCESS: it is single-use, so a spent code left in the
+// box only invites a second submit that can never work. It is deliberately NOT
+// cleared on failure — a mistyped 20-character code should be correctable, and
+// unlike a password it is neither standing nor secret beyond its 72 hours.
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 // Clipboard write + select-the-text fallback, already solved for the 8-digit
 // login id. The helper itself is id-agnostic (writes the string it is given,
@@ -35,11 +36,10 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { copyRawId } from "@/components/CopyableId";
 import {
   childAccessAdultsAction,
-  childLinkByCredentialsAction,
   childLinkMutationAction,
   childLinkStateAction,
 } from "@/lib/auth/childLinkActions";
-import type { ChildAccessAdult } from "@/lib/auth/childCredentialLink";
+import type { ChildAccessAdult } from "@/lib/auth/childAccessAdults";
 import type { ChildLinkMutationInput, ChildLinkState } from "@/lib/childLink";
 import { formatLongDate } from "@/lib/formatDate";
 import type { Locale } from "@/i18n/config";
@@ -48,13 +48,13 @@ type Dict = Record<string, string>;
 type AccessMap = Record<string, ChildAccessAdult[]>;
 
 /**
- * One message, shown under the form that produced it.
+ * One message, shown under the form or card that produced it.
  *
- * `scope` is "credentials", "code", or a child's profile id for anything raised
- * on that child's card. A single panel-wide message was the alternative and it
- * is worse in both directions: a rejection from the code form appearing over
- * the password form reads as a password failure, and a revoke error on the
- * third child appears over the first.
+ * `scope` is "code" for the redeem form, or a child's profile id for anything
+ * raised on that child's card. A single panel-wide message was the alternative
+ * and it is worse: a revoke error on the third child would appear over the
+ * first, and a redeem rejection would appear over a card it has nothing to do
+ * with.
  */
 type Feedback = { scope: string; tone: "danger" | "success"; text: string };
 
@@ -125,8 +125,6 @@ export function ChildLinkPanel({
 }) {
   const [state, setState] = useState(initial);
   const [accessMap, setAccessMap] = useState(access);
-  const [childId, setChildId] = useState("");
-  const [password, setPassword] = useState("");
   const [codeChildId, setCodeChildId] = useState("");
   const [code, setCode] = useState("");
   // studentProfileId -> the code just issued for that child. Ephemeral by
@@ -137,7 +135,6 @@ export function ChildLinkPanel({
   const [pending, startTransition] = useTransition();
   const t = (key: string) => dict[key] ?? key;
 
-  const canSubmitCredentials = childId.length === 8 && password.length > 0 && !pending;
   const canSubmitCode = codeChildId.length === 8 && code.length === 20 && !pending;
 
   const refresh = useCallback(async () => {
@@ -155,28 +152,6 @@ export function ChildLinkPanel({
     setAccessMap(map);
   }, []);
 
-  function submitCredentials() {
-    setFeedback(null);
-    startTransition(async () => {
-      try {
-        const result = await childLinkByCredentialsAction(childId, password);
-        // Cleared on BOTH paths: a wrong password must not sit in the field
-        // waiting to be resubmitted, and a correct one has done its job.
-        setPassword("");
-        if (!result.ok) {
-          setFeedback({ scope: "credentials", tone: "danger", text: t(result.errorKey) });
-          return;
-        }
-        setChildId("");
-        await refresh();
-        setFeedback({ scope: "credentials", tone: "success", text: t("link.linkedNotice") });
-      } catch {
-        setPassword("");
-        setFeedback({ scope: "credentials", tone: "danger", text: t("link.err.generic") });
-      }
-    });
-  }
-
   function submitCode() {
     setFeedback(null);
     startTransition(async () => {
@@ -191,8 +166,7 @@ export function ChildLinkPanel({
           return;
         }
         // NO PENDING BRANCH. Under migration 180 a successful redeem IS the
-        // link; the same success message the credential route shows is the
-        // correct one, because the same thing happened.
+        // link, so this reports a completed grant and never a submitted request.
         setCodeChildId("");
         setCode("");
         await refresh();
@@ -267,50 +241,14 @@ export function ChildLinkPanel({
     <div className="stack" style={{ gap: 20 }}>
       <p className="muted link-hint">{t("link.subtitle")}</p>
 
-      <div className="card stack link-form">
-        <h2 className="link-way-title">{t("link.way.credentials")}</h2>
-        <p className="muted link-hint">{t("link.way.credentialsBody")}</p>
-
-        <div className="field">
-          <label htmlFor="link-child-id">{t("link.childId")}</label>
-          <input
-            id="link-child-id"
-            inputMode="numeric"
-            autoComplete="off"
-            maxLength={8}
-            value={childId}
-            disabled={pending}
-            onChange={(e) => setChildId(e.target.value.replace(/\D/g, "").slice(0, 8))}
-          />
-        </div>
-
-        <div className="field">
-          <label htmlFor="link-child-password">{t("link.childPassword")}</label>
-          <input
-            id="link-child-password"
-            type="password"
-            autoComplete="off"
-            value={password}
-            disabled={pending}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && canSubmitCredentials) submitCredentials();
-            }}
-          />
-        </div>
-
-        <p className="muted link-hint">{t("link.credentialsHint")}</p>
-
-        <button className="btn" disabled={!canSubmitCredentials} onClick={submitCredentials}>
-          {pending ? t("state.loading") : t("link.request")}
-        </button>
-
-        {message("credentials")}
-      </div>
-
-      <div className="card stack link-form">
-        <h2 className="link-way-title">{t("link.way.code")}</h2>
-        <p className="muted link-hint">{t("link.way.codeBody")}</p>
+      {/* THE ONE WAY IN. It sat beside a sibling card until 2026-09-17, and the
+          styling is deliberately no longer neutral between two options: this is
+          the page's primary surface, accented and set apart from the per-child
+          cards below it. A form that still looked like one of a matched pair
+          would read as though the other half had failed to load. */}
+      <div className="card stack link-form link-form-primary">
+        <h2 className="link-way-title">{t("link.enterCode.title")}</h2>
+        <p className="muted link-hint">{t("link.enterCode.body")}</p>
 
         <div className="field">
           <label htmlFor="link-code-child-id">{t("link.childId")}</label>

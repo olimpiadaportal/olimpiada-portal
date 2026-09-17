@@ -14513,8 +14513,9 @@ body[data-site-typography] .btn-ghost {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 /* Nothing in this file gave a disabled `.btn` a disabled LOOK, and the link
-   panel's submit stays disabled until an 8-digit id AND a password are present
-   — the one screen where "why is nothing happening?" is the whole question.
+   panel's submit stays disabled until an 8-digit id AND a 20-character code are
+   present — the one screen where "why is nothing happening?" is the whole
+   question.
    Scoped under `.stack` so no button anywhere else in the product changes. */
 .stack .btn:disabled,
 .stack button:disabled {
@@ -14525,10 +14526,20 @@ body[data-site-typography] .btn-ghost {
 
 /* ---- The existing-child access panel (/children/link) --------------------- */
 
-/* The credentials card. `.field`'s own 14px top margin would stack on top of the
+/* The redeem card. `.field`'s own 14px top margin would stack on top of the
    column gap, so the gap alone spaces this form. */
 .link-form {
   gap: 12px;
+}
+/* THE ONE WAY IN (2026-09-17). Until the credential route was withdrawn this
+   card had a twin, and the two had to look interchangeable. It has no twin now,
+   so it is marked as the page's primary surface instead: an accent left rule and
+   a slightly warmer ground separate it from the per-child cards under it, which
+   are a different kind of thing entirely (they manage access that already
+   exists). Token-driven, so both themes follow without a second rule. */
+.link-form-primary {
+  border-left: 3px solid var(--accent);
+  background: var(--chip-bg);
 }
 .link-form > .field {
   margin-top: 0;
@@ -14612,11 +14623,11 @@ body[data-site-typography] .btn-ghost {
   flex: none;
 }
 
-/* ---- The two ways in (migration 180) -------------------------------------
-   The panel offers a credential route and an invite-code route, one card each.
-   The heading is what tells them apart at a glance — without it the two cards
-   are an 8-digit id over a secret, twice — so it is sized as a card title
-   rather than left to inherit the h2 that carries a child's name. */
+/* ---- The way in (migration 180, narrowed to one by 181) -------------------
+   The heading of the redeem card. It existed to tell two cards apart at a
+   glance; with one card left it still earns its size, because the h2 it would
+   otherwise inherit is the one that carries a CHILD's name further down the
+   page, and a form heading set like a child's name reads as a child's card. */
 .link-way-title {
   margin: 0;
   font-size: 1.05rem;

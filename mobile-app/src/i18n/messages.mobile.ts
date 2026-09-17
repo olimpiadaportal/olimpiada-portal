@@ -61,10 +61,11 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "link.title": "Uşaq profilinə qoşul",
     "link.choice.existing": "Mövcud uşaq profilinə qoşulun",
     "link.request": "Qoşul",
-    // Migration 180 put the invite code back, so that route's strings
-    // (link.way.*, link.code*, link.issue*) are on screen in a purchase-silent
-    // binary too. They were written in connect language in the web catalog and
-    // need no override here — the CTA above is the only one that did.
+    // Migration 180 put the invite code back and 181 made it the only route in,
+    // so that route's strings (link.enterCode.*, link.code*, link.issue*) are
+    // the only link copy on screen in a purchase-silent binary. They were
+    // written in connect language in the web catalog and need no override here
+    // — the CTA above is the only one that did.
     "mob.welcome.tagline": "Olimpiadalara hazırlaşmağın ən əyləncəli yolu",
     "mob.welcome.studentLogin": "Şagird girişi",
     // ---- FIRST-LAUNCH LANGUAGE PICKER ----------------------------------
@@ -118,18 +119,18 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.childId": "8 rəqəmli şagird ID-si",
     "mob.childIdPh": "1234 5678",
     "mob.parentPassword": "Valideynin təyin etdiyi şifrə",
-    // ---- EXISTING-CHILD ACCESS (migration 177) --------------------------
+    // ---- EXISTING-CHILD ACCESS (migrations 177 → 180 → 181) -------------
     // The link screen's intro. Mobile-only rather than the shared
-    // `link.subtitle`, whose en/ru values still describe the retired
-    // invitation code — copy that would tell a parent to enter something the
-    // screen no longer has a field for. Access language, no purchase verb:
-    // linking grants a second adult reach, it buys nothing.
-    // Rewritten for migration 180: there are TWO routes in now (the child's own
-    // credentials, or an invite code the creating parent generates), and an
-    // intro naming only one of them sends a parent who has a code looking for a
-    // password they were never given. Still mobile-only, still no purchase verb.
+    // `link.subtitle` because the web sentence is a page subtitle and this is a
+    // phone lead-in; it also says what the web copy does not, that the creating
+    // parent is NOTIFIED. Access language, no purchase verb: linking grants a
+    // second adult reach, it buys nothing.
+    //
+    // Rewritten for migration 181, which withdrew the credential route: there is
+    // ONE way in now, the invite code. The 180 wording said "two ways" and would
+    // send a parent hunting for a password field that is no longer there.
     "mob.link.intro":
-      "Uşaq artıq başqa valideyn tərəfindən yaradılıbsa, profilə iki yoldan biri ilə qoşula bilərsiniz. Giriş dərhal açılır — profili yaradan valideynə bildiriş göndərilir.",
+      "Uşaq artıq başqa valideyn tərəfindən yaradılıbsa, ondan dəvət kodu istəyin. Kodu daxil etdiyiniz anda giriş açılır — profili yaradan valideynə bildiriş göndərilir.",
     "mob.forgotOnWeb": "Şifrə bərpası veb saytda açılır.",
     "mob.placeholder.title": "Tezliklə",
     "mob.placeholder.body": "Bu bölmə növbəti mərhələdə əlavə olunacaq.",
@@ -393,7 +394,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.childIdPh": "1234 5678",
     "mob.parentPassword": "Password set by your parent",
     "mob.link.intro":
-      "If another parent already created the child, there are two ways to join the profile. Access opens straight away — the parent who created the profile is notified.",
+      "If another parent already created the child, ask them for an invitation code. Access opens the moment you enter it — the parent who created the profile is notified.",
     "mob.forgotOnWeb": "Password recovery opens on the website.",
     "mob.placeholder.title": "Coming soon",
     "mob.placeholder.body": "This section arrives in the next stage.",
@@ -617,7 +618,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.childIdPh": "1234 5678",
     "mob.parentPassword": "Пароль, заданный родителем",
     "mob.link.intro":
-      "Если ребёнка уже создал другой родитель, подключиться к профилю можно двумя способами. Доступ открывается сразу — родитель, создавший профиль, получит уведомление.",
+      "Если ребёнка уже создал другой родитель, попросите у него код приглашения. Доступ открывается сразу после ввода кода — родитель, создавший профиль, получит уведомление.",
     "mob.forgotOnWeb": "Восстановление пароля откроется на сайте.",
     "mob.placeholder.title": "Скоро",
     "mob.placeholder.body": "Этот раздел появится на следующем этапе.",

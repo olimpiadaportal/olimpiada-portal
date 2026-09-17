@@ -1,21 +1,25 @@
-// THE LINK FLOW HAS TWO ROUTES IN AND NO APPROVAL STEP (owner, 2026-09-17 —
-// migration 180). A second adult either enters the CHILD's own credentials
-// (migration 177) or an invite code the creating parent generated, and either
-// way the grant is immediate.
+// THE LINK FLOW HAS EXACTLY ONE ROUTE IN, AND IT IS THE INVITE CODE (owner,
+// 2026-09-17 — migration 181). A second adult enters the child's 8-digit id plus
+// a one-time code the CREATING parent generated, and the grant is immediate.
 //
-// This file has now asserted three different shapes, so it is worth saying what
+// This file has now asserted four different shapes, so it is worth saying what
 // it is actually for. It first pinned the 176 flow — collect a code, post
-// `approve` — then pinned the credentials-only screen that replaced it, with
-// the code assertions DELETED rather than relaxed. The code is back; approval
-// is not, and never will be: it completed zero links in production because
-// issuing a second code revoked the redemption already waiting on it. So what
-// this file pins is the pairing — a code route that grants access outright, and
-// no approve/reject path anywhere near it.
+// `approve` — then the credentials-only screen that replaced it (code
+// assertions DELETED rather than relaxed), then both routes side by side when
+// 180 restored the code. The owner then cut the credential route, and the
+// reason is what to carry forward rather than the count: an invite code is a
+// one-time, EXPIRING secret the creating parent hands to a named adult, while a
+// child's password is a STANDING secret the child also knows and cannot revoke.
+// Approval is not coming back either — it completed zero links in production,
+// because issuing a second code revoked the redemption already waiting on it.
+//
+// So what this file pins is a singular: one route that grants access outright,
+// no password field beside it, and no approve/reject path anywhere near it.
 //
 // Source assertions on purpose: these are .tsx screens, this suite is .ts-only
 // (package.json testMatch), and every failure mode here is a DELETION — a
-// password field that stops being cleared, or an approve button that returns,
-// looks entirely ordinary in a diff.
+// password field that grows back, or an approve button that returns, looks
+// entirely ordinary in a diff.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -48,24 +52,31 @@ describe("mobile co-parent flow", () => {
     expect(entry).toContain('router.push("/(parent)/link-child" as never)');
   });
 
-  it("offers BOTH routes in, each labelled for what it takes", () => {
-    // The headings are the whole point of the two-card layout: an 8-digit id
-    // over a password box and an 8-digit id over a code box are the same
-    // picture without them.
-    expect(screen).toContain('t("link.way.credentials")');
-    expect(screen).toContain('t("link.way.code")');
+  it("offers exactly ONE route in, and it is the invite code", () => {
+    expect(screen).toContain('t("link.enterCode.title")');
     expect(screen).toContain("<ChildIdField");
-    expect(screen).toContain("<PasswordField");
-    expect(screen).toContain('t("link.childPassword")');
     expect(screen).toContain('t("link.code")');
-    expect(screen).toContain("bffChildLinkByCredentials(childId, password)");
     expect(screen).toContain("bffChildLinkRedeem(codeChildId, code)");
   });
 
-  it("gives each form its own focus chain", () => {
-    // One chain spanning both would carry "Done" on the password into the OTHER
-    // form's submit — see the run rule in lib/useFieldChain.ts.
-    expect((screen.match(/useFieldChain\(/g) ?? []).length).toBe(2);
+  it("has no password route left — not the field, the call, or its keys", () => {
+    // Each of these would look entirely ordinary re-added, which is the whole
+    // reason they are named one by one.
+    expect(screen).not.toContain("<PasswordField");
+    expect(screen).not.toContain("setPassword");
+    expect(screen).not.toContain("bffChildLinkByCredentials");
+    expect(api).not.toContain("bffChildLinkByCredentials");
+    expect(linkApi).not.toContain('action: "credentials"');
+    for (const gone of ["link.childPassword", "link.credentialsHint", "link.way.credentials"]) {
+      expect(screen).not.toContain(gone);
+    }
+  });
+
+  it("gives the one form one focus chain", () => {
+    // A second chain is what a second form looked like. A chain that ran past
+    // this form's own submit would carry "Done" somewhere it does not belong —
+    // see the run rule in lib/useFieldChain.ts.
+    expect((screen.match(/useFieldChain\(/g) ?? []).length).toBe(1);
   });
 
   it("lets the creating parent issue a code and copy it once", () => {
@@ -84,10 +95,9 @@ describe("mobile co-parent flow", () => {
     expect(linkApi).toContain('{ action: "issue", student_id: studentId }');
   });
 
-  it("keeps both halves of the credential out of every autofill store", () => {
-    // A MINOR's account number plus the PARENT's password, filed against the
-    // same app domain as the parent's real credential — see PASSWORD_AUTOFILL.
-    expect(screen).toContain('purpose="none"');
+  it("keeps both halves of the submission out of every autofill store", () => {
+    // A MINOR's account number plus a one-time code, filed against the same app
+    // domain as the parent's real credential — see PASSWORD_AUTOFILL.
     // ChildIdField applies the numeric keypad and the autofill exclusion itself,
     // AFTER the prop spread, so the screen cannot opt back in. The code field is
     // a plain TextField and has to state its own.
@@ -97,21 +107,26 @@ describe("mobile co-parent flow", () => {
     );
     expect(field).toContain('importantForAutofill="no"');
     expect(screen).toContain('importantForAutofill="no"');
+    expect(screen).toContain('autoComplete="off"');
+    expect(screen).toContain('textContentType="none"');
   });
 
-  it("clears the password on EVERY outcome, in a finally", () => {
-    // Not "on error" and not "on success" — a `finally`, which is what makes a
-    // thrown request clear it too.
-    const submit = screen.slice(screen.indexOf("async function submitCredentials"));
-    const body = submit.slice(0, submit.indexOf("async function submitCode"));
-    expect(body).toMatch(/finally\s*\{[\s\S]*setPassword\(""\)/);
+  it("clears the spent code on success and leaves a rejected one editable", () => {
+    // A spent code left in the box only invites a second submit that can never
+    // work. A REJECTED one stays: unlike a child's password it is neither
+    // standing nor secret past its 72 hours, and 20 characters is worth being
+    // able to correct rather than retype.
+    const submit = screen.slice(screen.indexOf("async function submitCode"));
+    const body = submit.slice(0, submit.indexOf("async function issueCode"));
+    const failure = body.slice(0, body.indexOf("setCodeChildId"));
+    expect(body).toContain('setCode("")');
+    expect(failure).not.toContain('setCode("")');
   });
 
   it("treats a redeemed code as access GRANTED, not access requested", () => {
     const submit = screen.slice(screen.indexOf("async function submitCode"));
     const body = submit.slice(0, submit.indexOf("async function issueCode"));
-    // The same completed-link message the credential route reports, because the
-    // same thing happened.
+    // A completed link, never a submitted request.
     expect(body).toContain('key: "link.linkedNotice"');
     // And no branch on the returned state: there is only one.
     expect(body).not.toContain("state");

@@ -1,52 +1,56 @@
 // Existing-child access for a second adult (web /children/link parity).
 //
-// TWO ROUTES IN, NEITHER OF THEM APPROVED. The screen originally NOMINATED: the
+// ONE ROUTE IN, AND NO APPROVAL BEHIND IT. The screen originally NOMINATED: the
 // parent typed the child's 8-digit id plus a one-time code, which raised a
 // request the creating parent then approved. The owner removed approval on
 // 2026-09-16 (migration 177) after that flow completed ZERO links in production
 // — issuing a second code revoked the redemption already waiting for approval,
 // so a parent who retried destroyed their own request — and replaced it with
-// the child's own credentials.
+// the child's own credentials. The CODE came back on 2026-09-17 (migration 180)
+// WITHOUT the approval step: `redeem` creates the active link itself and
+// notifies the creating parent.
 //
-// The owner brought the CODE back on 2026-09-17 (migration 180), WITHOUT the
-// approval step: `redeem` now creates the active link itself and notifies the
-// creating parent. So this screen offers both routes, and both grant access the
-// moment they succeed. Approve and reject remain dead concepts; if either
-// returns here, the 176 bug has been rebuilt.
+// THE CREDENTIAL ROUTE IS GONE (owner, 2026-09-17 — migration 181). For two
+// days this screen carried both; the owner wanted one, and the code is the one
+// that survives on its merits. An invite code is a ONE-TIME, EXPIRING secret
+// that the CREATING parent generates deliberately and hands to a named adult. A
+// child's password is a STANDING secret that the CHILD also knows, can share,
+// and cannot revoke. Nothing was stranded — the credential path had completed
+// zero links in production when it was withdrawn. If a PasswordField ever
+// returns to this screen, the weaker of two doors has been reopened.
 //
-// WHY TWO CARDS RATHER THAN ONE FORM. Both routes open with the same 8-digit id
-// and take a secret as their second value, so an id over a password box and an
-// id over a code box look identical at a glance. Each gets its own card, its own
-// heading, its own sentence about who holds the second value and its own message
-// slot — a rejection has to land under the form that caused it.
+// Approve and reject remain dead concepts; if either returns here, the 176 bug
+// has been rebuilt.
 //
 // WHAT SURVIVES FROM BEFORE: revoke and leave. A creator must still be able to
 // take access away and a linked adult must still be able to walk away, so both
 // remain on the manage_child_link RPC they always used.
 //
-// THE PASSWORD IS A CHILD'S CREDENTIAL, NOT A FORM VALUE. It is cleared in a
-// `finally`, so EVERY outcome clears it: success, rejection, and a throw alike.
-// A wrong entry must not sit in the field waiting to be resubmitted, and a
-// correct one has done its job. Nothing about that pair is autofilled either —
-// `purpose="none"` plus ChildIdField's own exclusion — because it is a MINOR's
-// account number and the PARENT's password filed against the same app domain as
-// the parent's real credential; the full reasoning is in PASSWORD_AUTOFILL,
-// components/TextField.tsx. The invite code is single-use and expires in 72
-// hours, so it is not a standing secret in the same way; it is still cleared on
-// success, because a spent code left in the box only invites a second submit
-// that can never work.
+// THE CODE IS CLEARED ON SUCCESS, because it is single-use and a spent code left
+// in the box only invites a second submit that can never work. It is not cleared
+// on failure — a mistyped 20-character code should be correctable, and unlike a
+// child's password it is neither standing nor secret past its 72 hours. It is
+// still kept out of every autofill store (`importantForAutofill="no"` and its
+// siblings on the TextField): a one-time code is not a credential anything should
+// remember, and this screen sits on the same app domain as the parent's real
+// one. The full reasoning is in PASSWORD_AUTOFILL, components/TextField.tsx.
+//
+// A NOTE FOR THE DEPLOY WINDOW: this file reaches users as an OTA update, which
+// applies on their NEXT LAUNCH, while the web deploys on push. The BFF route
+// (web-app/src/app/api/mobile/v1/children/link/route.ts) therefore keeps an
+// explicit `credentials` branch that refuses with a translated key, for the
+// parents still running yesterday's bundle. Do not delete it as dead code.
 import React, { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { CopyableId } from "@/components/CopyableId";
-import { ChildIdField, PasswordField, TextField } from "@/components/TextField";
+import { ChildIdField, TextField } from "@/components/TextField";
 import { Skeleton } from "@/components/StatusViews";
 import { Pill, ScreenScroll, SectionTitle } from "@/features/parent/ui";
 import {
   bffChildAccessAdults,
-  bffChildLinkByCredentials,
   bffChildLinkIssue,
   bffChildLinkManage,
   bffChildLinkRedeem,
@@ -65,9 +69,9 @@ const EMPTY: ChildLinkState = { children: [] };
 /**
  * One message, shown under the form or the card that produced it.
  *
- * `scope` is "credentials", "code", or a child's profile id. `key` is an i18n
- * KEY, not a rendered sentence — the locale can change while a message is on
- * screen and the message has to follow it (login.tsx does the same).
+ * `scope` is "screen", "code", or a child's profile id. `key` is an i18n KEY,
+ * not a rendered sentence — the locale can change while a message is on screen
+ * and the message has to follow it (login.tsx does the same).
  */
 type Feedback = { scope: string; tone: "danger" | "ok"; key: string };
 
@@ -91,8 +95,6 @@ export default function LinkChildScreen() {
   const [state, setState] = useState<ChildLinkState>(EMPTY);
   // studentProfileId -> the adults who can reach that child.
   const [access, setAccess] = useState<Record<string, ChildAccessAdult[]>>({});
-  const [childId, setChildId] = useState("");
-  const [password, setPassword] = useState("");
   const [codeChildId, setCodeChildId] = useState("");
   const [code, setCode] = useState("");
   // studentProfileId -> the code just issued for that child. Ephemeral by
@@ -105,9 +107,9 @@ export default function LinkChildScreen() {
   const load = useCallback(async () => {
     const res = await bffChildLinkState();
     if (!res.ok) {
-      // Scoped to the SCREEN, not to a form: an unreachable origin or an
+      // Scoped to the SCREEN, not to the form: an unreachable origin or an
       // expired session is not a rejection of anything the parent typed, and
-      // under the credentials card it would read as one.
+      // under the code card it would read as one.
       setFeedback({ scope: "screen", tone: "danger", key: res.error });
       setLoading(false);
       return;
@@ -132,39 +134,10 @@ export default function LinkChildScreen() {
     void load();
   }, [load]);
 
-  async function submitCredentials() {
+  async function submitCode() {
     if (pending) return;
     // Client-side shape only — the BFF re-validates both fields before any
     // privileged call and is the boundary that counts.
-    if (childId.length !== 8) {
-      setFeedback({ scope: "credentials", tone: "danger", key: "auth.child.err.idFormat" });
-      return;
-    }
-    if (!password) {
-      setFeedback({ scope: "credentials", tone: "danger", key: "auth.child.err.passwordRequired" });
-      return;
-    }
-    setPending(true);
-    setFeedback(null);
-    try {
-      const res = await bffChildLinkByCredentials(childId, password);
-      if (!res.ok) {
-        setFeedback({ scope: "credentials", tone: "danger", key: res.error });
-        return;
-      }
-      setChildId("");
-      await load();
-      setFeedback({ scope: "credentials", tone: "ok", key: "link.linkedNotice" });
-    } finally {
-      // EVERY outcome, a throw included: this field must not still hold a
-      // child's password when this function returns.
-      setPassword("");
-      setPending(false);
-    }
-  }
-
-  async function submitCode() {
-    if (pending) return;
     if (codeChildId.length !== 8) {
       setFeedback({ scope: "code", tone: "danger", key: "auth.child.err.idFormat" });
       return;
@@ -182,8 +155,7 @@ export default function LinkChildScreen() {
         return;
       }
       // NO PENDING BRANCH. A successful redeem IS the link under migration 180,
-      // so this reports the same outcome the credential route reports, because
-      // the same thing happened.
+      // so this reports a completed grant and never a submitted request.
       setCodeChildId("");
       setCode("");
       await load();
@@ -242,15 +214,12 @@ export default function LinkChildScreen() {
     );
   }
 
-  // ONE chain PER FORM, never across both: chaining from the password into the
-  // code field would carry "Done" into a different submit handler. The iOS
-  // number pad has no return key, so the 8th digit landing is what advances off
-  // each id field (ChildIdField's rising-edge `onComplete`).
-  const credentialChain = useFieldChain(2, {
-    onLast: () => {
-      if (!pending) void submitCredentials();
-    },
-  });
+  // ONE chain, for the one form. It stops at the code field on purpose: the
+  // per-child cards below are not inputs, and a chain that ran past a form's own
+  // submit would carry "Done" somewhere it does not belong — the run rule in
+  // lib/useFieldChain.ts. The iOS number pad has no return key, so the 8th digit
+  // landing is what advances off the id field (ChildIdField's rising-edge
+  // `onComplete`).
   const codeChain = useFieldChain(2, {
     onLast: () => {
       if (!pending) void submitCode();
@@ -271,43 +240,16 @@ export default function LinkChildScreen() {
       <AppText variant="muted">{t("mob.link.intro")}</AppText>
       {message("screen")}
 
-      <Card style={{ gap: spacing.lg }}>
+      {/* THE ONE WAY IN. It sat beside a credentials card until 2026-09-17, so
+          the promotion to `hero` is deliberate rather than decorative: this is
+          the screen's primary action, not one of a matched pair, and the
+          per-child cards below are a different kind of thing entirely (they
+          manage access that already exists). `hero` is the design system's own
+          headline variant — no new prop, no one-off style. */}
+      <Card variant="hero" style={{ gap: spacing.lg }}>
         <View style={{ gap: spacing.xs }}>
-          <AppText variant="subtitle">{t("link.way.credentials")}</AppText>
-          <AppText variant="muted">{t("link.way.credentialsBody")}</AppText>
-        </View>
-        <ChildIdField
-          {...credentialChain.field(0)}
-          label={t("link.childId")}
-          placeholder={t("mob.childIdPh")}
-          value={childId}
-          onChangeDigits={setChildId}
-          onComplete={() => credentialChain.focus(1)}
-        />
-        <PasswordField
-          {...credentialChain.field(1)}
-          label={t("link.childPassword")}
-          value={password}
-          onChangeText={setPassword}
-          showLabel={t("mob.pw.show")}
-          hideLabel={t("mob.pw.hide")}
-          purpose="none"
-        />
-        <AppText variant="muted">{t("link.credentialsHint")}</AppText>
-        {message("credentials")}
-        <Button
-          title={t("link.request")}
-          variant="gradient"
-          pending={pending}
-          disabled={childId.length !== 8 || password.length === 0}
-          onPress={() => void submitCredentials()}
-        />
-      </Card>
-
-      <Card style={{ gap: spacing.lg }}>
-        <View style={{ gap: spacing.xs }}>
-          <AppText variant="subtitle">{t("link.way.code")}</AppText>
-          <AppText variant="muted">{t("link.way.codeBody")}</AppText>
+          <AppText variant="subtitle">{t("link.enterCode.title")}</AppText>
+          <AppText variant="muted">{t("link.enterCode.body")}</AppText>
         </View>
         <ChildIdField
           {...codeChain.field(0)}
@@ -325,8 +267,8 @@ export default function LinkChildScreen() {
           autoCapitalize="characters"
           autoCorrect={false}
           // A one-time code is not a credential any store should remember, and
-          // the field sits on the same screen as a child's password — the same
-          // exclusion ChildIdField applies to itself.
+          // it is filed against the same app domain as the parent's real one —
+          // the same exclusion ChildIdField applies to itself.
           autoComplete="off"
           importantForAutofill="no"
           textContentType="none"

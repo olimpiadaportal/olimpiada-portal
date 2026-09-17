@@ -47,6 +47,21 @@ count here on purpose: this section grew from 13 such lines to well over thirty
 in one round, and a number in prose beside a list that keeps growing sends a
 release-note writer home early.)
 
+- `[store]` `[web]` Joining a child another parent created now has ONE way in:
+  the invite code. The second way — typing the child's own 8-digit ID and the
+  child's password — was removed two days after it shipped, having linked nobody
+  (production showed zero verification attempts and zero audit entries for it).
+  An invite code is a one-time secret that expires in 72 hours and that the
+  creating parent generates deliberately for one named adult; a child's password
+  is a standing secret the child also knows and can hand to anyone, so of two
+  overlapping doors the weaker one closed. The screen, the parent page on
+  `olympiq.ai` and the copy in all three languages now describe a single route.
+  Nothing anyone already has changes: existing links, revoke and leave are
+  untouched, and a CHILD still signs in with their ID and password exactly as
+  before — that is a different flow and it was not touched. Parents still on the
+  previous app build get a plain, translated refusal if they submit the old form
+  before the update reaches them, rather than an error page.
+
 - `[internal]` The App Store Connect app id is pinned in the submit profile
   (`eas.json` → `submit.production.ascAppId`), so `eas submit` no longer stops to
   log into Apple on every run. No version bump: `submit` config is read by

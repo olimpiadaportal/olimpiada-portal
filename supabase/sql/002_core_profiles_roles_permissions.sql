@@ -428,19 +428,11 @@ create table if not exists public.parent_link_redeem_attempts (
   attempted_at timestamptz not null default now()
 );
 create index if not exists parent_link_attempts_actor_time on public.parent_link_redeem_attempts(actor_profile_id,attempted_at);
--- Migration 177. DELIBERATELY SEPARATE FROM child_login_attempts. Routing
--- credential-link failures through the child's own lockout would let a hostile
--- adult lock a real minor out of their app for 15 minutes with eight wrong
--- guesses, from a parent-facing endpoint. This flow reads is_child_login_locked
--- (respecting an existing lockout) but never writes to it, and a success here
--- never clears the child's real failure streak.
-create table if not exists public.parent_link_verify_attempts (
-  id bigserial primary key,
-  actor_profile_id uuid not null references public.profiles(id) on delete cascade,
-  child_unique_id text not null,
-  ip_hash text,
-  success boolean not null,
-  attempted_at timestamptz not null default now()
-);
-create index if not exists parent_link_verify_actor_time on public.parent_link_verify_attempts(actor_profile_id,attempted_at);
-create index if not exists parent_link_verify_ip_time on public.parent_link_verify_attempts(ip_hash,attempted_at) where ip_hash is not null;
+-- RETIRED 2026-09-17 (migration 181). The "child id + child password" way of
+-- linking an existing child is gone; the invite code above is the only route in.
+-- What lived here - parent_link_verify_attempts and its two throttle helpers -
+-- guarded a password endpoint that no longer exists. It shipped on 2026-09-16,
+-- was never used by anyone (production held 0 attempts and 0 grants), and was
+-- withdrawn on the 17th. An invite code is a one-time, expiring secret the
+-- CREATING parent issues deliberately; a child's password is a standing secret
+-- the child also knows. Of two overlapping doors, the weaker one went.

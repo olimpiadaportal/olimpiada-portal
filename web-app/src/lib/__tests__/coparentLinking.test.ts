@@ -1,16 +1,25 @@
-// THE LINK FLOW HAS TWO ROUTES IN AND NO APPROVAL STEP (owner, 2026-09-17 —
-// migration 180). A second adult either enters the CHILD's own credentials
-// (migration 177) or an invite code the creating parent generated, and either
-// way the grant is immediate.
+// THE LINK FLOW HAS EXACTLY ONE ROUTE IN, AND IT IS THE INVITE CODE (owner,
+// 2026-09-17 — migration 181). A second adult enters the child's 8-digit id plus
+// a one-time code the CREATING parent generated, and the grant is immediate.
+//
+// This file asserted "two routes in" for two days: migration 177 had added a
+// route where the adult typed the CHILD's own password, and 180 put the code
+// back beside it. The owner cut the credential route, and the reasoning is the
+// thing worth carrying forward rather than the count — an invite code is a
+// one-time, EXPIRING secret the creating parent hands to a named adult, while a
+// child's password is a STANDING secret the child also knows and cannot revoke.
+// So the assertions below are repinned, not deleted: they now say there is one
+// route, that it is the code, and that the password route has not grown back.
 //
 // The approval assertions this file used to carry are gone rather than relaxed.
 // They pinned migration 176's shape — redeem, then approve, THEN the
 // relationship insert — and 176 is a historical file that will assert the same
 // thing forever while the product does the opposite. What is worth pinning is
 // the contract the client actually depends on, and the deletions that are
-// invisible in a diff: an approve button that comes back, a key list that stops
-// covering the panel, a "pending" branch that reappears.
-import { readFileSync } from "node:fs";
+// invisible in a diff: an approve button that comes back, a password field that
+// comes back, a key list that stops covering the panel, a "pending" branch that
+// reappears.
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { messages } from "@/i18n/messages";
@@ -88,20 +97,68 @@ describe("co-parent linking security contract", () => {
   });
 });
 
-describe("the link panel offers two routes in", () => {
-  it("collects the child's credentials on one route", () => {
-    expect(panel).toContain("childLinkByCredentialsAction(childId, password)");
-    expect(panel).toContain('t("link.way.credentials")');
-    expect(panel).toContain('t("link.childPassword")');
-  });
-
-  it("collects the child's id plus an invite code on the other", () => {
+describe("the link panel offers exactly one route in, and it is the invite", () => {
+  it("collects the child's id plus an invite code, and nothing else", () => {
     expect(panel).toContain('action: "redeem"');
-    expect(panel).toContain('t("link.way.code")');
+    expect(panel).toContain('t("link.enterCode.title")');
     expect(panel).toContain('t("link.code")');
     // Both halves travel; a redeem that posted only the code would be a
     // different (and enumerable) lookup.
     expect(panel).toMatch(/action: "redeem",\s*childId: codeChildId,\s*code,/);
+  });
+
+  it("has no password route left — not the action, the field, or its keys", () => {
+    // A form, not a concept: the panel must not collect a child's password, must
+    // not call the action that verified one, and must not render the strings
+    // that labelled it. Each of these would look entirely ordinary re-added.
+    expect(panel).not.toContain("childLinkByCredentialsAction");
+    expect(panel).not.toContain('type="password"');
+    expect(panel).not.toContain("setPassword");
+    for (const gone of ["link.childPassword", "link.credentialsHint", "link.way.credentials"]) {
+      expect(panel).not.toContain(gone);
+    }
+  });
+
+  it("deleted the module the password route lived in, not just its callers", () => {
+    // Left in place it is a working credential-link function one import away
+    // from being wired up again — and its file name would go on advertising it.
+    // getChildAccessAdults survived the deletion and moved to a module named for
+    // what it actually does.
+    const gone = resolve(process.cwd(), "src/lib/auth/childCredentialLink.ts");
+    expect(existsSync(gone), "childCredentialLink.ts is back").toBe(false);
+    expect(existsSync(resolve(process.cwd(), "src/lib/auth/childAccessAdults.ts"))).toBe(true);
+    const actions = code(read("web-app/src/lib/auth/childLinkActions.ts"));
+    expect(actions).not.toContain("linkChildByCredentials");
+    expect(actions).not.toContain("childcredlink");
+    expect(actions).toContain("childAccessAdultsAction");
+  });
+
+  it("still refuses a credentials POST on the mobile BFF, with a translated key", () => {
+    // THE DEPLOY WINDOW: the web deploys on push, the mobile OTA applies on a
+    // user's next launch, so an old bundle can still post this action. It has to
+    // get a clean refusal rather than a 500 or an unhandled fall-through — and
+    // the key must be one the OLD bundle's catalog already has, since that is
+    // the dictionary rendering it.
+    // Matched against the COMMENT-STRIPPED source, so the branch can carry as
+    // much explanation as it needs without the assertion turning brittle — a
+    // regex that breaks when somebody documents the code teaches people not to.
+    const BRANCH = /if \(action === "credentials"\) \{\s*return errorResponse\("(link\.err\.[a-zA-Z]+)", 400\);/;
+    expect(code(route)).toMatch(BRANCH);
+    const key = code(route).match(BRANCH)?.[1];
+    expect(key).toBeTruthy();
+    for (const locale of locales) {
+      expect((messages[locale] as Record<string, string>)[key!], `${key} missing in ${locale}`).toBeTruthy();
+    }
+    // The key must also be HONEST. Both link.err.invalid and link.err.unavailable
+    // resolve in the old catalog, but only one of them is true: the route is
+    // retired, the parent's details were not wrong. Telling them to "check the
+    // information" invites an endless retry of something that cannot succeed.
+    expect(key, "the refusal must say the route is gone, not that the data is wrong")
+      .toBe("link.err.unavailable");
+
+    // And the verification itself is gone from the route, not merely unreachable.
+    expect(code(route)).not.toContain("linkChildByCredentials(");
+    expect(code(route)).not.toContain("signInWithPassword");
   });
 
   it("lets the creating parent issue a code and read it back once", () => {
@@ -115,7 +172,7 @@ describe("the link panel offers two routes in", () => {
 });
 
 describe("redeeming grants access immediately", () => {
-  it("reports the SAME completed-link outcome as the credential route", () => {
+  it("reports a completed link, never a submitted request", () => {
     const submit = panel.slice(panel.indexOf("function submitCode"));
     const body = submit.slice(0, submit.indexOf("function issueCode"));
     expect(body).toContain('t("link.linkedNotice")');
@@ -134,14 +191,33 @@ describe("redeeming grants access immediately", () => {
     for (const gone of ["approve", "reject", "revokeInvite"]) {
       expect(panel).not.toContain(`action: "${gone}"`);
     }
-    for (const gone of ["link.approve", "link.reject", "link.pending"]) {
+    // Two sets of retired strings, deleted from the catalog for one reason: a
+    // ready-made string is how a future round rebuilds a flow that was removed
+    // on purpose. The first three are the approval step that completed zero
+    // links; the rest are the credential route withdrawn on 2026-09-17.
+    // link.err.alreadyOwner joins them because the RPC dropped in migration 181
+    // was the only thing that could ever emit it — CHILD_LINK_ERROR_KEYS has no
+    // mapping for that code, so the surviving invite path cannot produce it.
+    // Read by index, never with toHaveProperty — these keys CONTAIN dots, which
+    // that matcher would read as a path into an object that has no nesting.
+    const retired = [
+      "link.approve",
+      "link.reject",
+      "link.pending",
+      "link.childPassword",
+      "link.credentialsHint",
+      "link.err.credentialsInvalid",
+      "link.err.alreadyOwner",
+      "link.way.credentials",
+      "link.way.credentialsBody",
+    ];
+    for (const gone of retired) {
       expect(panel).not.toContain(gone);
-      // Deleted from the catalog too. Three ready-made approval strings are how
-      // a future round rebuilds the flow that completed zero links. Read by
-      // index, never with toHaveProperty — these keys CONTAIN dots, which that
-      // matcher would read as a path into an object that has no nesting at all.
       for (const locale of locales) {
-        expect((messages[locale] as Record<string, string>)[gone]).toBeUndefined();
+        expect(
+          (messages[locale] as Record<string, string>)[gone],
+          `${gone} is back in ${locale}`,
+        ).toBeUndefined();
       }
     }
   });

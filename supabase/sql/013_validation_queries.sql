@@ -5091,54 +5091,75 @@ select '133_coparent_linking_contract' as check_name,
      'public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)')),''))>0
  then 'PASS' else 'FAIL' end as status;
 
--- 135. Credential-verified child linking is sealed, throttled and announced.
--- The four properties below are the ones whose loss would be silent. The one
--- that matters most is ledger_not_child_lockout: if this flow ever starts
--- recording into child_login_attempts, a hostile adult can lock a real minor out
--- of their own app for 15 minutes with eight deliberate wrong guesses, from a
--- parent-facing endpoint. Reading is_child_login_locked is correct; writing to
--- it is the bug. notifies_creator is the second: the approval step WAS the
--- notification, so with approval gone a link that emits nothing forms in total
--- silence on the account owner.
+-- 135. There is exactly ONE way to add an adult to a child, and it announces
+--      itself. (Migrations 176 -> 180 -> 181.)
+--
+--      THIS CHECK WAS INVERTED ON 2026-09-17 and that is the point of it. It
+--      used to assert that the credential path (child id + child password) was
+--      present, sealed and throttled. The owner withdrew that path the day
+--      after it shipped, having never been used - production held 0
+--      verification attempts and 0 grants - so the check now asserts the
+--      opposite: that it is GONE and has not crept back.
+--
+--      WHY EACH HALF MATTERS. `one_link_path` is the security property: two
+--      ways to mint a relationship means two places where the 4-adult cap, the
+--      audit row and the notification can disagree, and the credential door
+--      was the weaker of the two (a standing secret the CHILD also knows,
+--      versus a one-time expiring code the CREATING parent issues on purpose).
+--      `announces_itself` is the child-safety property: approval used to BE
+--      the notification, and with approval gone a link that emits nothing
+--      forms in total silence on the account owner.
 with facts as (
   select
-    to_regprocedure('public.link_child_by_verified_credentials(uuid,text,text)') is not null
+    -- The withdrawn path, and everything that existed only to guard it.
+    to_regprocedure('public.link_child_by_verified_credentials(uuid,text,text)') is null
+      and to_regprocedure('public.is_parent_link_verify_locked(uuid,text)') is null
+      and to_regprocedure('public.record_parent_link_verify_attempt(uuid,text,text,boolean)') is null
+      and to_regclass('public.parent_link_verify_attempts') is null
+      as credential_path_retired,
+    -- The surviving path. If this is ever false the product has NO way to
+    -- share a child at all, which is a louder failure than it looks.
+    to_regprocedure('public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)') is not null
       and to_regprocedure('public.child_access_adults(uuid,uuid)') is not null
-      and to_regprocedure('public.is_parent_link_verify_locked(uuid,text)') is not null
-      and to_regprocedure('public.record_parent_link_verify_attempt(uuid,text,text,boolean)') is not null
-      as rpcs_present,
-    not has_function_privilege('anon', to_regprocedure(
-        'public.link_child_by_verified_credentials(uuid,text,text)'), 'EXECUTE')
-      and not has_function_privilege('authenticated', to_regprocedure(
-        'public.link_child_by_verified_credentials(uuid,text,text)'), 'EXECUTE')
-      and not has_function_privilege('authenticated', to_regprocedure(
-        'public.child_access_adults(uuid,uuid)'), 'EXECUTE')
-      as service_only,
-    to_regclass('public.parent_link_verify_attempts') is not null
-      and not has_table_privilege('anon','public.parent_link_verify_attempts','SELECT')
-      and not has_table_privilege('authenticated','public.parent_link_verify_attempts','SELECT')
-      and not has_table_privilege('authenticated','public.parent_link_verify_attempts','INSERT')
-      as ledger_private,
-    position('child_login_attempts' in coalesce((select prosrc from pg_proc where oid=to_regprocedure(
-        'public.record_parent_link_verify_attempt(uuid,text,text,boolean)')),'x'))=0
-      as ledger_not_child_lockout,
+      as invite_path_intact,
+    -- Exactly one INSERT into parent_student_links in the whole function. The
+    -- deleted 'approve' branch carried a second one; a dormant duplicate is how
+    -- two paths drift apart the day somebody re-enables an action.
+    (length(coalesce((select prosrc from pg_proc where oid=to_regprocedure(
+        'public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)')),''))
+     - length(replace(coalesce((select prosrc from pg_proc where oid=to_regprocedure(
+        'public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)')),''),
+        'insert into public.parent_student_links','')))
+     / length('insert into public.parent_student_links') = 1
+      as one_link_path,
+    -- Approval is gone; the notification is what replaced it.
     position('create_notification' in coalesce((select prosrc from pg_proc where oid=to_regprocedure(
-        'public.link_child_by_verified_credentials(uuid,text,text)')),''))>0
-      as notifies_creator,
-    position('audit_logs' in coalesce((select prosrc from pg_proc where oid=to_regprocedure(
-        'public.link_child_by_verified_credentials(uuid,text,text)')),''))>0
-      as audits_the_grant,
+        'public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)')),''))>0
+      as announces_itself,
+    -- The cap must sit on the LINK. Checked only when a code is issued, it is
+    -- outrun by codes issued before the fourth adult arrived.
+    position('v_count>=4' in coalesce((select prosrc from pg_proc where oid=to_regprocedure(
+        'public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)')),''))>0
+      as adult_cap_present,
+    -- Neither surviving RPC may be reachable by a client.
+    not has_function_privilege('authenticated', to_regprocedure(
+        'public.child_access_adults(uuid,uuid)'), 'EXECUTE')
+      and not has_function_privilege('anon', to_regprocedure(
+        'public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text)'), 'EXECUTE')
+      as service_only,
+    -- Migration 177's structured names outlived the path that introduced them:
+    -- child_access_adults renders them, and registration writes them.
     (select count(*) from information_schema.columns
       where table_schema='public' and table_name='profiles'
         and column_name in ('first_name','last_name'))=2
       as structured_names
 )
-select '135_credential_link_security' as check_name,
- case when rpcs_present and service_only and ledger_private and ledger_not_child_lockout
-        and notifies_creator and audits_the_grant and structured_names
+select '135_single_link_path' as check_name,
+ case when credential_path_retired and invite_path_intact and one_link_path
+        and announces_itself and adult_cap_present and service_only and structured_names
   then 'PASS' else 'FAIL' end as status,
- rpcs_present,service_only,ledger_private,ledger_not_child_lockout,
- notifies_creator,audits_the_grant,structured_names
+ credential_path_retired,invite_path_intact,one_link_path,announces_itself,
+ adult_cap_present,service_only,structured_names
 from facts;
 
 -- 134. One sibling-rank implementation feeds all subscription mutations.

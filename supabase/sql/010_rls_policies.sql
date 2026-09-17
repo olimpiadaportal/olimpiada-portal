@@ -1203,13 +1203,14 @@ alter table public.parent_link_redeem_attempts enable row level security;
 revoke all on public.parent_link_invites,public.parent_link_redeem_attempts from public,anon,authenticated;
 grant all on public.parent_link_invites,public.parent_link_redeem_attempts to service_role;
 grant usage,select on sequence public.parent_link_redeem_attempts_id_seq to service_role;
--- Migration 177: the credential-verification ledger is sealed the same way --
--- RLS on, no policy, no client grant. A client that cannot reach the table
--- cannot mine it for which child ids exist. 013 check 3 understands this shape.
-alter table public.parent_link_verify_attempts enable row level security;
-revoke all on public.parent_link_verify_attempts from public,anon,authenticated;
-grant all on public.parent_link_verify_attempts to service_role;
-grant usage,select on sequence public.parent_link_verify_attempts_id_seq to service_role;
+-- RETIRED 2026-09-17 (migration 181). The "child id + child password" way of
+-- linking an existing child is gone; the invite code above is the only route in.
+-- What lived here - parent_link_verify_attempts and its two throttle helpers -
+-- guarded a password endpoint that no longer exists. It shipped on 2026-09-16,
+-- was never used by anyone (production held 0 attempts and 0 grants), and was
+-- withdrawn on the 17th. An invite code is a one-time, expiring secret the
+-- CREATING parent issues deliberately; a child's password is a standing secret
+-- the child also knows. Of two overlapping doors, the weaker one went.
 -- All relationship changes go through the audited service. No PostgREST path
 -- may repoint a relationship, forge approval, or bypass caps and revocation.
 revoke insert,update,delete on public.parent_student_links from anon,authenticated;

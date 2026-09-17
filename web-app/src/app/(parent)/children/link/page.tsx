@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireParent } from "@/lib/auth/session";
 import { getChildLinkState } from "@/lib/auth/childLinkCore";
-import { getChildAccessAdults, type ChildAccessAdult } from "@/lib/auth/childCredentialLink";
+import { getChildAccessAdults, type ChildAccessAdult } from "@/lib/auth/childAccessAdults";
 import { getLocale, getT } from "@/i18n/server";
 import { ChildLinkPanel } from "@/components/ChildLinkPanel";
 
@@ -11,8 +11,6 @@ import { ChildLinkPanel } from "@/components/ChildLinkPanel";
 const KEYS = [
   "link.subtitle",
   "link.childId",
-  "link.childPassword",
-  "link.credentialsHint",
   "link.code",
   "link.codeHint",
   "link.codeReady",
@@ -21,10 +19,8 @@ const KEYS = [
   "link.issue",
   "link.issueHint",
   "link.issueReplaces",
-  "link.way.credentials",
-  "link.way.credentialsBody",
-  "link.way.code",
-  "link.way.codeBody",
+  "link.enterCode.title",
+  "link.enterCode.body",
   "link.request",
   "link.linkedNotice",
   "link.success",
@@ -37,15 +33,15 @@ const KEYS = [
   "link.access.creator",
   "link.access.linked",
   "link.access.since",
-  // Every code CHILD_LINK_ERROR_KEYS can map (childLink.ts) plus the two the
-  // credential path raises. `issue` and `redeem` reach codes the credential
-  // path never did — needsId, creatorOnly, unavailable, invalidInvite — and a
-  // rejection that renders as "link.err.invalidInvite" tells the parent nothing.
+  // Every code CHILD_LINK_ERROR_KEYS can map (childLink.ts), and now ONLY
+  // those: the credential route was withdrawn on 2026-09-17 (migration 181) and
+  // its two extra keys — credentialsInvalid and alreadyOwner — went with the RPC
+  // that was the only thing able to emit them. A rejection that renders as the
+  // literal "link.err.invalidInvite" tells the parent nothing, so this list has
+  // to keep matching that map exactly; the coparentLinking test asserts it does.
   "link.err.forbidden",
   "link.err.invalid",
   "link.err.invalidInvite",
-  "link.err.credentialsInvalid",
-  "link.err.alreadyOwner",
   "link.err.alreadyLinked",
   "link.err.unavailable",
   "link.err.creatorOnly",

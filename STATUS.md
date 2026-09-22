@@ -6,78 +6,77 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
-## WAITING ON GOOGLE PLAY — two actions owed AFTER 1.16.0 publishes (2026-09-17)
+## REJECTED BY GOOGLE PLAY 2026-09-22 — resubmitting 1.16.0 once, with everything
 
-**Neither of these may be done while the Play review is open.** Submitted
-2026-09-13 (a Sunday); "In review" as of 2026-09-17. Google counts its review SLA
-"from the last submitted change to an app", and a change made during review
-pushes the submission to the BACK of the queue — so editing the Data safety form
-now would trade a four-day-old review for a fresh queue position. The draft is
-saved and loses nothing by waiting.
+**Google cited the store listing, not the binary.** The listing carried two
+screenshots and both were sign-in screens, which shows a reviewer nothing of
+what the app does. Play requires 2–8 phone screenshots and expects them to
+depict actual use. Nothing about the code, the permissions, the Data safety
+form or the Families posture was raised.
 
-### 1. Publish the Android half of the OTA
+### The rejection UNBLOCKED the two actions that were waiting
 
-The OTA for this round went out **iOS-only on purpose**:
+Everything below used to be gated on "not while the review is open", because a
+change made during review restarts Google's SLA clock. **A rejection closes the
+review**, so that gate is gone — and the next submission re-arms it, which is
+why the owner's instruction is to do all of it and submit ONCE.
 
-```
-eas update --branch production --platform ios --message "Child linking by credentials, gender question, prefill and navigation fixes"
-```
+1. **Data safety draft — submit it FIRST, before the release.** Saved in Play
+   Console → Policy → App content → Data safety → Manage: *Device or other IDs*
+   gains *Account management*, *App activity → Other actions* gains *Analytics*.
+   Both are additive purposes on types already declared. It was held back on
+   2026-09-17 only because Play warned it would cancel the in-progress release
+   review; there is no longer one to cancel. Doing it before the release, rather
+   than after, keeps the release as the last thing submitted.
 
-`--platform ios` was not cosmetic. A Play reviewer testing the in-review build
-would otherwise have pulled a JS bundle that differs from the AAB they were
-handed, on a first production review. Android clients simply find no matching
-update and keep their embedded bundle.
+2. **The pending Android OTA is now MOOT — do not run it.** STATUS used to owe
+   `eas update --branch production --platform android` for the previous round's
+   work, because the live AAB predated it. The Android binary is being REBUILT
+   from current `main`, so the new AAB embeds that round and this one. An OTA
+   that ships a bundle a reviewer was not handed is the thing we deliberately
+   avoided in September; it stays avoided by not needing it.
 
-The Android AAB predates this round's work, so it DOES need the update — just not
-during review. Once 1.16.0 publishes, run the same command with the same message:
+3. **iOS can take an OTA now, and should.** iOS 1.16.0 is approved and live
+   without this round's JS work — the child-facing purchase wording, the
+   outbound-link gating for child sessions, and the star field. No App Store
+   review is open, so there is nothing to disturb:
 
-```
-eas update --branch production --platform android --message "Child linking by credentials, gender question, prefill and navigation fixes"
-```
+   ```
+   eas update --branch production --platform ios --message "Access wording, child link gating, star field"
+   ```
 
-Same message on purpose: one round, one description, two platforms.
+   `--platform ios` again, and for the same reason as last time: an Android
+   update published while Play reviews the new AAB would hand the reviewer a
+   bundle that differs from the binary they were given.
 
-### 2. Submit the Data safety tweaks
+### The version deliberately stays 1.16.0
 
-Saved as a draft in Play Console → Policy → App content → Data safety → Manage.
-Small additive corrections the owner made on 2026-09-17 — purposes that were
-missing from types already declared:
+This looks like a violation of "every commit touching `mobile-app/` bumps the
+version" and is not. That rule assumes a build follows and nothing else needs
+the OTA channel. Here both are true at once: **Android needs a rebuild**
+(`blockedPermissions` is native config) and **iOS needs an OTA** to a binary
+already approved at 1.16.0. A bump would create a new runtime version, close
+the iOS OTA path and force a second App Store round-trip for JS-only fixes.
+Staying at 1.16.0 gets both: `appVersionSource: remote` with `autoIncrement`
+means the rebuild takes the next **versionCode** on its own, and Play keys
+releases on versionCode, not on the version name.
 
-* **Device or other IDs** — add *Account management*
-* **App activity → Other actions** — add *Analytics*
+### Review time: plan for a week, not for a fast track
 
-These reviewed independently of any release and need no new build. They were NOT
-submitted on 2026-09-17 because Play warned that doing so would cancel and
-restart the in-progress release review. That was the right call: the app is not
-publicly downloadable yet, so an under-declared PURPOSE on a type that is already
-declared misleads nobody in the meantime.
+A resubmission is not expedited. The factor that made the first review slow
+still applies and never expires: **Google applies extended review to every
+update of an app whose target audience includes children.** The new-developer
+factor also still applies. Treat a week as normal and do not read silence as a
+problem — a problem arrives as an email plus a status change.
 
-Full console checklist, if more turns out to be owed:
-`mobile-app/markdowns/STORE_LAUNCH_PACK.md` §6.1.
-
-### While waiting — what is normal and what is not
-
-Four days is inside the expected band, for a documented reason: Google applies
-**extended review to every update of an app whose target audience includes
-children**, and this is also a new developer account fresh out of the 12-tester
-closed-testing path. Both factors are named by Google. The children's-audience
-one never expires, so **build a week of buffer into every future Android
-release** — it is not a first-release effect.
-
-A problem arrives as an EMAIL plus a status change, never as prolonged silence.
-Watch for: status flipping to Rejected, Policy status showing "Issues found",
-**"Changes not yet sent for review" reappearing** (that means something was
-edited and the clock restarted), or a target-audience/Families questionnaire —
-which is not a rejection but STOPS THE CLOCK until answered.
-
-Escalate at ~day 10 (2026-09-23) via Play Console → Help, naming
-`ai.olympiq.app` and release 1.16.0. Day 14 (2026-09-27) with no email and no
-support reply is genuinely stuck rather than queued.
+**Once submitted, change nothing.** The SLA counts from the last submitted
+change to the app, so an edit to the listing, the Data safety form or the
+release notes during review sends the submission to the back of the queue. That
+includes fixing a typo.
 
 **Not a warning sign, and it will look like one:** the dashboard checklist item
 "Publish your app on Google Play" stays unticked until the release actually goes
-live. With managed publishing OFF it ticks itself; it is a consequence of the
-review being open, not an action anybody has missed.
+live. With managed publishing OFF it ticks itself.
 
 ---
 

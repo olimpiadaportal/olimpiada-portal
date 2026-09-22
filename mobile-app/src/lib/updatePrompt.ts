@@ -14,6 +14,7 @@ import { create } from "zustand";
 import * as SecureStore from "expo-secure-store";
 // Read-only use of the shared, unit-tested comparator: 1.2.0 < 1.10.0.
 import { compareSemver } from "@/lib/mobileConfig";
+import { isStoreUrl } from "@/lib/outboundLinks";
 
 export const UPDATE_PROMPT_KEY = "olympiq.updateDismissed";
 
@@ -69,10 +70,12 @@ export function shouldPromptOptionalUpdate(input: OptionalUpdateInput): boolean 
   const latest = normalizeVersion(input.latestVersion);
   if (!latest) return false;
 
-  // No destination, no prompt. The DB allows an empty store_url (and the seeded
-  // rows still carry one), and a card whose only action cannot open anything is
-  // worse than no card.
-  if (!input.storeUrl.startsWith("https://")) return false;
+  // No USABLE destination, no prompt. The DB allows an empty store_url (and the
+  // seeded rows still carry one), and a card whose only action cannot open
+  // anything is worse than no card. "Usable" is the store allowlist, not merely
+  // https: an admin-configured URL that goes anywhere else is a page this app
+  // never intended to show anyone, least of all a child.
+  if (!isStoreUrl(input.storeUrl)) return false;
 
   const dismissed = normalizeVersion(input.dismissedVersion);
   // Silenced only up to the version that was actually skipped — a NEWER

@@ -30,6 +30,7 @@ import { ErrorRetry } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { gradients, radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { isStoreUrl } from "@/lib/outboundLinks";
 import type { TriMessage } from "@/lib/mobileConfig";
 import type { Locale } from "@/i18n";
 
@@ -43,8 +44,15 @@ function pickMessage(msg: TriMessage, locale: Locale): string {
  * unhandled promise rejection and a DEAD TAP, and on the force screen that tap
  * is the only control there is: the Stack is not mounted, so there is no back
  * either. Same guard as (public)/contact.tsx; the caller surfaces the failure.
+ *
+ * The allowlist is checked HERE as well as at the call sites, because this is
+ * the single line that hands an admin-configured string to the OS. Both
+ * callers already hide their button for a URL that fails it, so reaching this
+ * return means a gap opened upstream — and a refusal is the right answer to
+ * that, not an arbitrary web page opened in front of a child.
  */
 async function openStore(url: string): Promise<boolean> {
+  if (!isStoreUrl(url)) return false;
   try {
     await Linking.openURL(url);
     return true;
@@ -217,7 +225,11 @@ export function ForceUpdateScreen({
   const { t } = useT();
   const { tokens } = useTheme();
   const body = pickMessage(message, locale);
-  const canOpenStore = storeUrl.startsWith("https://");
+  // NOT "starts with https://", which was every host on the web. store_url is
+  // admin-authored, this button is the only control on a screen the user
+  // cannot leave, and the audience includes children — so it opens one of the
+  // real app stores or it does not render.
+  const canOpenStore = isStoreUrl(storeUrl);
   // A device that cannot open the store URL used to look like a broken button.
   // Say so, and clear it on the next attempt.
   const [openFailed, setOpenFailed] = useState(false);

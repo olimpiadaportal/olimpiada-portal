@@ -35,7 +35,7 @@ tester who keeps reporting.
 
 ---
 
-## 1.16.0 — build 6; approved by Apple 2026-09-15, Play in review
+## 1.16.0 — build 6; approved by Apple 2026-09-15, REJECTED by Google Play 2026-09-22
 
 **Deliberately not filed under 1.15.0.** Build 5 of 1.15.0 was approved by Apple
 and released on 2026-09-09, so nothing below is in it — filing these lines there
@@ -1559,9 +1559,12 @@ release-note writer home early.)
   back arrow, the Android back button and the iOS edge swipe are untouched and
   still agree with each other.
 
-- `[store]` Dark mode has a slow, faint star field behind the app. It shows only
-  in the empty margins around cards and text, never through them, and the
-  system's "reduce motion" setting keeps the sky while dropping the movement.
+- `[store]` Dark mode has a drifting star field behind the app. Three layers
+  move at different speeds, so the sky has depth rather than sliding as one
+  sheet, and the movement is meant to be noticed rather than hunted for. It
+  shows only in the empty margins around cards and text, never through them,
+  and the system's "reduce motion" setting keeps the sky while dropping the
+  movement entirely.
 
 - `[web]` The same night sky is on the website in dark mode, in CSS alone — no
   component, no JavaScript, no added bundle bytes — and every selector is gated
@@ -1626,6 +1629,69 @@ release-note writer home early.)
   the frozen registration `errorKey` wire contract — which the shipped 1.16.0
   binary translates against its own baked-in catalogue — against the additive
   per-field detail keys the web form reads.
+
+### Answering the Google Play rejection of 2026-09-22
+
+Google rejected the release for its **store listing**, not its code: the
+listing carried two screenshots and both were sign-in screens, which shows a
+reviewer nothing of what the app does. That is the whole of what was cited.
+Everything else below was found while auditing the submission against the
+policies that apply to an app whose audience includes children — fixed now
+because each one is a plausible SECOND rejection, and a second rejection buys
+another extended review rather than a fast one.
+
+- `[store]` The Android build no longer declares the Play billing permission.
+  `com.android.vending.BILLING` was being merged into the manifest from a
+  dependency, so the app asked for billing while selling nothing — on Android
+  there is no purchase surface at all. A permission a reviewer can see and a
+  feature they cannot find is a question worth never being asked. This is
+  native config: it needs a new build, not an over-the-air update.
+
+- `[store]` `[web]` A child is no longer told to ask a parent to BUY anything.
+  The app itself has used access wording since 1.15.0, but the shared string
+  catalogue still held the purchase wording — so the website said it to a
+  child today, and the same words shipped inside the Android bundle, where a
+  reviewer greps for exactly them. Fixed in the catalogue in all three
+  languages, which corrects both surfaces at once: an olympiad package is now
+  "unlocked" rather than "purchased", and a child without one is told to talk
+  to their parent rather than to ask them to buy. The mobile overlay that had
+  been carrying the correct wording alone is now redundant rather than
+  load-bearing.
+
+- `[store]` A signed-in CHILD no longer has links out of the app to social
+  media, WhatsApp or maps. Those links exist on the contact and gallery
+  screens for parents and stay there for them; a child session now gets the
+  same screens with the outbound links withheld. Play's Families policy treats
+  an unfiltered path out of a child's app as the app's own problem, whatever
+  is on the other end of it.
+
+- `[store]` The Play listing no longer claims the app uses one outside
+  service. It said "the only outside service is a crash reporter" while the
+  privacy policy linked from that same listing discloses four processors — a
+  reviewer following the required link finds the contradiction in one click.
+  The replacement describes them by purpose rather than by brand and points at
+  the policy for the full list, and keeps the half parents actually care
+  about, which was always true: no advertising of any kind, and no child's
+  name, login ID or school in a fault report.
+
+- `[internal]` Five Play screenshots replace the two that were rejected: the
+  home screen, a live question, a result, the answer review and the test
+  centre. They are padded to 1080×2100 on the app's own cream background,
+  because Play requires the long side to be at most twice the short side and a
+  bare phone capture is taller than that. None carries a child's name, a
+  school or any analytics — a sixth capture was dropped for showing two
+  children's full names.
+
+- `[internal]` The three feature graphics are flattened to 24-bit PNG on the
+  brand navy. Play accepts JPEG or 24-bit PNG in that slot and rejects an
+  alpha channel; all three had one. Google did not cite this — it would have
+  failed at upload rather than at review — but it would have blocked the
+  resubmission.
+
+- `[internal]` Four suites pin what would otherwise regress in silence: the
+  blocked billing permission, the absence of purchase wording on any
+  child-facing string, the outbound links a child session must not be given,
+  and the star field's drift and parallax.
 
 ---
 

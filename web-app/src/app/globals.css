@@ -14124,11 +14124,22 @@ body[data-site-typography] .btn-ghost {
 }
 
 /* ===========================================================================
-   NIGHT SKY — a slow, low-contrast star field behind DARK mode only.
+   NIGHT SKY — a DRIFTING, low-contrast particle field behind DARK mode only.
    ---------------------------------------------------------------------------
    No component and no JavaScript: the field is two pseudo-elements on hosts
    that already exist on every page, so nothing has to be mounted in a layout
    and the effect costs zero bytes of client bundle.
+
+   WHAT CHANGED, AND WHY (2026-09-22). The first version of this block twinkled:
+   two whole-layer opacity cycles on 19s and 27s. Nothing MOVED. Owner brief:
+   the backdrop should feel alive and technological, with particles travelling
+   at a clearly noticeable, moderate speed and with visible DEPTH between
+   layers. Opacity cycling cannot express either — a dot that brightens in place
+   reads as a rendering artefact, not as a sky. So the twinkle is gone and each
+   layer now TRANSLATES at its own constant velocity and its own angle, which is
+   what parallax is. The alphas are unchanged in substance (see CONTRAST BUDGET)
+   because that half of the original tuning was correct and is what keeps body
+   text readable over the field.
 
    TWO HOSTS, because one is provably not enough:
      - `body` carries the public, auth and parent shells. In dark mode nothing
@@ -14148,23 +14159,63 @@ body[data-site-typography] .btn-ghost {
    with an inline `background: transparent`. That page is already covered by the
    body layer, and a second field there would only double the star density.
 
-   READABILITY is the whole constraint. Every card, panel, nav and footer in
-   dark mode paints an opaque --surface / --panel, so the stars are only ever
-   visible in the empty page margins — never through a form or a paragraph. The
-   dots are 1–1.6px at 0.28–0.62 alpha over a near-black ground: a texture you
-   notice when you look for it, not while you are reading.
+   TWO LAYERS AND NOT THREE. Depth needs at least two velocities; a third would
+   need a third pseudo-element, and the only host left that exists on every page
+   is <html> itself. Its ::before WOULD work — a negative-z descendant of the
+   root stacking context paints above the propagated canvas colour, exactly as
+   body's does — but the arena host has only two pseudo-elements either way, so
+   the student shell would be left one layer poorer than the rest of the site
+   and the two surfaces would stop matching. Two velocities everywhere beats
+   three in half the app. The mobile app, whose field is real Views and has no
+   such ceiling, runs three.
 
-   MOTION is two whole-layer opacity fades on deliberately mismatched periods
-   (19s and 27s, the far layer started mid-cycle), so the two star sets are
-   never at the same brightness and the sky shimmers instead of pulsing as one.
-   Opacity is compositor-driven — no layout, no repaint, nothing tied to scroll
-   — and an infinite opacity animation promotes the layer on its own, so
-   `will-change` would only buy a permanent memory cost. prefers-reduced-motion
-   freezes both layers at a mid brightness: the field stays, the motion is gone.
+   HOW THE DRIFT STAYS SEAMLESS. Each layer is a repeating tile, and each
+   animation translates by EXACTLY one tile in each axis (+1 across and -1 up
+   for the far layer, -1 and -1 for the near one). At 100% the sky is therefore
+   pixel-identical to 0%, so the loop has no seam and no reset flash — and the
+   travel ANGLE falls out of the tile's aspect ratio rather than needing a
+   parameter of its own, which is why the two tiles are deliberately neither
+   square nor the same shape. `linear` timing: a particle that eases in and out
+   is a particle that is visibly on a timer.
 
-   No existing dark token or rule is touched here; this block only ADDS a layer
-   behind them, and every selector is gated on [data-theme="dark"] so light mode
-   cannot see any of it.
+   It is `transform`, never `background-position`. Transform is compositor-only
+   — no repaint of a viewport-sized gradient layer on any frame — and an
+   infinite transform animation promotes the layer by itself, so `will-change`
+   would buy nothing but a permanent memory cost. The price is that each layer
+   must be BIGGER than the viewport by its own travel distance, and only on the
+   two sides it travels towards: a layer drifting up and to the left needs slack
+   at the bottom and on the right, and is given no slack it cannot use.
+   Fixed-position boxes are excluded from the document's scrollable overflow, so
+   none of that extra size can produce a scrollbar.
+
+   CONTRAST BUDGET. Every card, panel, nav and footer in dark mode paints an
+   opaque --surface / --panel, so the particles are only ever visible in the
+   empty page margins — never through a form or a paragraph. The dots are
+   1-1.7px at 0.05-0.15 alpha over a near-black ground, which is where the old
+   layers spent the middle of their opacity cycle; the peak is a shade lower
+   than it was (0.15 against 0.17) precisely BECAUSE they now move, and motion
+   is more salient than brightness.
+
+   ONE INK, and it is --chip-text: #d6e0ff, written out as
+   `rgba(214, 224, 255, a)` — a value already in the dark palette rather than a
+   new colour. The twinkling version put two TINTED dots in the near layer "so
+   the field is not one flat hue", at two hex values that were not tokens and
+   did not match the arena blue and gold the comment said they were. Depth here
+   comes from size, brightness and velocity, which are the three the eye
+   actually reads as distance; hue was carrying no load and was the only part of
+   the field nobody could check. The mobile field has been single-ink from the
+   start, so the two platforms now agree. `__tests__/nightSky.test.ts`
+   re-derives this rgb from the token, so they cannot drift apart in silence.
+
+   No dark token value is touched here and every selector is gated on
+   [data-theme="dark"], so light mode cannot see any of it.
+
+   Density is about a third lower than the twinkling version (one dot per
+   ~8.8k px2 against ~5.8k), for the same reason the peak alpha came down.
+
+   prefers-reduced-motion stops the drift dead and leaves the sky in place: the
+   field is part of what the surface LOOKS like, and deleting it would change
+   the design rather than only the motion.
    =========================================================================== */
 
 [data-theme="dark"] body::before,
@@ -14173,80 +14224,87 @@ body[data-site-typography] .btn-ghost {
 [data-theme="dark"] .app-shell > .arena::after {
   content: "";
   position: fixed;
-  inset: 0;
+  top: 0;
   z-index: -1;
   /* Belt and braces: a z-index:-1 layer is already behind everything, but this
      guarantees it can never swallow a click even if a later rule raises it. */
   pointer-events: none;
   background-repeat: repeat;
+  /* Constant velocity, forever. Each layer adds its own tile, vector and
+     duration below; nothing here implies a speed. */
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
 }
 
-/* Near field — small, dense, the brighter of the two. Star colour is a single
-   blue-white (a cooled --ink); only alpha and radius vary, which is what keeps
-   a tiled pattern from reading as a grid. */
+/* FAR FIELD — the deep one. The most particles, the smallest, the dimmest and
+   the slowest: ~9.8px per second, drifting up and slightly to the RIGHT. The
+   240x480 tile makes one tile of travel a 26.6deg lean off vertical. Slack goes
+   on the LEFT — it travels right, so the left edge is the one that would be
+   exposed — and at the BOTTOM. */
 [data-theme="dark"] body::before,
 [data-theme="dark"] .app-shell > .arena::before {
+  left: -240px;
+  width: calc(100% + 240px);
+  height: calc(100% + 480px);
   background-image:
-    radial-gradient(circle at 18px 42px, rgba(214, 228, 255, 0.15) 0 1px, rgba(214, 228, 255, 0) 1.8px),
-    radial-gradient(circle at 63px 189px, rgba(214, 228, 255, 0.11) 0 1px, rgba(214, 228, 255, 0) 1.8px),
-    radial-gradient(circle at 96px 27px, rgba(214, 228, 255, 0.17) 0 1.2px, rgba(214, 228, 255, 0) 2px),
-    radial-gradient(circle at 131px 118px, rgba(214, 228, 255, 0.09) 0 1px, rgba(214, 228, 255, 0) 1.8px),
-    radial-gradient(circle at 152px 265px, rgba(214, 228, 255, 0.14) 0 1px, rgba(214, 228, 255, 0) 1.8px),
-    radial-gradient(circle at 187px 74px, rgba(214, 228, 255, 0.13) 0 1.2px, rgba(214, 228, 255, 0) 2px),
-    radial-gradient(circle at 209px 224px, rgba(214, 228, 255, 0.1) 0 1px, rgba(214, 228, 255, 0) 1.8px),
-    radial-gradient(circle at 241px 152px, rgba(214, 228, 255, 0.16) 0 1px, rgba(214, 228, 255, 0) 1.8px),
-    radial-gradient(circle at 266px 46px, rgba(214, 228, 255, 0.08) 0 1px, rgba(214, 228, 255, 0) 1.8px),
-    radial-gradient(circle at 288px 291px, rgba(214, 228, 255, 0.13) 0 1.2px, rgba(214, 228, 255, 0) 2px),
-    radial-gradient(circle at 47px 303px, rgba(214, 228, 255, 0.1) 0 1px, rgba(214, 228, 255, 0) 1.8px),
-    radial-gradient(circle at 112px 236px, rgba(214, 228, 255, 0.08) 0 1px, rgba(214, 228, 255, 0) 1.8px),
-    radial-gradient(circle at 178px 161px, rgba(214, 228, 255, 0.12) 0 1px, rgba(214, 228, 255, 0) 1.8px),
-    radial-gradient(circle at 305px 133px, rgba(214, 228, 255, 0.14) 0 1px, rgba(214, 228, 255, 0) 1.8px);
-  background-size: 320px 320px;
-  animation: sky-twinkle-near 19s ease-in-out infinite;
+    radial-gradient(circle at 57px 4px, rgba(214, 224, 255, 0.06) 0 1.19px, rgba(214, 224, 255, 0) 1.99px),
+    radial-gradient(circle at 149px 80px, rgba(214, 224, 255, 0.05) 0 1.04px, rgba(214, 224, 255, 0) 1.84px),
+    radial-gradient(circle at 117px 152px, rgba(214, 224, 255, 0.06) 0 1.04px, rgba(214, 224, 255, 0) 1.84px),
+    radial-gradient(circle at 163px 203px, rgba(214, 224, 255, 0.1) 0 1.19px, rgba(214, 224, 255, 0) 1.99px),
+    radial-gradient(circle at 60px 243px, rgba(214, 224, 255, 0.06) 0 1.11px, rgba(214, 224, 255, 0) 1.91px),
+    radial-gradient(circle at 28px 311px, rgba(214, 224, 255, 0.09) 0 1.18px, rgba(214, 224, 255, 0) 1.98px),
+    radial-gradient(circle at 191px 335px, rgba(214, 224, 255, 0.06) 0 1.19px, rgba(214, 224, 255, 0) 1.99px),
+    radial-gradient(circle at 69px 394px, rgba(214, 224, 255, 0.06) 0 1.05px, rgba(214, 224, 255, 0) 1.85px),
+    radial-gradient(circle at 64px 432px, rgba(214, 224, 255, 0.09) 0 1.1px, rgba(214, 224, 255, 0) 1.9px);
+  background-size: 240px 480px;
+  animation-name: sky-drift-far;
+  animation-duration: 55s;
+  /* Start mid-cycle so the two layers are already out of phase at first paint
+     instead of both leaving their home position together. */
+  animation-delay: -21s;
 }
 
-/* Far field — sparser, marginally larger, on a tile size that shares no useful
-   factor with the near tile, so the two never line up into a visible lattice.
-   Two stars carry a faint accent tint (the arena blue and gold) purely so the
-   field is not one flat hue; at these alphas they read as depth, not as
-   coloured dots. */
+/* NEAR FIELD — the close one. Few particles, the largest, the brightest and by
+   some way the fastest: ~24px per second, drifting up and slightly to the LEFT.
+   Faster AND in the other direction is what makes the depth read as depth
+   rather than as one field at two speeds. 360x540 tile (33.7deg off vertical);
+   slack on the RIGHT and at the BOTTOM. */
 [data-theme="dark"] body::after,
 [data-theme="dark"] .app-shell > .arena::after {
+  left: 0;
+  width: calc(100% + 360px);
+  height: calc(100% + 540px);
   background-image:
-    radial-gradient(circle at 44px 96px, rgba(214, 228, 255, 0.14) 0 1.5px, rgba(214, 228, 255, 0) 2.4px),
-    radial-gradient(circle at 158px 331px, rgba(214, 228, 255, 0.11) 0 1.3px, rgba(214, 228, 255, 0) 2.2px),
-    radial-gradient(circle at 233px 58px, rgba(163, 196, 255, 0.56) 0 1.6px, rgba(163, 196, 255, 0) 2.6px),
-    radial-gradient(circle at 301px 214px, rgba(214, 228, 255, 0.1) 0 1.3px, rgba(214, 228, 255, 0) 2.2px),
-    radial-gradient(circle at 388px 428px, rgba(214, 228, 255, 0.12) 0 1.5px, rgba(214, 228, 255, 0) 2.4px),
-    radial-gradient(circle at 466px 119px, rgba(255, 224, 170, 0.38) 0 1.3px, rgba(255, 224, 170, 0) 2.2px),
-    radial-gradient(circle at 519px 362px, rgba(214, 228, 255, 0.14) 0 1.4px, rgba(214, 228, 255, 0) 2.3px),
-    radial-gradient(circle at 97px 486px, rgba(214, 228, 255, 0.09) 0 1.3px, rgba(214, 228, 255, 0) 2.2px),
-    radial-gradient(circle at 351px 512px, rgba(214, 228, 255, 0.12) 0 1.5px, rgba(214, 228, 255, 0) 2.4px),
-    radial-gradient(circle at 12px 262px, rgba(214, 228, 255, 0.08) 0 1.2px, rgba(214, 228, 255, 0) 2.1px);
-  background-size: 540px 540px;
-  animation: sky-twinkle-far 27s ease-in-out infinite;
-  /* Start the far layer mid-cycle so the two are out of phase from first paint
-     instead of converging on a shared bright moment. */
-  animation-delay: -9s;
+    radial-gradient(circle at 84px 9px, rgba(214, 224, 255, 0.1) 0 1.56px, rgba(214, 224, 255, 0) 2.36px),
+    radial-gradient(circle at 107px 97px, rgba(214, 224, 255, 0.09) 0 1.55px, rgba(214, 224, 255, 0) 2.35px),
+    radial-gradient(circle at 355px 225px, rgba(214, 224, 255, 0.15) 0 1.55px, rgba(214, 224, 255, 0) 2.35px),
+    radial-gradient(circle at 237px 289px, rgba(214, 224, 255, 0.11) 0 1.37px, rgba(214, 224, 255, 0) 2.17px),
+    radial-gradient(circle at 143px 353px, rgba(214, 224, 255, 0.1) 0 1.65px, rgba(214, 224, 255, 0) 2.45px),
+    radial-gradient(circle at 284px 416px, rgba(214, 224, 255, 0.14) 0 1.53px, rgba(214, 224, 255, 0) 2.33px),
+    radial-gradient(circle at 329px 519px, rgba(214, 224, 255, 0.09) 0 1.53px, rgba(214, 224, 255, 0) 2.33px);
+  background-size: 360px 540px;
+  animation-name: sky-drift-near;
+  animation-duration: 27s;
 }
 
-@keyframes sky-twinkle-near {
-  0%,
-  100% {
-    opacity: 0.55;
+/* One tile across and one tile up — see HOW THE DRIFT STAYS SEAMLESS above.
+   translate3d rather than translate: the z component is the hint that keeps the
+   layer on its own compositor layer on engines that still want one. */
+@keyframes sky-drift-far {
+  from {
+    transform: translate3d(0, 0, 0);
   }
-  50% {
-    opacity: 1;
+  to {
+    transform: translate3d(240px, -480px, 0);
   }
 }
 
-@keyframes sky-twinkle-far {
-  0%,
-  100% {
-    opacity: 1;
+@keyframes sky-drift-near {
+  from {
+    transform: translate3d(0, 0, 0);
   }
-  50% {
-    opacity: 0.38;
+  to {
+    transform: translate3d(-360px, -540px, 0);
   }
 }
 
@@ -14259,7 +14317,11 @@ body[data-site-typography] .btn-ghost {
    filter or contain it does NOT make the element a containing block for
    `position: fixed`, so the drawer, the sticky test topbar and the overlays
    inside the arena keep behaving as before, and their order relative to each
-   other is unchanged because they all live inside the arena.
+   other is unchanged because they all live inside the arena. It earns its place
+   twice over now that the layers are transformed: a transform on the LAYER is
+   harmless, but a transform on an ANCESTOR would make that ancestor the
+   containing block for these fixed boxes and the field would start scrolling
+   with the page.
 
    ONE accepted consequence: the arena now stacks as a single unit against the
    only thing rendered outside it, the body-portalled `.modal-overlay`
@@ -14290,10 +14352,11 @@ body[data-site-typography] .btn-ghost {
   [data-theme="dark"] body::after,
   [data-theme="dark"] .app-shell > .arena::before,
   [data-theme="dark"] .app-shell > .arena::after {
-    /* Keep the sky, remove the motion entirely — a mid brightness so neither
-       layer is frozen at its dimmest or its brightest frame. */
+    /* Keep the sky, remove the motion entirely. `transform: none` parks each
+       layer at its home position, where the slack it was given for the travel
+       simply hangs off-screen and costs nothing. */
     animation: none;
-    opacity: 0.7;
+    transform: none;
   }
 }
 

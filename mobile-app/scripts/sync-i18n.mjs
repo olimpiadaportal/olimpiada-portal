@@ -180,6 +180,18 @@ const WEB_ONLY_PREFIXES = ["terms.", "checkout.", "payres."];
 // still has every one of them, which is correct — olympiq.ai is where
 // purchasing legitimately happens.
 const DEAD_COMMERCE_KEYS = new Set([
+  // Added 2026-09-22 after the Play rejection. All three ship a purchase verb
+  // and are verified UNRENDERED on mobile (no literal reference under
+  // mobile-app/src, and the only oly* template-literal family is
+  // `oly4.status.${kind}`). They were slipping __tests__/store-copy.test.ts
+  // because that sweep bans the exact CTA /əldə et/ (not the inflected "əldə
+  // edin"), /купит/ (not "Куплено") and the English word "buy" (not "Owned") -
+  // and it deliberately cannot ban the bare Azerbaijani "al" catalogue-wide.
+  // Unrendered is not the same as absent: a reviewer greps the AAB, and
+  // docs/STORE_PAYMENTS_COMPLIANCE.md tells our own submitter to do the same.
+  "oly3.owned",
+  "polyPub.how2",
+  "poly.err.alreadyOwned",
   // Olympiad purchase flow (parent tab). The tab kept its catalogue and
   // details modal; the buy button, the confirm dialog and the price rows went
   // with the 2026-08-18 purchase-silent pass and left their strings behind.

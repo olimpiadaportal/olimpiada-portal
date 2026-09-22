@@ -167,6 +167,19 @@ describe("shouldPromptOptionalUpdate", () => {
     expect(shouldPromptOptionalUpdate({ ...READY, storeUrl: "market://details" })).toBe(false);
   });
 
+  it("stays silent for an https URL that is not a STORE (2026-09-22)", () => {
+    // store_url is admin-authored, and the old test was "starts with https://".
+    // That accepted the whole web — including a page of AZN prices, which is
+    // the Play Payments breach this purchase-silent binary exists to avoid.
+    // The full host allowlist is in __tests__/child-outbound-links.test.ts.
+    expect(shouldPromptOptionalUpdate({ ...READY, storeUrl: "https://olympiq.ai/pricing" })).toBe(
+      false,
+    );
+    expect(
+      shouldPromptOptionalUpdate({ ...READY, storeUrl: "https://play.google.com.evil.test/x" }),
+    ).toBe(false);
+  });
+
   it("stays silent on a missing or short latest_version", () => {
     const bad = ["", "0", "latest", "  "];
     for (const latestVersion of bad) {

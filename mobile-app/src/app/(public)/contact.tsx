@@ -12,6 +12,15 @@
 // addresses: the platform has ONE reports section (question reports, filed from
 // inside an attempt and triaged in the admin panel) and no report sends mail.
 // These mailto/tel rows are now the only inbound channel on this screen.
+//
+// ROLE GATE (2026-09-22, Google Play Families): this screen is reachable from
+// the account sheet in a CHILD session, and the socials, the WhatsApp row and
+// the maps hand-off all lead OUT of the app to content nobody here moderates.
+// The declared target audience includes children, so those three surfaces now
+// render for a parent (an adult, with real support channels to keep) or a
+// signed-out visitor only — the same role gate /pricing already carries, via
+// outboundLinksAllowed(). The email and phone rows stay for everyone: they
+// reach this operator's own inboxes, not a network of strangers.
 import React, { useState } from "react";
 import { Linking, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { Stack } from "expo-router";
@@ -23,8 +32,10 @@ import { CmsProse } from "@/components/CmsProse";
 import { ListRow } from "@/components/ListRow";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { ContactMap, buildDirectionsUrl, resolveMapQuery } from "@/features/public/ContactMap";
+import { useAuthStore } from "@/features/auth/authStore";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
+import { outboundLinksAllowed } from "@/lib/outboundLinks";
 import { useContentOverrides, useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useT } from "@/i18n/useT";
@@ -60,6 +71,12 @@ export default function Contact() {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
   const config = useMobileConfig();
+  // The role gate. Read from the session store, exactly like the `(public)`
+  // layout's pricing bounce — never from a prop or a config flag, because the
+  // thing being gated is who is holding the phone.
+  const authStatus = useAuthStore((s) => s.status);
+  const role = useAuthStore((s) => s.role);
+  const canLeaveApp = outboundLinksAllowed(authStatus, role);
   const [mapsAppFailed, setMapsAppFailed] = useState(false);
   // A device with no mail/phone/WhatsApp handler rejects the scheme, which used
   // to look like a dead row. Surface it once, and clear it on the next attempt.
@@ -92,12 +109,19 @@ export default function Contact() {
   // applies the web precedence and guarantees a non-empty target.
   const mapQuery = config.data?.contact.mapQuery ?? "";
   const mapsTarget = resolveMapQuery(mapQuery, address);
-  const socials = SOCIALS.map((s) => ({
-    ...s,
-    url: config.data?.social[s.key] ?? "",
-  })).filter((s) => s.url.length > 0 && isHttpUrl(s.url));
+  // Built empty for a child session, so there is nothing to render and nothing
+  // to press even if a future edit forgets the surrounding condition.
+  const socials = canLeaveApp
+    ? SOCIALS.map((s) => ({
+        ...s,
+        url: config.data?.social[s.key] ?? "",
+      })).filter((s) => s.url.length > 0 && isHttpUrl(s.url))
+    : [];
 
   const openDirections = async () => {
+    // Defence in depth: the map card and the address row are already hidden
+    // from a child session, and this is the function both of them call.
+    if (!canLeaveApp) return;
     const url = buildDirectionsUrl(mapsTarget);
     // Same posture as the social links: only http(s) is ever handed to the OS.
     const opened = isHttpUrl(url) && (await openExternal(url));
@@ -180,7 +204,9 @@ export default function Contact() {
                   onPress={() => void openRow(`tel:${phone.replace(/\s+/g, "")}`)}
                 />
               ) : null}
-              {whatsapp && whatsappDigits ? (
+              {/* WhatsApp opens a third-party chat app — a parent support
+                  channel, not a child one. */}
+              {canLeaveApp && whatsapp && whatsappDigits ? (
                 <ListRow
                   icon={<MessageCircle size={20} color={tokens.accent} strokeWidth={2} />}
                   title={t("contact.whatsappLabel")}
@@ -189,12 +215,19 @@ export default function Contact() {
                 />
               ) : null}
               {address ? (
+                // The address itself is information and stays on screen for
+                // everyone; for a child session it is plain text, because
+                // pressing it hands the device to the maps app. Without
+                // onPress the row drops its chevron and its ripple, so it
+                // reads as a fact rather than a dead button.
                 <ListRow
                   icon={<MapPin size={20} color={tokens.accent} strokeWidth={2} />}
                   title={t("contact.address")}
                   subtitle={address}
-                  accessibilityLabel={t("mob.contact.directions")}
-                  onPress={() => void openDirections()}
+                  accessibilityLabel={
+                    canLeaveApp ? t("mob.contact.directions") : undefined
+                  }
+                  onPress={canLeaveApp ? () => void openDirections() : undefined}
                 />
               ) : null}
               {linkFailed ? (
@@ -205,12 +238,17 @@ export default function Contact() {
               <AppText variant="muted">{t("contact.shortNote")}</AppText>
             </Card>
 
-            <View style={{ gap: spacing.sm }}>
-              <ContactMap query={mapsTarget} onOpenDirections={() => void openDirections()} />
-              {mapsAppFailed ? (
-                <AppText variant="muted">{t("mob.contact.mapUnavailable")}</AppText>
-              ) : null}
-            </View>
+            {/* The map is a WebView onto maps.google.com with a directions
+                button under it — the single biggest way out of the app on this
+                screen, so it does not mount at all in a child session. */}
+            {canLeaveApp ? (
+              <View style={{ gap: spacing.sm }}>
+                <ContactMap query={mapsTarget} onOpenDirections={() => void openDirections()} />
+                {mapsAppFailed ? (
+                  <AppText variant="muted">{t("mob.contact.mapUnavailable")}</AppText>
+                ) : null}
+              </View>
+            ) : null}
           </>
         )}
 

@@ -16,8 +16,13 @@
   1) App Store siyahısı artıq iPad ekran görüntüləri tələb
      edir (supportsTablet açıldı) və App Review iPad-də
      yoxlayacaq.
-  2) Hər iki mağazanın data-safety / App Privacy cavabları
-     uşağın könüllü "Cinsi" sahəsini göstərməlidir.
+  2) Uşağın "Cinsi" sualı artıq MƏCBURİ cavabdır — amma
+     "Demək istəmirəm" seçimi var, yəni cavab məcburidir,
+     açıqlama yox. HEÇ BİR MAĞAZADA DƏYİŞİKLİK TƏLƏB
+     OLUNMUR: Play-də bu tip (Personal info → Other info)
+     uşağın sinfi və məktəbi ilə birlikdə onsuz da
+     "məcburi" elan edilib, Apple isə könüllü/məcburi
+     sualını ümumiyyətlə vermir.
      İnventar: mobile-app/markdowns/STORE_LAUNCH_PACK.md §2.
 
 
@@ -43,37 +48,37 @@ SİMVOL SAYI NECƏ HESABLANIR (CRLF-safe)
 
 
 -----------------------------------------------------------
-RELEASE NOTES — AZƏRBAYCAN  (az-AZ)     464 simvol (CRLF)
+RELEASE NOTES — AZƏRBAYCAN  (az-AZ)     455 simvol (CRLF)
 -----------------------------------------------------------
 
 Bu buraxılışda:
 
 • İlk açılışda dili seçin; qeydiyyat və tətbiq həmin dildə davam edir.
-• İkinci valideyn eyni uşağı birdəfəlik kodla hesabına qoşa, onun nəticələrini və mövcud girişini görə bilər. Uşağı yaradan valideyn sorğunu təsdiqləyir və girişi istənilən vaxt ləğv edə bilir; təkrar ödəniş tələb olunmur.
+• İkinci valideyn eyni uşağı birdəfəlik kodla hesabına qoşa, onun nəticələrini və mövcud girişini görə bilər. Kodu uşağı yaradan valideyn verir və girişi istənilən vaxt ləğv edə bilir; təkrar ödəniş tələb olunmur.
 • İkinci uşaq üçün ortaq ailə məlumatları əvvəlcədən doldurulur.
 • Telefon sahəsi, avtomatik doldurma, kiçik ekranlar və tünd rejim yaxşılaşdırıldı.
 
 
 -----------------------------------------------------------
-RELEASE NOTES — ENGLISH  (en-US)        461 characters (CRLF)
+RELEASE NOTES — ENGLISH  (en-US)        467 characters (CRLF)
 -----------------------------------------------------------
 
 In this release:
 
 • Choose your language on first launch; registration and the app continue in it.
-• A second parent can link the same child with a one-time code and see their results and existing access. The parent who created the child approves the request and can revoke it at any time; no second payment is needed.
+• A second parent can link the same child with a one-time code and see their results and existing access. The code is issued by the parent who created the child, who can revoke access at any time; no second payment is needed.
 • Shared family details are prefilled for another child.
 • Phone input, native autofill, small-screen layouts and dark mode are improved.
 
 
 -----------------------------------------------------------
-RELEASE NOTES — РУССКИЙ  (ru-RU)        450 символов (CRLF)
+RELEASE NOTES — РУССКИЙ  (ru-RU)        460 символов (CRLF)
 -----------------------------------------------------------
 
 В этом выпуске:
 
 • При первом запуске выберите язык; регистрация и приложение продолжат работу на нём.
-• Второй родитель может привязать того же ребёнка одноразовым кодом и видеть его результаты и действующий доступ. Создавший профиль родитель подтверждает запрос и может отозвать доступ; повторная оплата не нужна.
+• Второй родитель может привязать того же ребёнка одноразовым кодом и видеть его результаты и действующий доступ. Код выдаёт создавший профиль родитель, он же может отозвать доступ в любое время; повторная оплата не нужна.
 • Общие семейные данные заполняются для следующего ребёнка.
 • Улучшены ввод телефона, автозаполнение, малые экраны и тёмная тема.
 
@@ -102,7 +107,7 @@ hesabının bağlanmasıdır.
 
   Limit: hər dil üçün 500 simvol.
   Yuxarıdakı üç mətn CRLF sətir sonu ilə də bu limitin
-  içindədir: 464 / 461 / 450. Bax "SİMVOL SAYI NECƏ
+  içindədir: 455 / 467 / 460. Bax "SİMVOL SAYI NECƏ
   HESABLANIR" bölməsi.
 
 
@@ -114,7 +119,7 @@ Aşağıdakılar da düzəldilib, sadəcə 500 simvol limitinə
 görə mağaza qeydlərinə salınmayıb (tam siyahı: CHANGELOG.md
 → "Next build"):
 
-• Uşaq əlavə edilərkən könüllü "Cinsi" cavabı yadda
+• Uşaq əlavə edilərkən "Cinsi" cavabı yadda
   saxlanılmayıbsa, valideynə bu barədə deyilir — uşaq
   yenə də yaradılır, cavabı sonra redaktə etməklə vermək
   olar. (Nadir xəta yolu; istifadəçilərin böyük hissəsi
@@ -136,7 +141,7 @@ görə mağaza qeydlərinə salınmayıb (tam siyahı: CHANGELOG.md
   sahəsi isə siyahıya salındı.
 
   Qeyd: "Cinsi" sualı mağaza qeydlərində REKLAM kimi deyil,
-  sadə bildiriş kimi yazılıb — bu, uşaq haqqında könüllü
+  sadə bildiriş kimi yazılıb — bu, uşaq haqqında sadə
   sualdır, üstünlük deyil. Sual artıq toplandığı üçün onu
   qeydlərdən tamam çıxarmaq düzgün olmazdı: valideyn yeni
   sahəni ilk dəfə formada yox, buraxılış qeydində görməlidir.

@@ -1,8 +1,16 @@
 // Dev design-system gallery (M1 acceptance: every primitive renders in all
-// themes × locales without overflow). Reachable from Welcome/onboarding in
-// __DEV__ only. Redesign: showcases the new primitives (Avatar, ListRow,
-// StepDots, ProgressRing, SectionHeader, AppTabBar items, Card variants,
-// gradient Button, shadow levels) alongside the originals.
+// themes × locales without overflow). Showcases the redesign primitives
+// (Avatar, ListRow, StepDots, ProgressRing, SectionHeader, AppTabBar items,
+// Card variants, gradient Button, shadow levels) alongside the originals.
+//
+// NOT A PRODUCT SURFACE, AND NO LONGER REACHABLE AS ONE (2026-09-22). The link
+// into it was removed from the onboarding in Round 23, but a link is not a
+// route: expo-router registers EVERY file under src/app, so olympiq://gallery
+// still resolved in a release build and dropped whoever opened it — a child
+// included — into a developer screen with no product meaning. __DEV__ is the
+// gate because it is the fact the screen already claimed about itself: this is
+// a development tool. In a release bundle the route redirects to the session's
+// own home and renders nothing else.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { ArrowRight, Bell, Mail, Settings, UserRound } from "lucide-react-native";
@@ -33,8 +41,37 @@ import {
 } from "@/theme/tokens";
 import { useLocaleStore, type Locale } from "@/i18n";
 import { useT } from "@/i18n/useT";
+import { useAuthStore } from "@/features/auth/authStore";
+import { GroupRedirect } from "@/lib/TabRedirect";
 
-export default function Gallery() {
+/**
+ * The ROUTE. In a release bundle it is a redirect and nothing else, so a deep
+ * link to /gallery lands the user on their own home instead of in here.
+ *
+ * GroupRedirect, not expo-router's <Redirect>: these targets are root GROUPS,
+ * and a plain replace onto a group that is already in the root stack mints a
+ * second copy of it (lib/navigation.ts). The fallbacks mirror the ones in
+ * (public)/_layout.tsx so the two guards cannot drift apart.
+ *
+ * The two hooks above the branch run on every render, in the same order, in
+ * both bundles; <Gallery/> owns the rest and is only ever mounted in dev.
+ */
+export default function GalleryRoute() {
+  const status = useAuthStore((s) => s.status);
+  const role = useAuthStore((s) => s.role);
+  if (!__DEV__) {
+    const home =
+      status === "signedIn" && role === "parent"
+        ? "/(parent)/(tabs)/home"
+        : status === "signedIn" && role === "student"
+          ? "/(student)/(tabs)/home"
+          : "/(public)/login";
+    return <GroupRedirect href={home} />;
+  }
+  return <Gallery />;
+}
+
+function Gallery() {
   const theme = useTheme();
   const { tokens } = theme;
   const { t } = useT();

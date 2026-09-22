@@ -44,6 +44,9 @@
       "permissions": [
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
+      ],
+      "blockedPermissions": [
+        "com.android.vending.BILLING"
       ]
     },
     "plugins": [

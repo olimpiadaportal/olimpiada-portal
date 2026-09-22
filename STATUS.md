@@ -6,7 +6,136 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
-## REJECTED BY GOOGLE PLAY 2026-09-22 — resubmitting 1.16.0 once, with everything
+## RESUBMITTED TO GOOGLE PLAY 2026-09-22 — in review, 7 changes in one batch
+
+**SUBMITTED 2026-09-22.** Publishing overview shows all seven under *Changes in
+review*: the new Production release `1.16.0 — Planşet dəstəyi və düzəlişlər`
+(versionCode 11, same versionName), five `az-AZ` store-listing changes (short
+description, full description, phone screenshots, 7-inch tablet screenshots,
+feature graphic) and the Data safety questionnaire. Managed publishing is OFF,
+so approval publishes it automatically. The iOS OTA went out the same day.
+
+### What the rejection actually said, and the half of it we nearly missed
+
+The cited policy was **Metadata → Unclear Visuals**, not a screenshot-count
+rule: *"your app's screenshots or promotional images are blank, generic, or
+otherwise fail to clearly convey the expected functionality or user
+experience."* The second listed issue, *"Not adhering to Google Play Developer
+Programme Policies"*, is the umbrella entry — no separate cause, no separate fix.
+
+Google's evidence panel showed **four** dark near-identical sign-in screens under
+`Store listing screenshots (az-AZ)`. Those four were **two phone screenshots plus
+two 7-inch TABLET screenshots** — the same two images uploaded into both slots
+during closed testing. Replacing the phone slot alone would have left half the
+rejected content in place, and the phone slot is the only one anybody thinks to
+look at. **The owner caught this on the listing review page, not us.** Whenever a
+screenshot finding is answered, enumerate EVERY device slot — phone, 7-inch,
+10-inch, Chromebook, XR — before believing it is fixed.
+
+### Four console facts established by doing it, worth not re-deriving
+
+1. **Tablet screenshots are NOT mandatory to publish.** The 7-inch slot was
+   emptied and the listing saved and submitted with no complaint; the 10-inch slot
+   was already empty. The belief that they were required dates from closed testing
+   and is what put the two dark images there. Empty beats padding a slot with
+   unrelated art — the cost is tablet-surface visibility, not publication.
+2. **Screenshots must be 24-bit PNG with no alpha.** All five were written as
+   colour type 6 (RGBA) and would have failed at UPLOAD. The feature graphics had
+   already been flattened; the screenshots were missed. Check PNG colour type on
+   every store asset, not just the ones that were flattened last time.
+3. **There is now an AI asset declaration** on the store-listing page: *Don't
+   label assets* vs *Label assets as created or edited using AI*. It covers images
+   and video, not description text. Answered **Don't label assets** — the
+   screenshots are real captures padded by a .NET script, and the icon and feature
+   graphic came from a designer.
+4. **`az-AZ` is the ONLY listing language.** There is no `en-US` or `ru-RU` store
+   listing, which is why Google's finding named `az-AZ` and why nothing else
+   needed checking. Adding languages is a listing update that needs no release —
+   deliberately deferred until after approval rather than expanding the surface of
+   a submission that had just been rejected for metadata.
+
+### Deviations from `docs/STORE_LISTING_COPY.md` §6.4, shipped knowingly
+
+The brief called for **8 captioned frames at 1080×1920 from a seeded demo
+family**. What shipped: **5 uncaptioned frames at 1080×2100 from a test account**.
+1080×2100 is ratio 1.94, inside Play's "longest side ≤ 2× shortest" rule, and 5
+is above Google's recommended 4 — those two are fine. The real deviations are the
+brief's own hard bans: `home.png` and `testScreen.png` show a **zero streak**,
+`home.png` shows a **dash for monthly rank**, and `result.png` shows **4%, 1
+correct, 23 skipped**. Each is an empty-state signal on the exact axis the
+rejection named.
+
+Shipped anyway, and the reasoning should survive: five distinct light-theme
+product screens replacing four identical dark auth screens answers the finding
+decisively, and re-capturing needed a seeded account with a streak and good
+scores that did not exist. Retouching the zeros was refused outright — fabricated
+metadata is a worse violation than the one being fixed. **If this is rejected
+again on visuals, the seeded re-capture is the answer, not another argument.**
+
+### If it is approved
+
+Add the `en-US` and `ru-RU` store listings (copy is ready in
+`docs/STORE_LISTING_COPY.md` §3.2 and §3.3, feature graphics already flattened).
+Then replace the tablet slots with genuine large-screen captures from Android
+Studio AVDs, per §6.4.7. Neither needs a new release.
+
+
+**Doing the tablet captures correctly — four traps, all confirmed against
+Google's own pages after the submission went in.**
+
+1. **NEVER reuse `mobile-app/store-assets/Apple-ipad-shots/`.** They are
+   2064×2752, ratio 1.33, which is dimensionally LEGAL for a Play tablet slot —
+   and that is exactly what makes them dangerous. They show iOS chrome, and the
+   iOS binary carries the **StoreKit purchase rail that the Android binary
+   deliberately does not have**. Putting them on the Play listing would advertise
+   a purchase surface that does not exist on Android, against a listing that is
+   required to be purchase-silent. This is the worst available mistake here and
+   it looks like a shortcut.
+2. **Capture from the REAL binary, not Expo Go.** Install with
+   `eas build:run -p android --latest`. Expo Go does not carry `expo-iap` or
+   `@sentry/react-native`, and it does not run the local config plugin
+   `withAndroidPortraitCompatibility.js` — the only thing holding the portrait
+   lock on Android 16 large screens. An Expo Go capture shows behaviour the
+   shipped app does not have, which is the same accuracy defect we were rejected
+   for.
+3. **Never pad or letterbox a phone capture into a tablet frame.** Google's
+   metadata policy wants screenshots that "reflect your app's actual
+   experience"; a phone shot with bars welded to its sides is the textbook
+   "blank, generic" filler that *Unclear Visuals* punishes. Emptying a slot
+   removes a violation — filling it with filler creates a new one.
+4. **Expect a stretched phone layout, and expect it to be worth less than it
+   looks.** The app is portrait-locked, so a tablet AVD capture is accurate but
+   not flattering, and Google's large-screen ranking explicitly rewards apps that
+   "resize well, aren't letterboxed". Genuine captures are still the right
+   answer; just do not expect them to move ranking much.
+
+   AVDs that produce legal ratios natively: **Pixel Tablet** (1600×2560) or
+   **Medium Tablet** for the 10-inch slot, and a **custom 1200×1920 / 320dpi**
+   profile for the 7-inch — do not hunt for the legacy "Nexus 7" definition,
+   which is no longer reliably present in Android Studio.
+
+**Source folder warning.** `mobile-app/store-assets/Android-screenshots/*.png`
+are the RAW captures at **1080×2245, ratio 2.08 — which BREAKS Play's "longest
+side ≤ 2× shortest" rule and cannot be uploaded.** Only the padded copies in
+`play-ready/` (1080×2100, ratio 1.94, 24-bit, no alpha) are uploadable. Keep both
+folders, but never upload from the parent.
+
+**The AI asset declaration, for next time.** Answered *Don't label assets*, and
+that was right: a deterministic crop-and-flatten script is not an AI edit, and
+the icon and feature graphic came from a designer. The reason not to tick it
+"just in case" is documented — *"Declared assets will be AI-labeled on the
+Google Play Store and other surfaces where used"* — so a defensive tick stamps a
+visible AI badge on screenshots whose whole purpose is to prove they are genuine
+captures. It is per-asset, reversible from the Asset library, and covers images
+and video only, never the description text.
+
+**One more reason not to gamble on a resubmission:** Google's own wording is
+*"Multiple rejections may lead to your app getting suspended."* Rejections
+accumulate against the app, so the cheap move is always the extra day, never the
+extra attempt.
+---
+
+## The plan and the reasoning behind it (written before submission)
 
 **Google cited the store listing, not the binary.** The listing carried two
 screenshots and both were sign-in screens, which shows a reviewer nothing of

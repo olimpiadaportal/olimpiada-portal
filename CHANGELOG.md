@@ -1688,6 +1688,19 @@ another extended review rather than a fast one.
   failed at upload rather than at review — but it would have blocked the
   resubmission.
 
+- `[internal]` The two 7-inch TABLET screenshots were the other half of the
+  rejection and nobody had looked at them. Google's evidence showed four dark
+  sign-in screens; those were two phone screenshots plus the same two images
+  re-used in the tablet slot during closed testing. The phone slot was replaced
+  and the tablet slot emptied — verified in the console that tablet screenshots
+  are not required to publish, so an empty slot costs tablet-surface visibility
+  and nothing else. Genuine large-screen captures are owed before public launch.
+
+- `[internal]` All five phone screenshots were written as PNG colour type 6
+  (RGBA). Play requires JPEG or 24-bit PNG with no alpha, so they would have
+  failed at upload rather than at review. Flattened to colour type 2; the feature
+  graphics had already been done and the screenshots were missed in that pass.
+
 - `[internal]` Four suites pin what would otherwise regress in silence: the
   blocked billing permission, the absence of purchase wording on any
   child-facing string, the outbound links a child session must not be given,

@@ -28,6 +28,7 @@
 // behaviour a render test would catch — a hidden field renders perfectly.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { APP_DARK, ARENA_DARK } from "@/theme/tokens";
 
 const ROOT = resolve(__dirname, "..");
 
@@ -129,6 +130,32 @@ describe("the shared bodies keep mounting the star field", () => {
     const end = text.indexOf("} as const;", start);
     expect(end).toBeGreaterThan(start);
     expect(text.slice(start, end)).not.toMatch(/backgroundColor/);
+  });
+
+  // THE FIELD HAS A SECOND OFF SWITCH, AND IT IS NOT IN THIS FILE'S REACH AS
+  // TEXT. `StarField` returns null unless `theme === "dark"` AND
+  // `INKS_AGREE`, where INKS_AGREE is `APP_DARK.text === ARENA_DARK.ink` — the
+  // component derives ONE particle ink and refuses to paint if that ink is
+  // only correct on one of the two dark surfaces it is mounted on.
+  //
+  // That is the right behaviour and it should stay. What it must not do is
+  // fail SILENTLY: the two values live in a palette file that has been swept
+  // twice (2026-09-10's neutralisation, and the pillBg correction after it),
+  // and either sweep touching one ink and not the other switches the backdrop
+  // off on EVERY screen at once, in a file that does not mention the star
+  // field. The symptom is "I see no stars anywhere", which is
+  // indistinguishable from the parameters being too dim to perceive — so it
+  // gets checked here, against the real modules, rather than being reasoned
+  // about after the fact.
+  //
+  // If this fails: do not "fix" it by deleting the gate. Either re-match the
+  // two inks, or give the field a deliberate ink of its own.
+  it("keeps the two dark inks the field is gated on in agreement", () => {
+    expect(APP_DARK.text).toBe(ARENA_DARK.ink);
+    // Pinned literally as well, so a coordinated change to BOTH inks — which
+    // keeps them equal and passes the line above — still surfaces here as the
+    // decision it is: the particle colour is this value.
+    expect(APP_DARK.text).toBe("#f3f3f1");
   });
 
   // The field is texture, not content. If it ever starts taking touches it

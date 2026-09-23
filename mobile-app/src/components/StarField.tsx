@@ -12,11 +12,18 @@
 // (about 26, 16 and 9.5 points per second), at its own slight angle, and that
 // spread of velocities IS the parallax — a near layer of few large particles
 // crossing nearly three times faster than a deep layer of many small ones.
-// Brightness is now a fixed per-particle value instead of an animated one, and
-// the values were chosen so the AVERAGE brightness of each layer matches what
-// the breathing version spent most of its time at. Motion is more salient than
-// brightness; making it move and leaving it as bright would have been two
-// changes, and only one was asked for.
+// Brightness is a fixed per-particle value instead of an animated one, and the
+// values were RE-DERIVED on 2026-09-22, after this drift shipped and the owner
+// could not see it AT ALL — not on an iPhone, not on a 13" iPad. Nothing was
+// wrong with the machinery. The numbers were simply under the threshold of
+// perception, because the first pass took the brief's "low-opacity, sparse"
+// half literally and kept the average brightness of the twinkle it replaced,
+// while the same brief also asked for motion that is "clearly noticeable" and
+// "moderate and VISIBLE". Those halves are not independent: you cannot perceive
+// the movement of a particle you cannot perceive. So the field is now brighter
+// and denser, the arithmetic for how much is in CONTRAST BUDGET below, and the
+// dot SIZES did not move at all — the brief says "tiny" twice, and size is the
+// cheap lever that would have bought visibility by turning motes into dots.
 //
 // WHERE IT IS MOUNTED, AND WHY NOT ONCE AT THE ROOT. The obvious home for an
 // app-wide backdrop is RootGate — one instance for the whole tree. It does not
@@ -61,19 +68,53 @@
 // to show. The sideways sway obeys the same rule — a whole number of sine
 // cycles per loop, so it is back where it started at the moment the loop wraps.
 //
-// COST. `ceil(height / 900) + 1` copies, so a phone renders TWO copies of 25
-// particles — 50 leaf Views with a background colour and no shadow, under three
-// animated parents. That is the same order as the version this replaces (21
-// Views) and deliberately no more ambitious: the owner tests on low-end Android
-// hardware, and a background is the last thing in the app that should be
-// allowed to cost a frame.
+// COST. `ceil(height / 900) + 1` copies, so a phone renders TWO copies of 44
+// particles — 88 leaf Views with a background colour, no shadow and no clipping,
+// under three animated parents; a 13" iPad stacks three copies, so 132. That is
+// up from 50, and it is still cheap in the way that decides whether a backdrop
+// costs a frame: the PER-FRAME work does not scale with the count at all.
+// Reanimated writes THREE transforms on the UI thread however many children sit
+// under them, the particles never re-render, never invalidate and never animate
+// individually, and what the extra 38 buy is 38 more flat rounded rects in the
+// GPU's draw list — fewer nodes than one row of a real list screen. The owner
+// tests on low-end Android hardware, so this is comfortably inside the budget,
+// and it is also where the count stops.
 //
-// CONTRAST BUDGET. The brightest particle is the neutral ink at alpha 0.125
-// over #100e0e, which composites to about #2c2b2b — dimmer than the `border`
-// token (#323230) that already draws hairlines on that ground. Card surfaces
-// are opaque, so particles only ever show in the gutters BETWEEN content; no
-// text is ever read against one, and nothing here moves a contrast ratio.
-import React, { useEffect, useState } from "react";
+// CONTRAST BUDGET, AND THE PERCEPTIBILITY FLOOR UNDER IT (re-derived
+// 2026-09-22). All three mount sites paint `bg`, and APP_DARK.bg and
+// ARENA_DARK.bg are the same #100e0e, so the sum is the same everywhere: the
+// ink is #f3f3f1, and a particle at alpha a composites to about 16 + 227a per
+// channel. Two anchors bound the band the alphas live in.
+//
+//   FLOOR — what actually renders. The first drift's dimmest particle was alpha
+//   0.035 -> #181616: eight code values above the ground, relative luminance
+//   0.0083 against the ground's 0.0046. Doubling a luminance that small buys
+//   nothing, and the WCAG ratio says why — its +0.05 term is the ambient light
+//   the glass reflects back at you, and against that flare the step is 1.07:1.
+//   A panel can encode eight code values; an eye in a lit room cannot resolve
+//   them on a target four pixels across. The dimmest particle is now alpha 0.09
+//   -> #242322, which is 1.23:1 against the ground and 46% of the way from the
+//   background to a hairline in luminance — where a sub-2pt dot starts to
+//   read. That floor is the effect's whole premise, not a nicety.
+//
+//   CEILING — what stays subordinate. The brightest is alpha 0.155 -> #333131,
+//   1.49:1 against the ground where the `border` token (#323230) is 1.50:1 —
+//   the same hairline, to within a code value. That is deliberate: `border` is
+//   this app's own statement of "visible on this ground, and still not
+//   something you look at". Matching it is the CONSERVATIVE end of the band
+//   rather than the aggressive one, because a dot is far quieter than a line at
+//   equal luminance — a 2.4pt particle covers ~4.5pt^2 where one card edge
+//   covers ~340, so it delivers about 1% of the light. All 44 particles in a
+//   tile together ink 112pt^2 of a 390x900 tile: 0.03% of the surface.
+//
+// Card surfaces are opaque, so a particle never shows THROUGH a card — but it
+// is not true that text is never read against one, and an earlier version of
+// this comment claimed exactly that while the ceiling leaned on it. Headings,
+// section eyebrows and empty-state prose sit directly on `bg`, so a particle
+// does pass behind them. The ceiling holds on the ink-per-area argument above
+// and on that alone: at 2.40:1 a 2.4pt dot delivers roughly 1% of the light of
+// a glyph stroke crossing the same area, and it is never stationary under one.
+import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View, type LayoutChangeEvent, type DimensionValue } from "react-native";
 import Animated, {
   Easing,
@@ -138,7 +179,9 @@ type Layer = {
    *  mobile-app/CLAUDE.md's "no hardcoded sizes" rule exempts. */
   size: number;
   /** Per-particle alpha is drawn from this range, so no two dots in a layer are
-   *  quite the same brightness and the field does not read as a stencil. */
+   *  quite the same brightness and the field does not read as a stencil. The
+   *  floor of the lowest range and the ceiling of the highest are both derived
+   *  numbers, not taste — read CONTRAST BUDGET in the header before moving one. */
   alphaMin: number;
   alphaMax: number;
   /** Points travelled UPWARD per second. This is the parallax: the near layer
@@ -163,13 +206,26 @@ type Layer = {
  * Read the three rows as one statement: as the particles get closer they get
  * FEWER, BIGGER, BRIGHTER and FASTER, all four together. Changing one without
  * the others is what turns a depth cue back into a flat field at two speeds.
+ *
+ * `count` IS PER TILE, NOT PER SCREEN: 44 here is 88 on a phone, because two
+ * copies of the tile are stacked to cover the body. On a 390pt-wide phone that
+ * is one particle per ~8,000pt^2, which is roughly what the web field tiles at;
+ * the 25 this replaces was one per ~14,000 and the owner read it as an empty
+ * background.
+ *
+ * Which also means DENSITY FALLS WITH WIDTH — the same 44 spread across a
+ * 1024pt tablet is one per ~21,000pt^2, and that is part of why the 13" iPad
+ * looked emptiest. It is a known gap and it is NOT closed here: closing it
+ * means making the position table depend on a measurement, and that table being
+ * a module constant is exactly what keeps two simultaneously-mounted screens
+ * showing the same sky. On a tablet, brightness is doing the work.
  */
 const LAYERS: Layer[] = [
   {
-    count: 11,
+    count: 20,
     size: 1.4,
-    alphaMin: 0.035,
-    alphaMax: 0.07,
+    alphaMin: 0.155,
+    alphaMax: 0.195,
     speed: 9.5,
     sway: 6,
     swayCycles: 1,
@@ -177,10 +233,10 @@ const LAYERS: Layer[] = [
     seed: 0x5eed01,
   },
   {
-    count: 8,
+    count: 14,
     size: 1.8,
-    alphaMin: 0.05,
-    alphaMax: 0.095,
+    alphaMin: 0.19,
+    alphaMax: 0.24,
     speed: 16,
     sway: 9,
     swayCycles: 2,
@@ -188,10 +244,10 @@ const LAYERS: Layer[] = [
     seed: 0x5eed02,
   },
   {
-    count: 6,
+    count: 10,
     size: 2.4,
-    alphaMin: 0.07,
-    alphaMax: 0.125,
+    alphaMin: 0.23,
+    alphaMax: 0.289,
     speed: 26,
     sway: 11,
     swayCycles: 1,
@@ -229,8 +285,8 @@ const pct = (v: number): DimensionValue => `${Math.round(v * 100) / 100}%` as Di
  * tile is a fixed 900pt and the copies are stacked at multiples of it.
  *
  * The scatter is stratified into horizontal bands (one particle per band,
- * jittered inside it) because an independent draw clumps: eleven free points
- * look like six points and a cluster.
+ * jittered inside it) because an independent draw clumps: twenty free points
+ * look like twelve points and a cluster.
  */
 function layerStars({ count, seed, alphaMin, alphaMax, size }: Layer): Star[] {
   let state = seed >>> 0;
@@ -253,7 +309,52 @@ function layerStars({ count, seed, alphaMin, alphaMax, size }: Layer): Star[] {
   });
 }
 
-const STARS: Star[][] = LAYERS.map(layerStars);
+/**
+ * The width the LAYERS counts are calibrated against — a 390pt phone, which is
+ * the device the field was tuned on.
+ */
+const BASE_WIDTH = 390;
+
+/**
+ * The most the count may be multiplied by, and it is a PERFORMANCE bound rather
+ * than an aesthetic one. Every particle is a leaf View. At 2.75 the widest
+ * supported body carries 121 particles per tile copy and a 1366pt-tall iPad
+ * needs 3 copies, so the worst case is ~363 flat rounded rects — static, never
+ * re-rendered, never individually animated, sitting under three transforms that
+ * Reanimated writes on the UI thread. That is the number to watch if a low-end
+ * Android tablet ever drops frames on a dark screen.
+ */
+const MAX_DENSITY_SCALE = 2.75;
+
+/**
+ * Skies, keyed by density scale. `layerStars` is deterministic in its seed and
+ * count, so a given scale always yields the same sky — two screens mounted at
+ * the same width cannot disagree, and a rotation back returns the sky it left.
+ */
+const skies = new Map<number, Star[][]>();
+
+function starsForScale(scale: number): Star[][] {
+  const cached = skies.get(scale);
+  if (cached) return cached;
+  const built = LAYERS.map((layer) =>
+    layerStars({ ...layer, count: Math.max(1, Math.round(layer.count * scale)) }),
+  );
+  skies.set(scale, built);
+  return built;
+}
+
+/**
+ * Quantised to quarter steps, and clamped so a NARROW body never thins the sky
+ * below the calibrated count: dragging a split-view divider must not rebuild
+ * three layers on every frame, and a 320pt phone should not get fewer stars
+ * than the 390pt one it was tuned on.
+ */
+function densityScale(width: number): number {
+  if (!(width > 0)) return 1;
+  const raw = width / BASE_WIDTH;
+  const quantised = Math.round(raw * 4) / 4;
+  return Math.min(MAX_DENSITY_SCALE, Math.max(1, quantised));
+}
 
 /** Two pi. A plain number, so the worklet captures a value and not a reference
  *  it would have to reach across the bridge for. */
@@ -354,15 +455,27 @@ export function StarField() {
   // thing the measurement decides — never how fast or how far anything moves —
   // so a change to it costs a mount and never a visible jump.
   const [copies, setCopies] = useState(0);
+  // The density multiplier for the measured WIDTH. Separate state from
+  // `copies` on purpose: height and width change independently (a keyboard
+  // inset moves one, a rotation moves both) and neither should rebuild the
+  // other's work.
+  const [scale, setScale] = useState(1);
 
   const onLayout = (event: LayoutChangeEvent) => {
-    const measured = event.nativeEvent.layout.height;
+    const { height, width } = event.nativeEvent.layout;
     // Quantised to whole tiles before it reaches state: a body that grows by a
     // few points — a keyboard inset settling, a banner appearing — must not
     // re-render fifty Views for a copy count that did not change.
-    const next = measured > 0 ? Math.ceil(measured / TILE) + 1 : 0;
-    setCopies((current) => (current === next ? current : next));
+    const nextCopies = height > 0 ? Math.ceil(height / TILE) + 1 : 0;
+    setCopies((current) => (current === nextCopies ? current : nextCopies));
+    const nextScale = densityScale(width);
+    setScale((current) => (current === nextScale ? current : nextScale));
   };
+
+  // Cheap by construction — `starsForScale` memoises across every mount, so a
+  // second screen at the same width reuses the first one's sky rather than
+  // running the LCG again.
+  const stars = useMemo(() => starsForScale(scale), [scale]);
 
   if (theme !== "dark" || !INKS_AGREE) return null;
 
@@ -384,7 +497,7 @@ export function StarField() {
             <StarLayer
               key={i}
               layer={layer}
-              stars={STARS[i]}
+              stars={stars[i]}
               copies={copies}
               animate={!reduceMotion}
             />

@@ -25,9 +25,17 @@
 //   * IT IS COMPOSITOR-ONLY. `background-position` would be the obvious way to
 //     scroll a tiled background and it repaints a viewport-sized gradient layer
 //     on every frame, on phones, behind every page.
-//   * BRIGHTNESS IS A READABILITY BUDGET. The field is painted behind all the
-//     content there is; the low alphas are the whole reason it never competes
-//     with a line of text.
+//   * BRIGHTNESS IS A BAND WITH TWO EDGES, and the FLOOR is the edge that has
+//     already failed in production. The drift first shipped at the twinkling
+//     version's 0.05-0.15 and the owner could not see it at ALL, on an iPhone
+//     or on a 13" iPad. A particle whose motion cannot be perceived is, to
+//     anyone looking at the page, a particle that is not moving — so the two
+//     halves of the brief ("sparse and low-opacity" AND "clearly noticeable,
+//     moderate and visible") are not in tension by accident: honour only the
+//     first and the second is silently lost. A ceiling still exists, because
+//     the field is painted behind every line of text there is, but it is
+//     measured against TYPE rather than against a hairline. globals.css
+//     carries the arithmetic for both edges; this file pins the result.
 //
 // If one of these starts failing, read the block in globals.css before deleting
 // the assertion: each check names the thing it is holding still.
@@ -122,6 +130,13 @@ function layer(name: string) {
     speed: Math.hypot(dx, dy) / seconds,
     /** The `0 <r>px` stop of every radial-gradient in the layer. */
     radii: [...rule.body.matchAll(/\s0\s([\d.]+)px,/g)].map((m) => Number(m[1])),
+    /** The alpha of every particle CORE — the `<colour> 0 <r>px` stop. The
+     *  second stop of each gradient is the transparent falloff and is alpha 0
+     *  by construction, so it is not a brightness and must not be averaged,
+     *  floored or ceilinged alongside the real ones. */
+    alphas: [...rule.body.matchAll(/rgba\(\d+, \d+, \d+, ([\d.]+)\)\s0\s[\d.]+px,/g)].map(
+      (m) => Number(m[1]),
+    ),
   };
 }
 
@@ -194,6 +209,15 @@ describe("the two layers are a statement about depth", () => {
     expect(Math.sign(FAR.dx)).not.toBe(Math.sign(NEAR.dx));
   });
 
+  it("makes every near particle brighter than every far one", () => {
+    // The fourth column of the parallax, after speed, direction and size — and
+    // the one that used to carry no information: the old far layer peaked at
+    // 0.10 and the old near layer floored at 0.09, so the two bands overlapped
+    // and a dot's brightness said nothing about its distance. The bands are now
+    // disjoint (far 0.172-0.235, near 0.245-0.314) and this holds them apart.
+    expect(Math.min(...NEAR.alphas)).toBeGreaterThan(Math.max(...FAR.alphas));
+  });
+
   it("makes the near layer sparser and its particles larger", () => {
     // Density is per tile area, so compare the rate rather than the count.
     const farDensity = FAR.radii.length / (FAR.tileW * FAR.tileH);
@@ -223,15 +247,81 @@ describe("the field costs nothing to run and nothing to read", () => {
     expect(declaration(shared.body, "pointer-events")).toBe("none");
   });
 
-  it("keeps every particle faint enough to read text over", () => {
-    const alphas = [...BLOCK.matchAll(/rgba\(\d+, \d+, \d+, ([\d.]+)\)/g)];
-    expect(alphas.length).toBeGreaterThan(20);
-    for (const [, raw] of alphas) {
-      // 0.15 of #d6e0ff over the #0a0e1a canvas composites to about #242c44,
-      // which is dimmer than --border (#26314f) — the hairline already drawn on
-      // that same ground. A particle brighter than a border reads as content.
-      expect(Number(raw)).toBeLessThanOrEqual(0.15);
+  it("keeps every particle inside the visibility band", () => {
+    const alphas = [...FAR.alphas, ...NEAR.alphas];
+    // One core alpha per gradient, and nothing else caught by the regex.
+    expect(alphas).toHaveLength(FAR.radii.length + NEAR.radii.length);
+    // A field that has been quietly emptied out is a field nobody can see
+    // either, whatever its alphas say.
+    expect(alphas.length).toBeGreaterThanOrEqual(16);
+
+    for (const alpha of alphas) {
+      // THE FLOOR — the HAIRLINE, and the same ratio the mobile field uses.
+      // --border (#26314f) on --bg (#0a0e1a) is 1.50:1; alpha 0.172 of #d6e0ff
+      // on that ground is 1.51:1. The border is the dimmest element this design
+      // already draws and expects people to notice, so a particle that has to
+      // be SEEN starts there.
+      //
+      // This bound used to be 0.16 (1.44:1) — just UNDER the hairline — and the
+      // whole reason it moved is that two successive passes shipped a field the
+      // owner could not see on either of their devices. The ambient term in the
+      // WCAG formula is why the raw code-value step was never the right
+      // measure: it stands for the light the glass reflects back in a lit room,
+      // which is exactly what ate the earlier bands in daylight while they
+      // looked fine on a monitor at night.
+      expect(alpha).toBeGreaterThanOrEqual(0.172);
+      // THE CEILING — 2.40:1, alpha 0.314, composites to about #4a5062. Two
+      // things bound it there: --muted (~32% of white) is the dimmest TEXT
+      // colour and is nowhere near, and 3:1 is where WCAG treats a graphical
+      // object as reliably perceivable — a backdrop belongs under that line.
+      //
+      // It used to be 0.40, which is 3.17:1 and therefore ON that line, while
+      // drifting at 24px/s behind the landing headline and behind long-form
+      // prose. (See the CONTRAST BUDGET note in globals.css: the claim that the
+      // particles only ever show in empty margins was false, and the old
+      // ceiling leaned on it.)
+      expect(alpha).toBeLessThanOrEqual(0.314);
     }
+  });
+
+  it("uses the SAME perceptual band as the mobile field", () => {
+    // ONE FEATURE, ONE SKY. The two platforms have different grounds and
+    // different inks, so equal ALPHAS would mean nothing; what has to match is
+    // the contrast ratio each band reaches against its own ground. Both are
+    // anchored to their own hairline token, which independently measures
+    // 1.50:1 on both palettes.
+    //
+    // This assertion exists because the two halves were tuned by different
+    // passes and diverged — web reached 1.46-3.17:1 while mobile sat at
+    // 1.22-1.50:1, i.e. web's FLOOR was mobile's CEILING — and because that had
+    // already happened once before and been fixed. Numbers agreed in prose
+    // drift; numbers agreed in a test do not.
+    const lin = (c: number): number => {
+      const v = c / 255;
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    const lum = ([r, g, b]: number[]): number =>
+      0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    const hex = (h: string): number[] => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const over = (ink: number[], bg: number[], a: number): number[] =>
+      ink.map((c, i) => bg[i] + (c - bg[i]) * a);
+    const ratio = (a: number[], b: number[]): number => {
+      const [hi, lo] = [lum(a), lum(b)].sort((p, q) => q - p);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+
+    const bg = hex("#0a0e1a");
+    const ink = hex("#d6e0ff");
+    const alphas = [...FAR.alphas, ...NEAR.alphas];
+
+    const floor = ratio(over(ink, bg, Math.min(...alphas)), bg);
+    const ceiling = ratio(over(ink, bg, Math.max(...alphas)), bg);
+
+    // The band mobile pins in star-field-drift.test.ts, on its own palette.
+    expect(floor).toBeGreaterThan(1.45);
+    expect(floor).toBeLessThan(1.56);
+    expect(ceiling).toBeGreaterThan(2.34);
+    expect(ceiling).toBeLessThan(2.46);
   });
 
   it("paints in ONE ink, taken from a dark token rather than invented", () => {

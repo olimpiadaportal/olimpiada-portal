@@ -6,6 +6,95 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## STAR FIELD — made visible 2026-09-23, after shipping invisible twice
+
+**The owner could not see the dark-mode star field at all** — not on an
+iPhone, not on a 13-inch iPad, and not after the OTA had properly applied
+(they relaunched twice, which is what EAS Update needs). Three things were
+checked and ruled out before touching a number, and they are worth not
+re-deriving: the OTA reached the device (runtime version 1.16.0 matched the
+installed build); `INKS_AGREE` was TRUE, so the component's own kill-switch
+was not tripped (`APP_DARK.text` and `ARENA_DARK.ink` are both `#f3f3f1`);
+and the field IS mounted on the screens they looked at. The machinery was
+never the problem.
+
+### What was actually wrong, and the correction is not the obvious one
+
+**It was not simply "too dim".** Measured against the real ground `#100e0e`,
+the shipped particles were a +8 to +28/255 luminance step — perceptible in
+isolation. The first diagnosis in this session said 1–2/255 and was WRONG.
+
+The two real causes:
+
+1. **The whole band sat at or under the HAIRLINE.** `border` (`#323230`) is
+   1.50:1 against the ground and is the dimmest element the design already
+   expects people to notice. The first pass topped out at 1.36:1, the second
+   at 1.50:1 — so the brightest particle was never brighter than the quietest
+   line in the UI, while being a 2pt dot instead of a 300pt edge. The band now
+   STARTS at the hairline and runs to 2.40:1.
+2. **Density did not follow the screen.** Each particle's `left` is a
+   percentage, so a fixed count spreads over whatever width it is handed: 44
+   particles calibrated on a 390pt phone landed 2.6× thinner on a 1024pt iPad.
+   This is why the tablet was worse than the phone, and no brightness change
+   would have reached it.
+
+**A trap for whoever changes the density next:** the scatter is STRATIFIED —
+star `i` occupies band `i` of `TILE / count` — so taking a subset of the star
+table is NOT a thinner sky, it is a sky that covers only the top of the tile.
+The count has to go into `layerStars`, which is why `starsForScale` regenerates
+and memoises per scale instead of slicing. Worst case is 122 particles × 3 tile
+copies = 366 leaf Views on a 13-inch iPad; `MAX_DENSITY_SCALE` is the bound and
+a test asserts it stays under 400.
+
+### One sky, both platforms — and this had regressed once already
+
+Mobile and web have different grounds and different inks, so equal ALPHAS
+would be meaningless. What is pinned is the contrast ratio each band reaches
+against its OWN ground, anchored to each platform's hairline token — which
+independently measures 1.50:1 on both palettes, and that coincidence is what
+makes it an anchor rather than a preference.
+
+| | floor | ceiling |
+|---|---|---|
+| mobile | 1.497:1 (α 0.155) | 2.403:1 (α 0.289) |
+| web | 1.511:1 (α 0.172) | 2.396:1 (α 0.314) |
+
+Before this round the two had diverged to web 1.46–3.17:1 against mobile
+1.22–1.50:1 — **web's floor was mobile's ceiling** — and STATUS already
+recorded a prior adversarial round fixing exactly that. It came back because
+the agreement lived in prose. `nightSky.test.ts` now recomputes both ratios
+from the raw hex and fails if either platform leaves the band.
+
+### A false comment that was load-bearing, twice rejected
+
+Both files claimed the particles show only in empty margins and never behind
+text, and both ceilings were argued from it. It is false: on web `.site-main`,
+`.arena-main`, `.hero` and `.prose`/`.cms-prose` paint no background; on mobile
+headings and empty-state prose sit directly on `bg`. A previous adversarial
+round had already caught this same sentence. It is corrected in both files,
+and the ceilings now rest only on the ink-per-area argument, which holds
+behind a paragraph as well as beside one.
+
+### Releasing it — ANDROID MUST WAIT
+
+This is JS-only, so it ships as an OTA with **no version bump** (a bump would
+create a new runtime version and foreclose the OTA path to the live 1.16.0
+builds — see the mobile release rule in CLAUDE.md).
+
+- **iOS: publish now.** `eas update --branch production --platform ios`. The
+  App Store build is live and approved and no Apple review is open.
+- **Android: NOT until Play approves.** The 1.16.0 resubmission is in review as
+  of 2026-09-22. Publishing an Android update now would hand the reviewer a JS
+  bundle that differs from the AAB they were given, on an app already rejected
+  once. Run `--platform android` only after approval.
+
+Gates at the time of writing: mobile `tsc` 0, jest 73 suites / 1499 tests;
+web `tsc` 0, vitest 74 files / 1569 tests, `next build` clean. Both new bands
+and the density scaling were mutation-tested (reverted, confirmed failing,
+restored and verified byte-identical by md5).
+
+---
+
 ## RESUBMITTED TO GOOGLE PLAY 2026-09-22 — in review, 7 changes in one batch
 
 **SUBMITTED 2026-09-22.** Publishing overview shows all seven under *Changes in

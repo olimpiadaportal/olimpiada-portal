@@ -1701,6 +1701,39 @@ another extended review rather than a fast one.
   failed at upload rather than at review. Flattened to colour type 2; the feature
   graphics had already been done and the screenshots were missed in that pass.
 
+- `[store]` `[web]` The dark-mode star field is now actually visible. It
+  shipped in the previous round and the owner could not see it on an iPhone
+  or a 13-inch iPad — the machinery was correct and the numbers were below
+  the threshold at which a moving dot registers. Two things were wrong. The
+  brightness band sat at or under the app's own hairline, the dimmest element
+  the design already expects people to notice; it now STARTS there and runs
+  to 2.40:1, well under both the dimmest text colour and the 3:1 at which a
+  graphic reads as intentional. And the particle count was fixed while each
+  particle's horizontal position is a percentage, so the field calibrated on
+  a 390pt phone was spreading 2.6x thinner on a 1024pt tablet; the count now
+  follows the measured width, holding density flat from phone to 13-inch iPad
+  (one particle per ~7,980 vs ~7,550 pt², against ~20,900 before).
+
+- `[internal]` Both platforms are pinned to ONE perceptual band, and a test
+  now enforces it. Mobile and web have different grounds and different inks,
+  so equal alphas would mean nothing — what matches is the contrast ratio each
+  band reaches against its own ground, anchored to each platform's hairline
+  token, which independently measures 1.50:1 on both palettes. Achieved:
+  mobile 1.497–2.403:1, web 1.511–2.396:1. This had already been fixed once
+  and regressed to web 1.46–3.17:1 against mobile 1.22–1.50:1 — web's floor
+  was mobile's ceiling. Agreement recorded in prose drifts; agreement recorded
+  in an assertion does not.
+
+- `[internal]` A comment that was doing real work was false, in both files,
+  and had been rejected once before. Both claimed the particles were visible
+  only in empty margins and never behind text, and both brightness ceilings
+  were argued from it. `.site-main`, `.arena-main`, `.hero` and `.prose` paint
+  no background, so the field drifts behind the landing headline and behind
+  every article; the mobile equivalent passes behind headings and empty-state
+  prose. The ceilings now rest on the ink-per-area argument alone, which is
+  the one that survives the correction — it holds behind a paragraph as well
+  as beside one.
+
 - `[internal]` Four suites pin what would otherwise regress in silence: the
   blocked billing permission, the absence of purchase wording on any
   child-facing string, the outbound links a child session must not be given,

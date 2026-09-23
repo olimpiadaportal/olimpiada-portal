@@ -14137,9 +14137,20 @@ body[data-site-typography] .btn-ghost {
    layers. Opacity cycling cannot express either — a dot that brightens in place
    reads as a rendering artefact, not as a sky. So the twinkle is gone and each
    layer now TRANSLATES at its own constant velocity and its own angle, which is
-   what parallax is. The alphas are unchanged in substance (see CONTRAST BUDGET)
-   because that half of the original tuning was correct and is what keeps body
-   text readable over the field.
+   what parallax is.
+
+   WHAT CHANGED AGAIN, AND WHY (2026-09-22, the same day). The drift shipped at
+   the twinkling version's alphas — 0.05 to 0.15 — and on a real iPhone and a
+   13" iPad the owner could not see the field AT ALL. Not a theme-gating bug and
+   not a stale cache: the dots were simply below the threshold of perception,
+   and you cannot perceive the MOTION of a particle you cannot perceive. The
+   brief asks for BOTH "low-opacity, sparse" AND "clearly noticeable, moderate
+   and VISIBLE" motion; the first half shipped and the second did not. The fix
+   is brightness, plus a little density — NOT size and NOT speed. 9.8 and
+   24px/s were never the problem, and a bigger or glowing dot is the
+   gaming-aesthetic the brief rules out. CONTRAST BUDGET below has the
+   arithmetic, including why the ceiling it used to argue for was the wrong
+   number to be defending.
 
    TWO HOSTS, because one is provably not enough:
      - `body` carries the public, auth and parent shells. In dark mode nothing
@@ -14189,12 +14200,40 @@ body[data-site-typography] .btn-ghost {
    none of that extra size can produce a scrollbar.
 
    CONTRAST BUDGET. Every card, panel, nav and footer in dark mode paints an
-   opaque --surface / --panel, so the particles are only ever visible in the
-   empty page margins — never through a form or a paragraph. The dots are
-   1-1.7px at 0.05-0.15 alpha over a near-black ground, which is where the old
-   layers spent the middle of their opacity cycle; the peak is a shade lower
-   than it was (0.15 against 0.17) precisely BECAUSE they now move, and motion
-   is more salient than brightness.
+   opaque --surface / --panel, so a particle never shows THROUGH one. It is NOT
+   true, and an earlier version of this paragraph said it twice, that the
+   particles are therefore confined to empty margins: .site-main, .arena-main,
+   .hero and .prose / .cms-prose paint no background at all, so the field
+   drifts behind the landing headline and behind every long-form article. The
+   budget below has to hold against TYPE, not against empty space, and it is
+   written that way. The dots are 1-1.7px at 0.172-0.314 alpha over the
+   near-black --bg, #0a0e1a.
+
+   THE CEILING. It used to be 0.15, on the argument that 0.15 of #d6e0ff
+   composites to about #292e3c, which is dimmer than the --border hairline
+   already drawn on that same ground — so a dot brighter than that would read
+   as content. Sound reasoning about the wrong quantity. What competes with
+   text is INK, and ink is contrast times AREA. A 1px hairline running 300px
+   across a card lays down ~300px2 of it; one of these dots lays down ~7.5px2,
+   forty times less, and it bounds no shape. A dot may sit a step brighter than
+   a border and still be a rounding error beside it. That argument survives the
+   correction above precisely BECAUSE it is about area rather than about where
+   the dot is: it holds behind a paragraph as well as beside one. The budget
+   that actually binds is distance from TYPE: the brightest dot here, 0.314,
+   composites to about #4a5062 — roughly 7% of white, against 32% for --muted,
+   the dimmest text colour in the palette.
+
+   THE FLOOR is the number that failed, and it is the one worth guarding. 0.05
+   composited to ~1% of white against the ground's 0.45%: a ratio of 2.1:1 in a
+   dark room, and much less in any lit one, because ambient reflection off the
+   glass adds a percent or two of white to the dot AND to the ground and drags
+   the ratio towards 1. That is precisely why the field vanished on a phone in
+   daylight while looking fine on a monitor in a dim room. The floor is now
+   pinned to a measured anchor rather than to judgement: --border on --bg is
+   1.50:1, the dimmest element the design already treats as visible, and
+   alpha 0.172 puts the dimmest dot exactly there. Every other dot is brighter,
+   and the ceiling is 2.40:1 (alpha 0.314) — the SAME two ratios the mobile
+   field uses on its own palette, so the two platforms show one sky.
 
    ONE INK, and it is --chip-text: #d6e0ff, written out as
    `rgba(214, 224, 255, a)` — a value already in the dark palette rather than a
@@ -14210,8 +14249,16 @@ body[data-site-typography] .btn-ghost {
    No dark token value is touched here and every selector is gated on
    [data-theme="dark"], so light mode cannot see any of it.
 
-   Density is about a third lower than the twinkling version (one dot per
-   ~8.8k px2 against ~5.8k), for the same reason the peak alpha came down.
+   DENSITY now sits between the two earlier versions: one dot per ~6.9k px2,
+   against ~8.8k for the first drift and ~5.8k for the twinkling original. It
+   rose with the alphas because motion reads across a FIELD and not across a
+   handful of unrelated dots — the eye needs several samples before it picks up
+   a common direction — and because gradients per tile are very nearly free
+   here: the tile rasterizes once and is then repeated, the animation touches
+   only `transform`, so no frame repaints and the layer's memory cost is set by
+   its size rather than by its dot count. It stops at ~6.9k rather than going
+   further because the brief asks for sparse, and that is still sparser than
+   the version nobody ever complained about the density of.
 
    prefers-reduced-motion stops the drift dead and leaves the sky in place: the
    field is part of what the surface LOOKS like, and deleting it would change
@@ -14237,25 +14284,29 @@ body[data-site-typography] .btn-ghost {
 }
 
 /* FAR FIELD — the deep one. The most particles, the smallest, the dimmest and
-   the slowest: ~9.8px per second, drifting up and slightly to the RIGHT. The
-   240x480 tile makes one tile of travel a 26.6deg lean off vertical. Slack goes
-   on the LEFT — it travels right, so the left edge is the one that would be
-   exposed — and at the BOTTOM. */
+   the slowest: ~9.8px per second, drifting up and slightly to the RIGHT. Twelve
+   dots per tile, 1.04-1.19px across, 0.16-0.26 alpha. The 240x480 tile makes one
+   tile of travel a 26.6deg lean off vertical. Slack goes on the LEFT — it
+   travels right, so the left edge is the one that would be exposed — and at the
+   BOTTOM. */
 [data-theme="dark"] body::before,
 [data-theme="dark"] .app-shell > .arena::before {
   left: -240px;
   width: calc(100% + 240px);
   height: calc(100% + 480px);
   background-image:
-    radial-gradient(circle at 57px 4px, rgba(214, 224, 255, 0.06) 0 1.19px, rgba(214, 224, 255, 0) 1.99px),
-    radial-gradient(circle at 149px 80px, rgba(214, 224, 255, 0.05) 0 1.04px, rgba(214, 224, 255, 0) 1.84px),
-    radial-gradient(circle at 117px 152px, rgba(214, 224, 255, 0.06) 0 1.04px, rgba(214, 224, 255, 0) 1.84px),
-    radial-gradient(circle at 163px 203px, rgba(214, 224, 255, 0.1) 0 1.19px, rgba(214, 224, 255, 0) 1.99px),
-    radial-gradient(circle at 60px 243px, rgba(214, 224, 255, 0.06) 0 1.11px, rgba(214, 224, 255, 0) 1.91px),
-    radial-gradient(circle at 28px 311px, rgba(214, 224, 255, 0.09) 0 1.18px, rgba(214, 224, 255, 0) 1.98px),
-    radial-gradient(circle at 191px 335px, rgba(214, 224, 255, 0.06) 0 1.19px, rgba(214, 224, 255, 0) 1.99px),
-    radial-gradient(circle at 69px 394px, rgba(214, 224, 255, 0.06) 0 1.05px, rgba(214, 224, 255, 0) 1.85px),
-    radial-gradient(circle at 64px 432px, rgba(214, 224, 255, 0.09) 0 1.1px, rgba(214, 224, 255, 0) 1.9px);
+    radial-gradient(circle at 57px 4px, rgba(214, 224, 255, 0.204) 0 1.19px, rgba(214, 224, 255, 0) 1.99px),
+    radial-gradient(circle at 149px 80px, rgba(214, 224, 255, 0.178) 0 1.04px, rgba(214, 224, 255, 0) 1.84px),
+    radial-gradient(circle at 213px 131px, rgba(214, 224, 255, 0.191) 0 1.09px, rgba(214, 224, 255, 0) 1.89px),
+    radial-gradient(circle at 117px 152px, rgba(214, 224, 255, 0.197) 0 1.04px, rgba(214, 224, 255, 0) 1.84px),
+    radial-gradient(circle at 11px 176px, rgba(214, 224, 255, 0.222) 0 1.15px, rgba(214, 224, 255, 0) 1.95px),
+    radial-gradient(circle at 163px 203px, rgba(214, 224, 255, 0.235) 0 1.19px, rgba(214, 224, 255, 0) 1.99px),
+    radial-gradient(circle at 60px 243px, rgba(214, 224, 255, 0.185) 0 1.11px, rgba(214, 224, 255, 0) 1.91px),
+    radial-gradient(circle at 104px 277px, rgba(214, 224, 255, 0.21) 0 1.06px, rgba(214, 224, 255, 0) 1.86px),
+    radial-gradient(circle at 28px 311px, rgba(214, 224, 255, 0.229) 0 1.18px, rgba(214, 224, 255, 0) 1.98px),
+    radial-gradient(circle at 191px 335px, rgba(214, 224, 255, 0.172) 0 1.19px, rgba(214, 224, 255, 0) 1.99px),
+    radial-gradient(circle at 69px 394px, rgba(214, 224, 255, 0.191) 0 1.05px, rgba(214, 224, 255, 0) 1.85px),
+    radial-gradient(circle at 64px 432px, rgba(214, 224, 255, 0.216) 0 1.1px, rgba(214, 224, 255, 0) 1.9px);
   background-size: 240px 480px;
   animation-name: sky-drift-far;
   animation-duration: 55s;
@@ -14266,6 +14317,9 @@ body[data-site-typography] .btn-ghost {
 
 /* NEAR FIELD — the close one. Few particles, the largest, the brightest and by
    some way the fastest: ~24px per second, drifting up and slightly to the LEFT.
+   Eight dots per tile, 1.37-1.65px across, 0.28-0.40 alpha — every one of them
+   brighter than every dot in the far layer, which is the fourth column of the
+   parallax after speed, size and density, and the one the eye reads first.
    Faster AND in the other direction is what makes the depth read as depth
    rather than as one field at two speeds. 360x540 tile (33.7deg off vertical);
    slack on the RIGHT and at the BOTTOM. */
@@ -14275,13 +14329,14 @@ body[data-site-typography] .btn-ghost {
   width: calc(100% + 360px);
   height: calc(100% + 540px);
   background-image:
-    radial-gradient(circle at 84px 9px, rgba(214, 224, 255, 0.1) 0 1.56px, rgba(214, 224, 255, 0) 2.36px),
-    radial-gradient(circle at 107px 97px, rgba(214, 224, 255, 0.09) 0 1.55px, rgba(214, 224, 255, 0) 2.35px),
-    radial-gradient(circle at 355px 225px, rgba(214, 224, 255, 0.15) 0 1.55px, rgba(214, 224, 255, 0) 2.35px),
-    radial-gradient(circle at 237px 289px, rgba(214, 224, 255, 0.11) 0 1.37px, rgba(214, 224, 255, 0) 2.17px),
-    radial-gradient(circle at 143px 353px, rgba(214, 224, 255, 0.1) 0 1.65px, rgba(214, 224, 255, 0) 2.45px),
-    radial-gradient(circle at 284px 416px, rgba(214, 224, 255, 0.14) 0 1.53px, rgba(214, 224, 255, 0) 2.33px),
-    radial-gradient(circle at 329px 519px, rgba(214, 224, 255, 0.09) 0 1.53px, rgba(214, 224, 255, 0) 2.33px);
+    radial-gradient(circle at 84px 9px, rgba(214, 224, 255, 0.262) 0 1.56px, rgba(214, 224, 255, 0) 2.36px),
+    radial-gradient(circle at 107px 97px, rgba(214, 224, 255, 0.245) 0 1.55px, rgba(214, 224, 255, 0) 2.35px),
+    radial-gradient(circle at 26px 161px, rgba(214, 224, 255, 0.274) 0 1.44px, rgba(214, 224, 255, 0) 2.24px),
+    radial-gradient(circle at 355px 225px, rgba(214, 224, 255, 0.314) 0 1.55px, rgba(214, 224, 255, 0) 2.35px),
+    radial-gradient(circle at 237px 289px, rgba(214, 224, 255, 0.256) 0 1.37px, rgba(214, 224, 255, 0) 2.17px),
+    radial-gradient(circle at 143px 353px, rgba(214, 224, 255, 0.291) 0 1.65px, rgba(214, 224, 255, 0) 2.45px),
+    radial-gradient(circle at 284px 416px, rgba(214, 224, 255, 0.303) 0 1.53px, rgba(214, 224, 255, 0) 2.33px),
+    radial-gradient(circle at 329px 519px, rgba(214, 224, 255, 0.251) 0 1.53px, rgba(214, 224, 255, 0) 2.33px);
   background-size: 360px 540px;
   animation-name: sky-drift-near;
   animation-duration: 27s;

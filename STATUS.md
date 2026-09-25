@@ -6,6 +6,56 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## LANDING HERO — the mobile app as the first screen (2026-09-25, web only)
+
+The owner asked for the top of the landing page to present the iOS app as a
+product. Built in `web-app/src/components/appHero/` (server shell +
+`PhoneShowcase`, the one client component) with a CSS module, so the
+14.7k-line `globals.css` is untouched. Store links and screenshots live in
+`web-app/src/lib/appShowcase.ts` — plain data, so the future admin setting
+replaces one file.
+
+**Decisions worth not re-deriving:**
+
+- **The old hero was kept, not replaced.** `home.heroTitle`, `home.heroLead`,
+  `home.ctaStart` and `home.ctaSubjects` are admin-editable in the Site
+  content editor; deleting them would make those admin edits silently do
+  nothing. It is now the second section (`#explore`, the hero's secondary
+  CTA target) and its title is an `h2` — the app headline owns the `h1`.
+- **No App Store link for a signed-in CHILD.** The listing shows the app's
+  in-app purchase prices, and the site already withholds every priced
+  listing from a child session (Round 51). A child gets "my panel" instead.
+- **No Google Play button.** The Play listing is in review. Setting
+  `PLAY_STORE_URL` swaps the status line for a real Play badge; the copy for
+  it (`appHero.play.*`) already exists in az/en/ru.
+- **Screenshots:** the official iPhone set from the App Store listing (via the
+  iTunes lookup API), stored locally as 600px WebP (23–32 KB). Excluded: the
+  news shot (a photograph of real children at a ceremony), the 0% result,
+  and the olympiad/leaderboard shots (placeholder names, blurred rows).
+- **Copy refined for accuracy.** The brief's "school activities / School
+  Updates" became daily rounds, olympiad preparation, progress and news —
+  what the app actually does. "Əldə edin" was avoided; it is this
+  project's purchase-CTA wording.
+- **The App Store badge is a styled link in Apple's badge form**, not the
+  official artwork: Apple publishes no Azerbaijani badge, and the brief
+  wanted hover motion. If Apple's marketing guidelines ever matter more than
+  that, swap in the official badge files and keep the link.
+
+**Verified in headless Chrome** at 1440 / 1040 / 900 / 390 / 320 px, light
+and dark, az / en / ru: zero horizontal overflow everywhere, one `h1`, App
+Store link opens in a new tab with `noopener noreferrer`, no Play link, the
+carousel advances and holds on hover and after the pause button, and under
+`prefers-reduced-motion` there is no autoplay and zero running animations.
+`web-app/src/lib/__tests__/appShowcase.test.ts` pins the links, the child
+gating, the local WebP assets and their declared sizes, trilingual key
+parity, the mobile-bundle exclusion, and the reduced-motion/breakpoint rules.
+
+**Known, not introduced here:** a cold server can take ~1–3 s to stream the
+page behind `(public)/loading.tsx`. The skeleton was reshaped to the new
+hero's height so that wait no longer produces a footer layout shift.
+
+---
+
 ## STAR FIELD — made visible 2026-09-23, after shipping invisible twice
 
 **The owner could not see the dark-mode star field at all** — not on an

@@ -7,6 +7,7 @@ import { formatGradeLabel } from "@/lib/gradeLabel";
 import { formatPercent } from "@/lib/formatPercent";
 import AboutUs from "@/components/AboutUs";
 import { CmsProse } from "@/components/CmsProse";
+import { AppHero } from "@/components/appHero/AppHero";
 
 // get_public_leaderboard row (migration 058; Round 36: value = UNROUNDED
 // weighted percentage, provisional students already excluded, competition
@@ -121,8 +122,18 @@ export default async function HomePage() {
 
   return (
     <>
-      <section className="hero">
-        <h1>{t("home.heroTitle")}</h1>
+      {/* The first screen is the mobile app as a product (owner, 2026-09-25).
+          It owns the page's <h1>. */}
+      <AppHero t={t} panelHref={panelHref} isChild={!!childSession} exploreId="explore" />
+
+      {/* The site introduction that USED to open the page. Kept, not replaced:
+          home.heroTitle, home.heroLead, home.ctaStart and home.ctaSubjects are
+          admin-editable in the admin panel's Site content editor, and dropping
+          them would make those edits silently do nothing. It is now the
+          second section and the target of the hero's "Explore" link, so its
+          title steps down to an h2. */}
+      <section className="hero" id="explore" style={{ scrollMarginTop: 24 }}>
+        <h2>{t("home.heroTitle")}</h2>
         <CmsProse className="lead" text={t("home.heroLead")} />
         {/* Hero actions, in the owner-fixed order: browse subjects → browse
             olympiads → start (the primary CTA closes the row). "Olimpiadalara

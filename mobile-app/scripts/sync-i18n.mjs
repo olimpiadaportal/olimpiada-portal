@@ -151,7 +151,11 @@ const PRICING_KEYS_MOBILE_RENDERS = new Set([
 // key of any of them is referenced by a single mobile screen, and none of them
 // could be without putting a checkout in the binary — which is Apple 2.3.1(a),
 // not a design question.
-const WEB_ONLY_PREFIXES = ["terms.", "checkout.", "payres."];
+// `appHero.*` is the landing-page app showcase: "Download on the App Store"
+// and "coming soon to Google Play". It names both stores and the iPhone, and
+// no mobile screen renders it. An Android binary carrying an App Store
+// download line is exactly the string a Play reviewer greps for.
+const WEB_ONLY_PREFIXES = ["terms.", "checkout.", "payres.", "appHero."];
 
 // ---------------------------------------------------------------------------
 // DEAD COMMERCE STRINGS — shipped in the bundle, rendered by nothing.

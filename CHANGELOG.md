@@ -1739,6 +1739,23 @@ another extended review rather than a fast one.
   child-facing string, the outbound links a child session must not be given,
   and the star field's drift and parallax.
 
+- `[web]` The landing page now opens on the mobile app. The first screen of
+  olympiq.ai is a split hero — headline, an App Store download badge and a
+  live iPhone mockup cycling through the app's own App Store screenshots —
+  in all three languages and both themes. The site introduction that used to
+  open the page follows directly below it, unchanged, because its text is
+  edited from the admin panel's Site content screen. Android is announced as
+  coming soon rather than given a download button, since the Play listing is
+  not public yet; the switch to a real button is one constant
+  (`PLAY_STORE_URL` in `web-app/src/lib/appShowcase.ts`).
+
+- `[internal]` The showcase strings are a web-only prefix (`appHero.`) in
+  `mobile-app/scripts/sync-i18n.mjs`, so "Download on the App Store" can
+  never ship inside the purchase-silent Android bundle. The home page's
+  loading skeleton was reshaped for the new first screen: shaped for the old
+  140px hero, it left the footer on screen while loading and then threw it
+  off the bottom when the page arrived.
+
 ---
 
 ## 1.15.0 — RELEASED on the App Store 2026-09-09 (submitted 2026-09-04, approved and released the same day)

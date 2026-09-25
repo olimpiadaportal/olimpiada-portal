@@ -1,0 +1,873 @@
+/* Landing-page app showcase — the first screen of olympiq.ai.
+
+   COLOUR comes from the site's theme tokens (--accent, --accent-2, --text,
+   --surface, --bg, --pill-text, --ok), so one set of rules paints the
+   Energetic light theme (purple + orange on cream) and the owner's dark
+   reference theme (blue + violet on navy) without redefining any dark token.
+   The only literal colours are physical or trademark ones: the phone's bezel,
+   and the store badges, whose black/white/grey Apple and Google prescribe.
+
+   MOTION is transform and opacity only, and every animation and transition in
+   this file is switched off under prefers-reduced-motion (bottom of file).
+
+   BREAKPOINTS are the approved scale only — 480 / 768 / 1024 — per
+   src/app/__tests__/breakpoints.test.ts. */
+
+.hero {
+  /* Device + trademark colours. Not theme colours: a phone's bezel is the
+     same colour in a dark room and a lit one. */
+  --bezel-hi: #2b2e37;
+  --bezel-lo: #0b0c10;
+  --glass-edge: rgba(255, 255, 255, 0.08);
+  --badge-bg: #000;
+  --badge-ink: #fff;
+  --badge-edge: #a6a6a6;
+
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+  align-items: center;
+  gap: 24px;
+  padding: 36px 0 44px;
+  min-height: 600px;
+}
+
+/* ---------------------------------------------------------------- backdrop */
+
+.backdrop {
+  position: absolute;
+  inset: -12px 0 0;
+  z-index: -1;
+  /* Clipped to the content column: a glow must never widen the page and
+     produce a horizontal scrollbar. The clip alone would draw a hard line
+     wherever a glow reaches the edge, so every edge is feathered by a mask as
+     well — the clip can then never be SEEN, at any width. */
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 9%, #000 91%, transparent),
+    linear-gradient(to bottom, transparent, #000 7%, #000 86%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent, #000 9%, #000 91%, transparent),
+    linear-gradient(to bottom, transparent, #000 7%, #000 86%, transparent);
+  mask-composite: intersect;
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1px);
+  background-size: 44px 44px;
+  /* A mask, not a colour: only the area around the phone shows the grid. */
+  -webkit-mask-image: radial-gradient(ellipse 60% 70% at 72% 48%, #000 10%, transparent 72%);
+  mask-image: radial-gradient(ellipse 60% 70% at 72% 48%, #000 10%, transparent 72%);
+}
+
+.glowA,
+.glowB {
+  position: absolute;
+  border-radius: 50%;
+}
+.glowA {
+  width: min(560px, 100%);
+  aspect-ratio: 1;
+  right: -60px;
+  top: 50%;
+  translate: 0 -50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 30%, transparent), transparent);
+}
+.glowB {
+  width: min(340px, 60%);
+  aspect-ratio: 1;
+  right: 22%;
+  bottom: 0;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent-2) 22%, transparent), transparent);
+}
+
+/* ---------------------------------------------------------------- copy */
+
+.copy {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 12px 6px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--pill-text);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.eyebrowDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+
+/* `.hero .title` rather than `.title`: the admin "site typography" setting
+   sizes every h1 at 0,1,2 specificity, and this is a display headline with its
+   own fluid scale. */
+.hero .title {
+  margin: 20px 0 0;
+  font-size: clamp(2rem, 1.15rem + 2.3vw, 2.95rem);
+  line-height: 1.08;
+  font-weight: 800;
+  letter-spacing: -0.028em;
+  color: var(--text);
+  text-wrap: balance;
+}
+.titleAccent {
+  background: linear-gradient(100deg, var(--accent) 10%, var(--accent-2) 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.lead {
+  margin: 18px 0 0;
+  max-width: 32em;
+  font-size: 1.08rem;
+  line-height: 1.6;
+  /* Not --muted: body copy at the top of the page needs more than 3:1. */
+  color: color-mix(in srgb, var(--text) 72%, var(--bg));
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+/* ---------------------------------------------------------------- store badges */
+
+.store,
+.store:visited,
+.store:hover {
+  color: var(--badge-ink);
+}
+.store {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 54px;
+  padding: 0 22px 0 16px;
+  border-radius: 14px;
+  background: var(--badge-bg);
+  border: 1px solid var(--badge-edge);
+  text-decoration: none;
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--text) 18%, transparent),
+    0 10px 24px -14px color-mix(in srgb, var(--text) 45%, transparent);
+  transition:
+    transform 240ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow 240ms ease;
+}
+.store:hover {
+  transform: translateY(-2px) scale(1.015);
+  box-shadow:
+    0 2px 4px color-mix(in srgb, var(--text) 18%, transparent),
+    0 18px 34px -16px color-mix(in srgb, var(--text) 50%, transparent),
+    0 0 0 5px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.store:active {
+  transform: translateY(0) scale(0.99);
+}
+.store:focus-visible,
+.secondary:focus-visible,
+.primary:focus-visible,
+.dot:focus-visible,
+.pauseBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.storeGlyph {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+.storeText {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+  text-align: left;
+}
+.storeKicker {
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.storeLabel {
+  font-size: 1.28rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+/* The signed-in child's "My panel" — same height as the badge beside it. */
+.primary {
+  display: inline-flex;
+  align-items: center;
+  height: 54px;
+  padding: 0 24px;
+  border-radius: 14px;
+  background: linear-gradient(100deg, var(--accent), color-mix(in srgb, var(--accent) 70%, var(--accent-2)));
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  transition: transform 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.primary:hover {
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.secondary,
+.secondary:visited {
+  color: var(--text);
+}
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 54px;
+  padding: 0 20px;
+  border-radius: 14px;
+  font-weight: 650;
+  text-decoration: none;
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  transition:
+    border-color 240ms ease,
+    transform 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.secondary svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 240ms ease;
+}
+.secondary:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  transform: translateY(-1px);
+}
+.secondary:hover svg {
+  transform: translateY(2px);
+}
+
+/* ---------------------------------------------------------------- android */
+
+.android {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--text) 68%, var(--bg));
+}
+.android strong {
+  color: var(--text);
+  font-weight: 700;
+}
+.androidIcon {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ok) 28%, transparent);
+}
+.androidIcon svg {
+  width: 20px;
+  height: 20px;
+}
+/* A small live-status dot: "in progress", not "broken". */
+.androidPing {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.androidPing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ---------------------------------------------------------------- stage */
+
+.stageCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.stage {
+  --px: 0;
+  --py: 0;
+  --phone-w: 264px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  padding: 12px 0 20px;
+}
+
+.halo {
+  position: absolute;
+  /* Never wider than its own column — at tablet and phone widths 1.9x the
+     phone is wider than the column and pushed the page sideways. */
+  width: min(calc(var(--phone-w) * 1.9), 100%);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--accent) 22%, transparent),
+    color-mix(in srgb, var(--accent-2) 8%, transparent) 55%,
+    transparent
+  );
+  translate: calc(var(--px) * 10px) calc(var(--py) * 8px);
+  transition: translate 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.floorShadow {
+  position: absolute;
+  bottom: 4px;
+  width: calc(var(--phone-w) * 0.78);
+  height: 30px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--text) 32%, transparent), transparent);
+  opacity: 0.55;
+  transform: translateX(calc(var(--px) * 14px)) scaleX(calc(1 - var(--py) * 0.04));
+  transition:
+    transform 500ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 400ms ease;
+}
+.stage:hover .floorShadow {
+  opacity: 0.8;
+}
+
+/* Three nested wrappers, each owning ONE transform, so the entrance, the
+   idle float and the pointer tilt never overwrite each other. */
+.phoneEnter {
+  animation: phoneIn 820ms cubic-bezier(0.2, 0.75, 0.2, 1) 180ms both;
+}
+.phoneFloat {
+  animation: float 7s ease-in-out 1s infinite;
+}
+.phoneTilt {
+  transform: perspective(1400px) rotateY(calc(-7deg + var(--px) * 9deg)) rotateX(calc(3deg - var(--py) * 6deg))
+    rotateZ(calc(var(--px) * -0.8deg));
+  transition: transform 450ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  will-change: transform;
+}
+
+.phone {
+  position: relative;
+  width: var(--phone-w);
+  padding: 10px;
+  border-radius: calc(var(--phone-w) * 0.19);
+  background: linear-gradient(150deg, var(--bezel-hi), var(--bezel-lo) 55%);
+  box-shadow:
+    inset 0 0 0 1.5px var(--glass-edge),
+    inset 0 0 0 5px var(--bezel-lo),
+    0 44px 80px -34px color-mix(in srgb, var(--text) 55%, transparent),
+    0 22px 44px -24px color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: box-shadow 450ms ease;
+}
+.stage:hover .phone {
+  box-shadow:
+    inset 0 0 0 1.5px var(--glass-edge),
+    inset 0 0 0 5px var(--bezel-lo),
+    0 56px 96px -34px color-mix(in srgb, var(--text) 60%, transparent),
+    0 28px 56px -24px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.sideButton {
+  position: absolute;
+  right: -2px;
+  top: 22%;
+  width: 3px;
+  height: 58px;
+  border-radius: 0 3px 3px 0;
+  background: var(--bezel-hi);
+}
+
+.screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: calc(var(--phone-w) * 0.155);
+  background: var(--bezel-lo);
+  /* Keeps the rounded clip on the image layers in every engine. */
+  transform: translateZ(0);
+}
+
+.statusWrap {
+  position: relative;
+  z-index: 2;
+  transition: background-color 700ms ease;
+}
+.statusBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 0 20px 0 24px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.statusTime {
+  width: 36px;
+}
+.island {
+  width: 82px;
+  height: 22px;
+  border-radius: 999px;
+  background: #000;
+}
+.statusIcons {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 52px;
+  justify-content: flex-end;
+}
+.statusIcons svg {
+  height: 9px;
+  width: auto;
+}
+
+.slides {
+  position: relative;
+  aspect-ratio: 600 / 1299;
+}
+.slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 700ms ease;
+}
+.slide[data-active="true"] {
+  opacity: 1;
+}
+.slide img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  /* 2% of headroom so the pointer shift never exposes an edge. */
+  transform: scale(1.02) translate(calc(var(--px) * -0.7%), calc(var(--py) * -0.5%));
+  transition: transform 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  user-select: none;
+}
+
+/* A faint diagonal sheen that slides with the tilt — the "glass" of the
+   screen. Kept very low so it never washes the screenshot out. */
+.glare {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.07) 48%,
+    transparent 60%
+  );
+  background-size: 250% 100%;
+  background-position: calc(50% + var(--px) * 30%) 0;
+  transition: background-position 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* ---------------------------------------------------------------- cards */
+
+.cardSlot {
+  position: absolute;
+  z-index: 2;
+}
+/* Placed to overlap the phone's EDGE, never its content: a card over the
+   screenshot fights it for attention and reads the screen's text through it. */
+.cardSlot1 {
+  --depth: 16;
+  --fd: 0s;
+  --d: 560ms;
+  top: 9%;
+  left: -40px;
+}
+.cardSlot2 {
+  --depth: 22;
+  --fd: -2.4s;
+  --d: 660ms;
+  top: 47%;
+  right: -24px;
+}
+.cardSlot3 {
+  --depth: 12;
+  --fd: -4.8s;
+  --d: 760ms;
+  bottom: 9%;
+  left: -32px;
+}
+.cardParallax {
+  transform: translate3d(calc(var(--px) * var(--depth) * 1px), calc(var(--py) * var(--depth) * 0.7px), 0);
+  transition: transform 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation: fadeIn 600ms ease var(--d) both;
+}
+.cardFloat {
+  animation: float 6s ease-in-out var(--fd) infinite;
+}
+.card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Compact chips — a title and ONE line — so they stay secondary to the
+     phone. The left-hand pair reaches into the column gap, where the copy
+     column is empty at their height (the copy block is vertically centred). */
+  width: max-content;
+  padding: 9px 14px 9px 10px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  box-shadow: 0 14px 30px -18px color-mix(in srgb, var(--text) 45%, transparent);
+}
+.cardIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--pill-text);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.cardIcon svg {
+  width: 19px;
+  height: 19px;
+}
+.cardText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cardTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+}
+.cardBody {
+  white-space: nowrap;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--text) 62%, var(--bg));
+}
+
+/* ---------------------------------------------------------------- pager */
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Buttons reset from the global `button` rule (accent fill, padding). The
+   hit area is 24px even though the visible dot is 8px. */
+.dot {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+.dot::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  translate: -50% -50%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  transition:
+    width 300ms ease,
+    background-color 300ms ease;
+}
+.dot[aria-current="true"]::before {
+  width: 22px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+.dot:hover,
+.pauseBtn:hover {
+  filter: none;
+}
+.dot:hover::before {
+  background: color-mix(in srgb, var(--text) 40%, transparent);
+}
+.dot[aria-current="true"]:hover::before {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+.pauseBtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  padding: 0;
+  border-radius: 50%;
+  color: color-mix(in srgb, var(--text) 60%, transparent);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+  cursor: pointer;
+}
+.pauseBtn svg {
+  width: 10px;
+  height: 10px;
+}
+
+/* ---------------------------------------------------------------- entrance */
+
+/* Copy rises in sequence (eyebrow, headline, lead, CTAs, Android line), the
+   phone follows, decoration arrives last. Under a second end to end. */
+.rise {
+  animation: rise 560ms cubic-bezier(0.2, 0.7, 0.2, 1) var(--d, 0ms) both;
+}
+.late {
+  animation: fadeIn 700ms ease 480ms both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes phoneIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-9px);
+  }
+}
+@keyframes ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- dark mode */
+
+/* The dark palette's --text is near-white, so shadows built from it would
+   glow. Shadows in the dark theme are black and the accent carries the light. */
+:global([data-theme="dark"]) .phone {
+  box-shadow:
+    inset 0 0 0 1.5px var(--glass-edge),
+    inset 0 0 0 5px var(--bezel-lo),
+    0 44px 80px -30px rgba(0, 0, 0, 0.7),
+    0 0 60px -10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+:global([data-theme="dark"]) .stage:hover .phone {
+  box-shadow:
+    inset 0 0 0 1.5px var(--glass-edge),
+    inset 0 0 0 5px var(--bezel-lo),
+    0 56px 96px -30px rgba(0, 0, 0, 0.8),
+    0 0 80px -8px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+:global([data-theme="dark"]) .floorShadow {
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.75), transparent);
+}
+:global([data-theme="dark"]) .card {
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  border-color: color-mix(in srgb, var(--text) 12%, transparent);
+  box-shadow: 0 16px 34px -18px rgba(0, 0, 0, 0.8);
+}
+:global([data-theme="dark"]) .store {
+  box-shadow: 0 10px 26px -14px rgba(0, 0, 0, 0.9);
+}
+:global([data-theme="dark"]) .store:hover {
+  box-shadow:
+    0 18px 34px -16px rgba(0, 0, 0, 0.9),
+    0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+:global([data-theme="dark"]) .grid {
+  opacity: 0.8;
+}
+
+/* ---------------------------------------------------------------- responsive */
+
+/* Tablet: still side by side, smaller phone, no floating cards — at this
+   width they would sit on top of the screenshot rather than beside it. */
+@media (max-width: 1024px) {
+  .hero {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    min-height: 0;
+  }
+  .stage {
+    --phone-w: 232px;
+  }
+  .cardSlot {
+    display: none;
+  }
+}
+
+/* Phone: one column — headline, CTAs, Android line, then the phone. */
+@media (max-width: 768px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 20px 0 32px;
+    text-align: center;
+  }
+  .copy {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .lead {
+    margin-inline: auto;
+  }
+  .actions {
+    justify-content: center;
+  }
+  .android {
+    /* Its own width, so the centred column centres it as a block while the
+       two-line text inside it still reads left to right. */
+    width: fit-content;
+    max-width: 100%;
+    text-align: left;
+  }
+  .stage {
+    --phone-w: 216px;
+  }
+  .phoneTilt {
+    transform: perspective(1400px) rotateY(-5deg) rotateX(2deg);
+  }
+  .glowA {
+    right: 50%;
+    top: auto;
+    bottom: 0;
+    width: min(420px, 100%);
+    translate: 50% 0;
+  }
+  .glowB {
+    display: none;
+  }
+}
+
+/* Stacked but NOT stretched: Apple's badge guidelines do not allow the badge
+   to be distorted, so both actions keep a shared natural width and centre. */
+@media (max-width: 480px) {
+  .eyebrow {
+    white-space: nowrap;
+    font-size: 0.64rem;
+    letter-spacing: 0.08em;
+  }
+  .actions {
+    flex-direction: column;
+    align-items: center;
+  }
+  .store,
+  .secondary,
+  .primary {
+    min-width: 232px;
+    justify-content: center;
+  }
+  .stage {
+    --phone-w: 200px;
+  }
+}
+
+/* ---------------------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .late,
+  .phoneEnter,
+  .phoneFloat,
+  .cardParallax,
+  .cardFloat,
+  .androidPing::after {
+    animation: none;
+  }
+  .store,
+  .primary,
+  .secondary,
+  .secondary svg,
+  .halo,
+  .floorShadow,
+  .phoneTilt,
+  .phone,
+  .statusWrap,
+  .slide,
+  .slide img,
+  .glare,
+  .cardParallax,
+  .dot::before {
+    transition: none;
+  }
+  .store:hover,
+  .primary:hover,
+  .secondary:hover {
+    transform: none;
+  }
+}

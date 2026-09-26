@@ -168,6 +168,16 @@ describe("motion and layout rules", () => {
     expect(block).toContain("transition: none");
   });
 
+  it("has no blinking or pulsing indicator — the only looping motion is the gentle float", () => {
+    // Owner, 2026-09-26: the pulsing status dot on the Android icon read as
+    // generic AI-template decoration and was removed. Anything that loops
+    // forever must be the float, never a blink or a ping.
+    const loops = [...css.matchAll(/animation:[^;]*\binfinite\b[^;]*;/g)].map((m) => m[0]);
+    expect(loops.length).toBeGreaterThan(0);
+    for (const rule of loops) expect(rule, rule).toMatch(/\bfloat\b/);
+    expect(css).not.toMatch(/@keyframes\s+(ping|pulse|blink)/);
+  });
+
   it("uses only the approved breakpoint scale", () => {
     const widths = [...css.matchAll(/\((?:max|min)-width:\s*(\d+)px\)/g)].map((m) => Number(m[1]));
     expect(widths.length).toBeGreaterThan(0);

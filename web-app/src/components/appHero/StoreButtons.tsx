@@ -81,7 +81,6 @@ export function AndroidComingSoon({ lead, rest }: { lead: string; rest: string }
     <p className={`${s.android} ${s.rise}`} style={{ "--d": "300ms" } as React.CSSProperties}>
       <span className={s.androidIcon}>
         <AndroidGlyph />
-        <span className={s.androidPing} aria-hidden="true" />
       </span>
       <span>
         <strong>{lead}</strong> {rest}

@@ -281,7 +281,6 @@
   font-weight: 700;
 }
 .androidIcon {
-  position: relative;
   flex: none;
   display: grid;
   place-items: center;
@@ -295,25 +294,6 @@
 .androidIcon svg {
   width: 20px;
   height: 20px;
-}
-/* A small live-status dot: "in progress", not "broken". */
-.androidPing {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--ok);
-  box-shadow: 0 0 0 2px var(--bg);
-}
-.androidPing::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: var(--ok);
-  animation: ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
 /* ---------------------------------------------------------------- stage */
@@ -684,17 +664,6 @@
     transform: translateY(-9px);
   }
 }
-@keyframes ping {
-  0% {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-  80%,
-  100% {
-    transform: scale(2.6);
-    opacity: 0;
-  }
-}
 
 /* ---------------------------------------------------------------- dark mode */
 
@@ -826,8 +795,7 @@
   .phoneEnter,
   .phoneFloat,
   .cardParallax,
-  .cardFloat,
-  .androidPing::after {
+  .cardFloat {
     animation: none;
   }
   .store,

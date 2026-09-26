@@ -595,8 +595,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "appHero.carousel.label": "OlympIQ tətbiqinin ekran görüntüləri",
     "appHero.carousel.slide": "Ekran {n} / {total}",
     "appHero.carousel.show": "Göstər: ekran {n} / {total}",
-    "appHero.carousel.pause": "Ekran görüntülərini dayandır",
-    "appHero.carousel.play": "Ekran görüntülərini davam etdir",
     "home.f1Title": "Valideyn idarəli hesablar",
     "home.f1Desc":
       "Valideyn qeydiyyatdan keçir və hər uşaq üçün ayrı hesab yaradır — uşaq sadə 8 rəqəmli ID ilə daxil olur.",
@@ -2823,8 +2821,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "appHero.carousel.label": "OlympIQ app screenshots",
     "appHero.carousel.slide": "Screen {n} of {total}",
     "appHero.carousel.show": "Show screen {n} of {total}",
-    "appHero.carousel.pause": "Pause screenshots",
-    "appHero.carousel.play": "Play screenshots",
     "home.f1Title": "Parent-managed accounts",
     "home.f1Desc":
       "The parent registers and creates a separate account for each child — the child signs in with a simple 8-digit ID.",
@@ -4867,8 +4863,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "appHero.carousel.label": "Скриншоты приложения OlympIQ",
     "appHero.carousel.slide": "Экран {n} из {total}",
     "appHero.carousel.show": "Показать экран {n} из {total}",
-    "appHero.carousel.pause": "Остановить показ скриншотов",
-    "appHero.carousel.play": "Продолжить показ скриншотов",
     "home.f1Title": "Аккаунты под управлением родителя",
     "home.f1Desc":
       "Родитель регистрируется и создаёт отдельный аккаунт для каждого ребёнка — ребёнок входит по простому 8-значному ID.",

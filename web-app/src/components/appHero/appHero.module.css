@@ -188,8 +188,7 @@
 .store:focus-visible,
 .secondary:focus-visible,
 .primary:focus-visible,
-.dot:focus-visible,
-.pauseBtn:focus-visible {
+.dot:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
@@ -627,8 +626,7 @@
   width: 22px;
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
 }
-.dot:hover,
-.pauseBtn:hover {
+.dot:hover {
   filter: none;
 }
 .dot:hover::before {
@@ -636,23 +634,6 @@
 }
 .dot[aria-current="true"]:hover::before {
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
-}
-.pauseBtn {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  margin-left: 4px;
-  padding: 0;
-  border-radius: 50%;
-  color: color-mix(in srgb, var(--text) 60%, transparent);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
-  cursor: pointer;
-}
-.pauseBtn svg {
-  width: 10px;
-  height: 10px;
 }
 
 /* ---------------------------------------------------------------- entrance */

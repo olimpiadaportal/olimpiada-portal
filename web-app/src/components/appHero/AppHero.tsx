@@ -108,8 +108,6 @@ export function AppHero({ t, panelHref, isChild, exploreId }: Props) {
           carousel: t("appHero.carousel.label"),
           slide: t("appHero.carousel.slide"),
           show: t("appHero.carousel.show"),
-          pause: t("appHero.carousel.pause"),
-          play: t("appHero.carousel.play"),
         }}
       />
     </section>

@@ -37,8 +37,6 @@ export type ShowcaseLabels = {
   slide: string;
   /** "Show screen {n} of {total}" */
   show: string;
-  pause: string;
-  play: string;
 };
 
 type Props = {
@@ -123,7 +121,10 @@ export function PhoneShowcase({ screens, cards, labels, intervalMs }: Props) {
   const reduceMotion = useReducedMotion();
   const [active, setActive] = useState(0);
   // Three independent reasons to hold the carousel still, kept apart so that
-  // one ending (the pointer leaving) cannot cancel another (the user's pause).
+  // one ending (the pointer leaving) cannot cancel another. `userPaused` is set
+  // the moment a visitor picks a screen with a dot: once they have taken
+  // control, the carousel stops moving under them. That is the stop control
+  // for touch and keyboard users, who never hover (WCAG 2.2.2).
   const [userPaused, setUserPaused] = useState(false);
   const [hovering, setHovering] = useState(false);
   const [onScreen, setOnScreen] = useState(true);
@@ -132,8 +133,8 @@ export function PhoneShowcase({ screens, cards, labels, intervalMs }: Props) {
   const canAutoplay = count > 1 && !reduceMotion;
   const playing = canAutoplay && !userPaused && !hovering && onScreen;
 
-  // Autoplay. The interval restarts whenever a manual pick changes `active`,
-  // so a screen the user just chose always gets its full time on stage.
+  // Autoplay: one timer per screen, restarted whenever `active` changes. A
+  // manual pick with a dot sets `userPaused`, so it stops here for good.
   useEffect(() => {
     if (!playing) return;
     const id = window.setTimeout(() => setActive((i) => (i + 1) % count), intervalMs);
@@ -300,33 +301,12 @@ export function PhoneShowcase({ screens, cards, labels, intervalMs }: Props) {
               className={s.dot}
               aria-label={fill(labels.show, i + 1, count)}
               aria-current={i === active ? "true" : undefined}
-              onClick={() => setActive(i)}
+              onClick={() => {
+                setActive(i);
+                setUserPaused(true);
+              }}
             />
           ))}
-          {canAutoplay && (
-            // WCAG 2.2.2: content that moves on its own for more than five
-            // seconds needs a control that stops it — hover alone does not
-            // reach touch or keyboard users.
-            <button
-              type="button"
-              className={s.pauseBtn}
-              // The label names the action the button will take; pairing it
-              // with aria-pressed as well would describe the state twice.
-              aria-label={userPaused ? labels.play : labels.pause}
-              onClick={() => setUserPaused((p) => !p)}
-            >
-              {userPaused ? (
-                <svg viewBox="0 0 12 12" aria-hidden="true">
-                  <path d="M3 2v8l7-4z" fill="currentColor" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 12 12" aria-hidden="true">
-                  <rect x="2.5" y="2" width="2.4" height="8" rx="0.8" fill="currentColor" />
-                  <rect x="7.1" y="2" width="2.4" height="8" rx="0.8" fill="currentColor" />
-                </svg>
-              )}
-            </button>
-          )}
         </div>
       )}
     </div>

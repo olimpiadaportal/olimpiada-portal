@@ -108,6 +108,22 @@ describe("screenshots", () => {
   });
 });
 
+describe("carousel controls", () => {
+  it("has one dot per screen and no separate pause/play button (owner, 2026-09-26)", () => {
+    const html = render();
+    const pager = html.slice(html.lastIndexOf('aria-roledescription="slide"'));
+    expect(pager.match(/<button/g)).toHaveLength(APP_SCREENS.length);
+  });
+
+  it("stops autoplay once a visitor picks a screen — the stop control for touch and keyboard", () => {
+    // With the pause button gone, a dot tap is the only way a visitor who
+    // cannot hover takes the carousel out of autoplay (WCAG 2.2.2).
+    const src = read("src/components/appHero/PhoneShowcase.tsx");
+    expect(src).toMatch(/onClick=\{\(\) => \{\s*setActive\(i\);\s*setUserPaused\(true\);/);
+    expect(src).toMatch(/const playing = canAutoplay && !userPaused/);
+  });
+});
+
 describe("copy", () => {
   const keysOf = (loc: (typeof locales)[number]) =>
     Object.keys(messages[loc]).filter((k) => k.startsWith("appHero.")).sort();

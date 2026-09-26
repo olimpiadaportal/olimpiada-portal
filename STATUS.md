@@ -44,7 +44,7 @@ replaces one file.
 **Verified in headless Chrome** at 1440 / 1040 / 900 / 390 / 320 px, light
 and dark, az / en / ru: zero horizontal overflow everywhere, one `h1`, App
 Store link opens in a new tab with `noopener noreferrer`, no Play link, the
-carousel advances and holds on hover and after the pause button, and under
+carousel advances, holds on hover and stops once a dot is tapped, and under
 `prefers-reduced-motion` there is no autoplay and zero running animations.
 `web-app/src/lib/__tests__/appShowcase.test.ts` pins the links, the child
 gating, the local WebP assets and their declared sizes, trilingual key

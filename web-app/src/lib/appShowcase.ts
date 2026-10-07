@@ -9,14 +9,15 @@
 export const APP_STORE_URL = "https://apps.apple.com/az/app/olympiq-school-olympiad/id6798527831";
 
 /**
- * The Google Play listing — NULL until the Android release is public.
+ * The Google Play listing (package ai.olympiq.app). Live since Google approved
+ * the production release on 2026-10-06.
  *
- * While this is null the hero shows the "Android is next" status line and NO
- * Play button: a download button that leads nowhere, or to a listing that is
- * still in review, is worse than no button. The day Play approves, set the URL
- * here and the status line is replaced by a real Google Play button.
+ * Set to null to fall back to the "Android is next" status line and hide the
+ * Play button — do that if the listing is ever unpublished, because a download
+ * button that leads nowhere is worse than no button.
  */
-export const PLAY_STORE_URL: string | null = null;
+export const PLAY_STORE_URL: string | null =
+  "https://play.google.com/store/apps/details?id=ai.olympiq.app";
 
 export type AppScreen = {
   /** Served from /public. Local on purpose — never a hotlinked store CDN URL,

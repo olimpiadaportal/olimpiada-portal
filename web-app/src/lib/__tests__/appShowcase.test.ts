@@ -59,13 +59,19 @@ describe("store links", () => {
     expect(tag).toMatch(/aria-label="[^"]+"/);
   });
 
-  it("shows the Android status line and NO Google Play link while the listing is not public", () => {
-    // If this fails because PLAY_STORE_URL was set: that is the intended
-    // switch — update this test to assert the Play button instead.
-    expect(PLAY_STORE_URL).toBeNull();
+  it("renders the Google Play link in a new tab, and no 'coming soon' line, once the listing is live", () => {
+    expect(PLAY_STORE_URL).toBe("https://play.google.com/store/apps/details?id=ai.olympiq.app");
     const html = render();
+    const tag = html.match(/<a[^>]*href="https:\/\/play\.google\.com[^"]*"[^>]*>/)?.[0];
+    expect(tag, "Google Play link must be rendered").toBeTruthy();
+    expect(tag).toContain('target="_blank"');
+    expect(tag).toContain('rel="noopener noreferrer"');
+    expect(html).not.toContain(messages.az["appHero.android.lead"]);
+  });
+
+  it("shows a signed-in child neither store link", () => {
+    const html = render({ isChild: true, panelHref: "/child" });
     expect(html).not.toContain("play.google.com");
-    expect(html).toContain(messages.az["appHero.android.lead"]);
   });
 
   it("gives a signed-in child their panel instead of the App Store link", () => {

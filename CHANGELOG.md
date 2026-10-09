@@ -1756,6 +1756,35 @@ another extended review rather than a fast one.
   140px hero, it left the footer on screen while loading and then threw it
   off the bottom when the page arrived.
 
+### Account recovery and panel users (2026-10-09)
+
+- `[store]` "Reset password" in the app now opens the reset page on olympiq.ai.
+  It used to open the API host (a vercel.app address), and once a parent was
+  there every link — the logo included — kept them on it. The app now has a
+  separate website address for pages a person reads; the API address is
+  unchanged. iOS and Android alike, shipped as an over-the-air update.
+
+- `[web]` The login form has a "Forgot password?" link under the parent password
+  field. The reset flow behind it already existed and is reused unchanged. A
+  reset link that has expired or was already used now lands back on the reset
+  page with a message that says so, instead of on the login page with an
+  email-verification notice; and the reset page explains itself instead of
+  showing a form that cannot be submitted when no reset link was opened.
+
+- `[web]` A visit to the production deployment's vercel.app address is sent to
+  the same page on olympiq.ai. API routes, email links and form posts are never
+  redirected — the mobile app and the payment callbacks rely on that address.
+
+- `[admin]` Creating Admin and Content Manager accounts works and explains every
+  refusal. The commonest one — an email that already has an account — used to
+  be reported as a generic "operation failed", which is why it looked like
+  nothing happened; production had never recorded a single successful creation.
+
+- `[admin]` Panel users can now be edited (name, role) and deleted, with a
+  confirmation step. Ailə Quliyev's account is the Super Admin: shown greyed
+  out with every control disabled, and protected in the database itself from
+  being deleted, disabled, re-roled or duplicated (migration 182).
+
 ---
 
 ## 1.15.0 — RELEASED on the App Store 2026-09-09 (submitted 2026-09-04, approved and released the same day)

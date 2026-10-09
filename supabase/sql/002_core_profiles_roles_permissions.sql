@@ -43,6 +43,7 @@ create table if not exists public.profiles (
   preferred_locale public.content_locale not null default 'az',
   avatar_media_id  uuid,                       -- FK to media_assets added in 011 (deferred)
   status           public.account_status not null default 'pending',
+  is_super_admin   boolean not null default false, -- Migration 182: the ONE protected administrator; guarded in 011
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );

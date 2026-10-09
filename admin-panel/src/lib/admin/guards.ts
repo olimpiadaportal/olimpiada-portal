@@ -12,6 +12,8 @@ export type AuthContext = {
   permissions: string[];
   isAdmin: boolean;
   isContentManager: boolean;
+  /** The ONE protected administrator (migration 182). Always also isAdmin. */
+  isSuperAdmin: boolean;
 };
 
 // Retry a Supabase query once on a hard error (transient DB/network hiccup), so a
@@ -41,7 +43,7 @@ export const getAuthContext = cache(
   const { data: profile } = await withRetry(() =>
     supabase
       .from("profiles")
-      .select("id")
+      .select("id, is_super_admin")
       .eq("auth_user_id", user.id)
       .maybeSingle(),
   );
@@ -84,6 +86,7 @@ export const getAuthContext = cache(
     permissions,
     isAdmin: roleCodes.includes("administrator"),
     isContentManager: roleCodes.includes("content_manager"),
+    isSuperAdmin: profile?.is_super_admin === true && roleCodes.includes("administrator"),
   };
   },
 );

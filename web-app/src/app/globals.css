@@ -1634,9 +1634,12 @@ ul.clean li {
   padding: 12px 14px;
   font-size: 0.88rem;
   line-height: 1.5;
-  color: var(--red);
-  background: color-mix(in srgb, var(--red) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--red) 38%, transparent);
+  /* --red is an ARENA token; outside .arena (the /forgot-password notice) it is
+     undefined, so the site-wide --danger stands in. Inside the arena nothing
+     changes. */
+  color: var(--red, var(--danger));
+  background: color-mix(in srgb, var(--red, var(--danger)) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red, var(--danger)) 38%, transparent);
 }
 .auth-note a {
   color: inherit;
@@ -1660,6 +1663,23 @@ ul.clean li {
 }
 .arena-auth-alt a {
   color: var(--lime);
+}
+/* "Forgot password?" under the parent password field. Right-aligned, small,
+   and with a 24px-tall hit area so it is still an easy tap on a phone. */
+.arena-forgot {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-top: 2px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--lime);
+  text-decoration: none;
+}
+.arena-forgot:hover,
+.arena-forgot:focus-visible {
+  text-decoration: underline;
 }
 
 /* ---- Wallpaper picker (arena) ---- */

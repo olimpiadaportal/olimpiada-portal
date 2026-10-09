@@ -14740,3 +14740,96 @@ end;
 $fn$;
 revoke all on function public.admin_revoke_child_link(uuid,uuid) from public,anon;
 grant execute on function public.admin_revoke_child_link(uuid,uuid) to authenticated,service_role;
+
+-- =============================================================================
+-- SUPER ADMIN GUARD (migration 182, 2026-10-09). The column lives in 002.
+-- One protected administrator: it keeps the administrator role and every power
+-- that role has; what changes is what can be done TO it. Nobody can delete it,
+-- disable it, change its roles or move the designation — enforced here so it
+-- holds for every caller, the service-role client included. Its PASSWORD and
+-- sign-in are deliberately untouched (account recovery must keep working).
+-- The designation itself is DATA (which account), assigned only by migration 182.
+-- =============================================================================
+create unique index if not exists ux_profiles_single_super_admin
+  on public.profiles ((true))
+  where is_super_admin;
+
+-- 2. Profile guard: the designation cannot be granted or removed outside a
+--    reviewed migration, and the Super Admin's profile cannot be deleted,
+--    disabled or re-pointed at another auth user.
+create or replace function public.fn_guard_super_admin_profile()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_assigning boolean := coalesce(current_setting('olympiq.super_admin_assign', true), '') = 'on';
+begin
+  if tg_op = 'DELETE' then
+    if old.is_super_admin then
+      raise exception 'The Super Admin account cannot be deleted.' using errcode = '42501';
+    end if;
+    return old;
+  end if;
+
+  if tg_op = 'INSERT' then
+    if new.is_super_admin and not v_assigning then
+      raise exception 'The Super Admin designation can only be assigned by a reviewed migration.'
+        using errcode = '42501';
+    end if;
+    return new;
+  end if;
+
+  -- UPDATE
+  if new.is_super_admin is distinct from old.is_super_admin and not v_assigning then
+    raise exception 'The Super Admin designation can only be changed by a reviewed migration.'
+      using errcode = '42501';
+  end if;
+  if old.is_super_admin and not v_assigning
+     and (new.status is distinct from old.status
+          or new.auth_user_id is distinct from old.auth_user_id) then
+    raise exception 'The Super Admin account cannot be modified.' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_guard_super_admin_profile on public.profiles;
+create trigger trg_guard_super_admin_profile
+  before insert or update or delete on public.profiles
+  for each row execute function public.fn_guard_super_admin_profile();
+
+-- 3. Role guard: the Super Admin's roles cannot be removed, changed or added to.
+create or replace function public.fn_guard_super_admin_roles()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_assigning boolean := coalesce(current_setting('olympiq.super_admin_assign', true), '') = 'on';
+begin
+  if v_assigning then
+    return coalesce(new, old);
+  end if;
+  if tg_op in ('UPDATE', 'DELETE')
+     and exists (select 1 from public.profiles p where p.id = old.profile_id and p.is_super_admin) then
+    raise exception 'The Super Admin account''s roles cannot be changed.' using errcode = '42501';
+  end if;
+  if tg_op in ('INSERT', 'UPDATE')
+     and exists (select 1 from public.profiles p where p.id = new.profile_id and p.is_super_admin) then
+    raise exception 'The Super Admin account''s roles cannot be changed.' using errcode = '42501';
+  end if;
+  return coalesce(new, old);
+end;
+$$;
+
+drop trigger if exists trg_guard_super_admin_roles on public.profile_roles;
+create trigger trg_guard_super_admin_roles
+  before insert or update or delete on public.profile_roles
+  for each row execute function public.fn_guard_super_admin_roles();
+
+-- Trigger functions are not callable as RPCs, but revoke anyway: Supabase's
+-- default privileges grant EXECUTE to anon and authenticated explicitly.
+revoke all on function public.fn_guard_super_admin_profile() from public, anon, authenticated;
+revoke all on function public.fn_guard_super_admin_roles() from public, anon, authenticated;
+

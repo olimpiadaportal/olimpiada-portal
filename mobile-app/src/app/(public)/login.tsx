@@ -32,7 +32,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
 import { useFieldChain } from "@/lib/useFieldChain";
 import { useAuthStore } from "@/features/auth/authStore";
-import { bffUrl, isBffConfigured } from "@/lib/env";
+import { isBffConfigured, siteUrl } from "@/lib/env";
 
 type Tab = "parent" | "student";
 
@@ -196,7 +196,8 @@ export default function Login() {
               <Button
                 title={t("forgot.title")}
                 variant="ghost"
-                onPress={() => void Linking.openURL(`${bffUrl}/forgot-password`)}
+                // The brand domain, never the API origin — see siteUrl in lib/env.ts.
+                onPress={() => void Linking.openURL(`${siteUrl}/forgot-password`)}
               />
             ) : null}
             {isBffConfigured ? (

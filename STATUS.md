@@ -6,6 +6,65 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## ACCOUNT RECOVERY + PANEL USERS + SUPER ADMIN (2026-10-09)
+
+**Issue 1 — vercel.app on the reset page.** Root cause: the mobile login opened
+`${bffUrl}/forgot-password`, and `EXPO_PUBLIC_BFF_URL` is the API origin
+(`olimpiada-portal-5zga.vercel.app`). Fixed at the source with a separate
+`siteUrl` in `mobile-app/src/lib/env.ts` (default `https://olympiq.ai`,
+overridable by `EXPO_PUBLIC_SITE_URL`, never falling back to `bffUrl`). The
+reset EMAIL was never wrong: it is built from `NEXT_PUBLIC_SITE_URL` and uses
+token-hash links that work on any domain. Safety net for installs that have
+not taken the update: `web-app/src/lib/canonicalHost.ts` 307s GET/HEAD page
+requests on a production `*.vercel.app` host to the deployment's own
+`NEXT_PUBLIC_SITE_URL` — never `/api/*` (mobile BFF; a cross-origin redirect
+drops the Authorization header), never `/auth/*`, never previews. Its env reads
+live in that module so `middleware.ts` stays env-free for the indexing rule.
+
+**Mobile release: NO version bump — OTA on 1.16.0, both platforms.** Only JS
+changed, and the fix has to reach installed builds. No store review is open.
+
+**Issue 2 — no "Forgot password?" on web.** The flow existed end to end
+(`requestPasswordReset`, `/auth/confirm`, `updatePassword`); only the link was
+missing. Added on the parent tab only (a child has no email and a
+parent-set password). `linkFailurePath` routes failed RECOVERY links to
+`/forgot-password?link=expired|invalid`; `/reset-password` shows a
+request-a-new-link state when there is no reset session.
+
+**Issue 3 — creation "failed silently".** Evidence from production (read-only):
+zero `admin.panel_user.create` audit rows ever, one administrator, zero content
+managers, no orphaned auth users or role-less profiles. A controlled probe (two
+`example.com` users created through the panel's own key and deleted at once —
+verified zero residue) showed Supabase Auth ACCEPTS valid creation, and returns
+`422 email_exists` for an address already in use — which the action reported as
+the generic "Əməliyyat alınmadı. Yenidən cəhd edin." Fixed: every Auth refusal
+is mapped to a named reason; email validated server-side; the role resolved
+before anything is created; every step checked; any failure after the auth
+user exists deletes it again. NOTE for the owner: an address that already
+belongs to a PARENT account cannot also become a panel account — use another.
+
+**Issue 4 — Super Admin + RBAC.** Migration `2026_10_09_182_super_admin.sql`
+(staging, then production; backported to 002/011; check `136` in 013): a
+`profiles.is_super_admin` flag with a one-holder unique index, and triggers on
+`profiles` and `profile_roles` that refuse deleting, disabling, re-roling or
+re-assigning the Super Admin for EVERY caller, service role included. Proven on
+staging in a rolled-back transaction (all six attacks refused; rename allowed
+by design). Assigned by profile id AND auth id (`414f3c7b…` / `e4d52772…`, the
+only administrator, `al***@gmail.com`) — the account has no display name.
+Password and sign-in are deliberately NOT blocked, so recovery keeps working.
+Panel: edit (name, role) and delete with confirmation; Super Admin row greyed
+with all controls disabled and a tooltip; an admin cannot delete or re-role
+themselves. Already true before this round and verified, not changed: all 115
+admin server actions authorize first; Users is admin-only in the nav, the page
+and the actions; Content Managers reach only dashboard, alerts, questions and
+part of manage. NOT expanded: Content Managers still cannot edit Site content
+(CMS texts) — CLAUDE.md keeps it admin-only; widening it is an owner decision.
+
+Gates: web tsc 0, 1608 tests, build OK; admin tsc 0, 1169 tests, build OK;
+mobile tsc 0, 1499 tests; 013 on production 140/141 (only 88, tolerated).
+
+---
+
 ## LANDING HERO — the mobile app as the first screen (2026-09-25, web only)
 
 The owner asked for the top of the landing page to present the iOS app as a

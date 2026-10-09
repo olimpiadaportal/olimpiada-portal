@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { confirmEmailLink } from "@/lib/auth/confirmEmail";
+import { confirmEmailLink, linkFailurePath } from "@/lib/auth/confirmEmail";
 
 // LEGACY entry point, kept working on purpose.
 //
@@ -19,7 +19,5 @@ export async function GET(request: Request) {
   if (result.ok) {
     return NextResponse.redirect(`${url.origin}${result.next}`);
   }
-  return NextResponse.redirect(
-    `${url.origin}/login?verify=${result.reason === "expired" ? "expired" : "failed"}`,
-  );
+  return NextResponse.redirect(`${url.origin}${linkFailurePath(url, result.reason)}`);
 }

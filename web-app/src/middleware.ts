@@ -1,8 +1,18 @@
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { ROBOTS_TAG_HEADER, robotsTagFor } from "@/lib/indexing";
+import { canonicalRedirectFor } from "@/lib/canonicalHost";
 
 export async function middleware(request: NextRequest) {
+  // A person who arrives on the production deployment's *.vercel.app alias is
+  // sent to the brand domain BEFORE any session work. API, auth-link and
+  // non-GET requests are never touched — see lib/canonicalHost.ts.
+  const canonical = canonicalRedirectFor(request);
+  // 307, not 308: a permanent redirect is cached by the browser indefinitely,
+  // so a misconfigured site URL would outlive its own fix. The alias is
+  // already noindex (lib/indexing.ts), so there is no link equity to transfer.
+  if (canonical) return NextResponse.redirect(canonical, 307);
+
   const response = await updateSession(request);
 
   // Non-production deployments (staging, previews, *.vercel.app, localhost)

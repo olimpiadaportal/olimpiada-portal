@@ -121,6 +121,12 @@ export function ArenaLogin({
               showLabel={tt("auth.showPassword")}
               hideLabel={tt("auth.hidePassword")}
             />
+            {/* Parent tab only: a child's password is set by their parent, and
+                a child has no email to receive a reset link. Right-aligned under
+                the field it belongs to, where people look for it. */}
+            <a className="arena-forgot" href="/forgot-password">
+              {tt("forgot.link")}
+            </a>
           </div>
           {parentState?.error && <p className="arena-error">{parentState.error}</p>}
           <button className="arena-btn" type="submit" disabled={parentPending}>

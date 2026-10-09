@@ -25,6 +25,7 @@ const ADMIN: AdminApiAuth = {
     permissions: [],
     isAdmin: true,
     isContentManager: false,
+    isSuperAdmin: false,
   },
 };
 

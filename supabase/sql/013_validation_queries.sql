@@ -5171,3 +5171,18 @@ select '134_sibling_rank_single_source' as check_name,
      and proname in ('quote_child_plan','add_subscription_subject','remove_subscription_subject','quote_plan_change')
      and position('public.sibling_rank' in prosrc)>0)=4
  then 'PASS' else 'FAIL' end as status;
+
+-- 136. The Super Admin guard is installed and armed (migration 182). At most one
+--      holder of the designation; both triggers present and enabled; neither
+--      guard function callable by a client. Zero holders is a PASS: a
+--      schema-only build (staging, a from-zero rebuild) has no such account.
+select '136_super_admin_guard' as check_name,
+ case when
+   (select count(*) from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='is_super_admin')=1
+   and (select count(*) from public.profiles where is_super_admin) <= 1
+   and exists (select 1 from pg_indexes where schemaname='public' and indexname='ux_profiles_single_super_admin')
+   and exists (select 1 from pg_trigger where tgname='trg_guard_super_admin_profile' and tgrelid='public.profiles'::regclass and tgenabled<>'D')
+   and exists (select 1 from pg_trigger where tgname='trg_guard_super_admin_roles' and tgrelid='public.profile_roles'::regclass and tgenabled<>'D')
+   and not has_function_privilege('authenticated', 'public.fn_guard_super_admin_profile()', 'EXECUTE')
+   and not has_function_privilege('authenticated', 'public.fn_guard_super_admin_roles()', 'EXECUTE')
+ then 'PASS' else 'FAIL' end as status;

@@ -87,6 +87,25 @@ export const bffUrl = resolveDevBffHost(rawBffUrl, metroHostUri, __DEV__);
 export const isSupabaseConfigured = supabaseUrl.length > 0 && supabaseAnonKey.length > 0;
 
 /**
+ * The PUBLIC WEBSITE origin — for pages a person opens in a browser (the
+ * password reset page). Deliberately a separate value from `bffUrl`:
+ *
+ * `bffUrl` is the API origin the app talks to, and in production it is a Vercel
+ * deployment host (`*.vercel.app`). Until 2026-10-09 the "reset password" button
+ * opened `${bffUrl}/forgot-password`, which put a parent on the vercel.app host —
+ * the address bar showed it, and every relative link on that page (the logo's
+ * "/") kept them there. An API origin is an implementation detail; a page a
+ * person reads has to be on the brand domain.
+ *
+ * Overridable with EXPO_PUBLIC_SITE_URL (a staging build points at staging),
+ * and it falls back to the production domain rather than to `bffUrl`, so a
+ * missing variable can never put the vercel.app host back in front of a user.
+ */
+const DEFAULT_SITE_URL = "https://olympiq.ai";
+const rawSiteUrl = (process.env.EXPO_PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
+export const siteUrl = /^https:\/\/[^\s/]+$/i.test(rawSiteUrl) ? rawSiteUrl : DEFAULT_SITE_URL;
+
+/**
  * A usable BFF origin must be an ABSOLUTE http(s) URL: a scheme-less value
  * ("localhost:3000") or a leftover placeholder would pass a length check, skip
  * the LAN rewrite above and then fail at fetch time as an opaque transport

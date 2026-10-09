@@ -4898,3 +4898,25 @@ a.qpage-link:hover {
 .finance-page details > summary {
   cursor: pointer;
 }
+
+/* ---- Users: the Super Admin row (migration 182) ---------------------------
+   Greyed out and non-interactive: every control on it is disabled, and the
+   title on the row explains why. The protection itself lives in the server
+   actions and in database triggers; this is how it reads on screen. */
+.user-row-locked td {
+  color: var(--muted, #8a8f98);
+  background: color-mix(in srgb, currentColor 4%, transparent);
+}
+.user-row-locked { cursor: not-allowed; }
+.role-pill-super {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+.user-you { font-size: 12px; opacity: 0.75; }

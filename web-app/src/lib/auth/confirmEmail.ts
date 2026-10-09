@@ -120,3 +120,22 @@ export async function confirmEmailLink(
 function isExpired(message: string): boolean {
   return /expired|invalid or has expired|token has expired/i.test(message);
 }
+
+/**
+ * Where a link that could NOT be redeemed sends the visitor.
+ *
+ * A failed PASSWORD-RESET link goes back to /forgot-password with a message
+ * about the reset link and the form to request a new one. Until 2026-10-09 every
+ * failure went to /login?verify=…, which shows the EMAIL-VERIFICATION notice —
+ * the wrong story for someone who asked to reset a password, and no way forward
+ * from it. Recovery is recognised by the link's own `type=recovery` or by its
+ * `next=/reset-password` hand-off (the legacy PKCE links carry only the latter).
+ * Everything else keeps the verification path it always had.
+ */
+export function linkFailurePath(url: URL, reason: "expired" | "invalid"): string {
+  const params = url.searchParams;
+  const isRecovery =
+    params.get("type") === "recovery" || safeNext(params.get("next"), "") === "/reset-password";
+  if (isRecovery) return `/forgot-password?link=${reason === "expired" ? "expired" : "invalid"}`;
+  return `/login?verify=${reason === "expired" ? "expired" : "failed"}`;
+}

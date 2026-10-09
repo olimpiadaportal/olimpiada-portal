@@ -13,6 +13,7 @@ const KEYS = [
   "parent.err.invalid",
   "parent.auth.emailPh", "parent.auth.passwordPh",
   "auth.showPassword", "auth.hidePassword",
+  "forgot.link",
 ];
 
 // Unified login with two user-type tabs: Şagird (Student) and Valideyn (Parent)

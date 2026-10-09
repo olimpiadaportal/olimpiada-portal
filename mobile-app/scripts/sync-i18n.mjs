@@ -184,6 +184,11 @@ const WEB_ONLY_PREFIXES = ["terms.", "checkout.", "payres.", "appHero."];
 // still has every one of them, which is correct — olympiq.ai is where
 // purchasing legitimately happens.
 const DEAD_COMMERCE_KEYS = new Set([
+  // 2026-10-09: the add-child free-trial note says payment "must be completed
+  // through the Parent Profile" — on Android, a purchase-silent binary, that is
+  // a steering sentence. The wizard that renders it is web-only.
+  "addchild.trialNote",
+  "addchild.startTrial",
   // Added 2026-09-22 after the Play rejection. All three ship a purchase verb
   // and are verified UNRENDERED on mobile (no literal reference under
   // mobile-app/src, and the only oly* template-literal family is

@@ -8,7 +8,7 @@
 // (`ck_free_trial_subjects` plus a guard inside `activate_free_trial`). A
 // hand-crafted POST that skips this component still cannot produce a third
 // subject or a second trial.
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useId, useMemo, useState } from "react";
 import { Modal } from "@/components/Modal";
 import { FreeTrialCountdown } from "@/components/FreeTrialCountdown";
 import { FreeTrialSubjectCard } from "@/components/FreeTrialSubjectCard";
@@ -44,6 +44,13 @@ export function FreeTrialActivation({
 }: Props) {
   const [selected, setSelected] = useState<string[]>([]);
   const [confirming, setConfirming] = useState(false);
+  // THE BUG THIS ID FIXES (2026-10-09). The confirm dialog is a <Modal>, and
+  // Modal renders through createPortal into <body>. React nests it inside this
+  // <form>, but the DOM does not: the confirm button lived OUTSIDE the form, so
+  // a click on it submitted nothing and the trial could never be activated —
+  // production had zero free_trials rows. The HTML `form` attribute ties the
+  // button to the form by id, wherever the button is rendered.
+  const formId = useId();
   const [state, formAction, pending] = useActionState<ActivateTrialState, FormData>(
     activateFreeTrialAction,
     {},
@@ -121,6 +128,7 @@ export function FreeTrialActivation({
       </div>
 
       <form
+        id={formId}
         action={formAction}
         onSubmit={(e) => {
           // The confirm sheet is the gate; a direct submit (Enter key) must not
@@ -213,7 +221,7 @@ export function FreeTrialActivation({
             >
               {d["trial.confirm.cancel"]}
             </button>
-            <button type="submit" className="btn btn-primary" disabled={pending}>
+            <button type="submit" form={formId} className="btn btn-primary" disabled={pending}>
               {pending ? d["trial.cta.pending"] : d["trial.confirm.ok"]}
             </button>
           </div>

@@ -14834,3 +14834,16 @@ body[data-site-typography] .btn-ghost {
 .link-code[data-copied="true"] .link-code-hint {
   color: var(--ok);
 }
+
+/* Add-child payment step: the free-trial note (2026-10-09). An accent-tinted
+   callout rather than muted text — it changes what the parent should click. */
+.wiz-trial-note {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}

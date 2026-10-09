@@ -848,6 +848,17 @@ export function AddChildWizard({
           <div className="pay-card">
             <h2 style={{ margin: "0 0 4px" }}>{tt("pay.title")}</h2>
             <p className="muted">{tt("pay.note")}</p>
+            {/* THE FREE TRIAL, offered where the money is asked for (owner,
+                2026-10-09). Until now this step led ONLY to the bank: the
+                24-hour trial lived on the child's subscription page, which the
+                wizard never pointed at, and production had never recorded one.
+                Shown whenever something is due — a new child has, by
+                definition, never used their one trial. */}
+            {payableNow && !checkout && (
+              <p className="wiz-trial-note" role="note">
+                {tt("addchild.trialNote")}
+              </p>
+            )}
 
             <div className="wizard-summary" style={{ marginTop: 18 }}>
               {/* No period suffix: with per-subject cycles the only honest
@@ -978,10 +989,21 @@ export function AddChildWizard({
               {tt("addchild.next")}
             </button>
           )}
+          {/* The trial first: it needs no card and no payment. It hands over to
+              the ONE trial picker (children/[id]/subscribe → FreeTrialActivation)
+              rather than duplicating it, so eligibility, the two-subject cap and
+              the 24 hours stay enforced in a single place — the database. The
+              child already has their 8-digit login ID: create_child_account
+              issues it when the child is created. */}
+          {cur === "payment" && !checkout && payableNow && studentProfileId && (
+            <Link className="btn" href={`/children/${studentProfileId}/subscribe`}>
+              {tt("addchild.startTrial")}
+            </Link>
+          )}
           {cur === "payment" && !checkout && (
             <button
               type="button"
-              className="btn"
+              className={payableNow && studentProfileId ? "btn-ghost" : "btn"}
               onClick={confirmPayment}
               disabled={pending || plan.length === 0 || !quote}
             >

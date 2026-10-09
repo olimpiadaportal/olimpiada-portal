@@ -6,6 +6,42 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## FREE TRIAL — web fixed, mobile AWAITING OWNER DECISION (2026-10-09)
+
+**Evidence:** production `free_trials` had 0 rows ever; 5 `checkout_sessions`
+pending (latest 2026-10-09); flags payments=ON, launch_promo=ON, giveaway OFF.
+
+**Two web breaks, both fixed.** (1) `FreeTrialActivation`'s confirm button was
+inside `<Modal>`, which portals to `<body>`: outside the form in the DOM, so a
+click submitted nothing. Fixed with `form={formId}`. A scan of every Modal in
+web-app and admin-panel found no other case (three hits were onClick buttons).
+(2) With the subscription trial retired (migration 142, `trial_days = 0`), the
+Add Child wizard always ended at the bank and never mentioned the trial. The
+payment step now shows the owner's note and links to the ONE trial picker
+(`/children/[id]/subscribe`); pay-now stays as the secondary action.
+
+**Backend unchanged and proven on staging** (rolled back, zero residue): 3
+subjects refused; another parent's child refused; 2 subjects → window exactly
+1 day; access to chosen subjects only; second trial refused; access false
+after expiry with no job; 0 payment/subscription/checkout rows. The 8-digit
+login ID is issued by `create_child_account` at creation, so a trial-only
+child can sign in (the wizard comment saying otherwise is stale). Only the
+CREATING parent may start the trial (`created_by_parent_profile_id`).
+
+**Mobile — NOT changed, owner approval required.** The app already shows
+trial status and honours trial access (access is server-side), so a trial
+started on the web works in the app today. Starting one IN the app is not
+built (no screen, no BFF route). Risks: Android is purchase-silent — the
+owner's note ("payment must be completed through the Parent Profile") cannot
+ship there, and is now in DEAD_COMMERCE_KEYS; iOS Guideline 3.1.1 expects
+time-limited trials of IAP-sold content to go through IAP (a $0 "trial"
+product), so a server-granted trial in the iOS binary is a review risk.
+
+Gates: web tsc 0, 1616 tests, build OK; mobile store-copy 17/17, bundle
+unchanged.
+
+---
+
 ## ACCOUNT RECOVERY + PANEL USERS + SUPER ADMIN (2026-10-09)
 
 **Issue 1 — vercel.app on the reset page.** Root cause: the mobile login opened

@@ -60,6 +60,7 @@ const KEYS = [
   // `pay.payNow` stays listed: the wizard no longer renders it, but a dictionary
   // that drops a key a cached bundle still asks for renders the key itself.
   "pay.title", "pay.note", "pay.payNow", "pay.continue", "pay.confirmNoCharge",
+  "addchild.trialNote", "addchild.startTrial",
   "sub.trialNoChargeToday",
   "pay.processing", "pay.success",
   "pay.idRevealed", "pay.subtotal", "pay.discount", "pay.total",

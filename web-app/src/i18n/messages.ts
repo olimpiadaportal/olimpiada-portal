@@ -1255,6 +1255,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Migration 125 — the plan-change sheet leads to the bank, so its primary
     // button says so. `pay.payNow` stays for the add-child wizard only.
     "pay.continue": "Ödənişə keç",
+    "addchild.trialNote": "Qeyd: Seçdiyiniz 2 fənn üzrə 24 saatlıq pulsuz sınaq müddətindən yararlanacaqsınız. Sınaq müddəti bitdikdən sonra platformadan istifadəni davam etdirmək üçün ödənişi Valideyn Profilində tamamlamalısınız.",
+    "addchild.startTrial": "24 saatlıq pulsuz sınağı başlat",
     "pay.processing": "Emal olunur…",
     "pay.success": "Ödəniş uğurlu oldu",
     "pay.idRevealed": "Uşağınızın 8 rəqəmli giriş ID-si yaradıldı.",
@@ -3430,6 +3432,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Migration 125 — the plan-change sheet leads to the bank, so its primary
     // button says so. `pay.payNow` stays for the add-child wizard only.
     "pay.continue": "Continue to payment",
+    "addchild.trialNote": "Note: You will receive a free 24-hour trial for 2 subjects of your choice. After the trial expires, payment must be completed through the Parent Profile to continue using the platform.",
+    "addchild.startTrial": "Start the free 24-hour trial",
     "pay.processing": "Processing…",
     "pay.success": "Payment successful",
     "pay.idRevealed": "Your child's 8-digit login ID has been created.",
@@ -5475,6 +5479,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Migration 125 — the plan-change sheet leads to the bank, so its primary
     // button says so. `pay.payNow` stays for the add-child wizard only.
     "pay.continue": "Перейти к оплате",
+    "addchild.trialNote": "Примечание: вы получите бесплатный пробный период на 24 часа по 2 предметам на ваш выбор. После его окончания, чтобы продолжить пользоваться платформой, оплату нужно завершить в профиле родителя.",
+    "addchild.startTrial": "Начать бесплатный пробный период на 24 часа",
     "pay.processing": "Обработка…",
     "pay.success": "Оплата прошла успешно",
     "pay.idRevealed": "8-значный ID для входа вашего ребёнка создан.",

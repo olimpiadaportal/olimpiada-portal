@@ -1785,6 +1785,19 @@ another extended review rather than a fast one.
   out with every control disabled, and protected in the database itself from
   being deleted, disabled, re-roled or duplicated (migration 182).
 
+### The 24-hour free trial works on the web (2026-10-09)
+
+- `[web]` The free trial could never be started: production had no trial on
+  record at all. Its confirm button sat in a dialog that renders outside the
+  form, so clicking it submitted nothing. Fixed; the trial's rules were not
+  touched and were re-verified end to end.
+
+- `[web]` Add Child now offers the trial before any payment. The payment step
+  shows the free-trial note and a "Start the free 24-hour trial" button that
+  leads to the existing two-subject picker; paying now stays available as the
+  second option. After the trial, payment is made from the child's
+  subscription page in the parent's area, as before.
+
 ---
 
 ## 1.15.0 — RELEASED on the App Store 2026-09-09 (submitted 2026-09-04, approved and released the same day)

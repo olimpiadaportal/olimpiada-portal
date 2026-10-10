@@ -1,10 +1,27 @@
-// The copy that ships in the store binary must not sell anything.
+// The copy that ships in the store binary must not sell anything OF ITS OWN.
 //
-// WHY THIS TEST EXISTS. The apps are PURCHASE-SILENT BY ARCHITECTURE
-// (docs/STORE_PAYMENTS_COMPLIANCE.md §4/§5): purchasing happens on the web only,
-// so no price, no purchase verb and no discount schedule may appear in the
-// binary — and since parent and child share ONE binary, that applies to every
-// surface, not just the child's.
+// WHAT CHANGED, AND WHAT DID NOT (owner decision 2026-10-10). This sweep used
+// to enforce full purchase-silence, because Android sold nothing and the
+// binary is shared by iOS and Android, parent and child. Since 2026-10-10 BOTH
+// store builds sell through their store's own in-app purchase (StoreKit on iOS,
+// Google Play Billing on Android). So the sweep is now SCOPED:
+//
+//   * THE STORE RAIL'S OWN COPY — the parent-only `mob.iap.*` keys and the
+//     parent's trial-ended banner (`mob.trial.banner.*`) — may use ordinary
+//     purchase vocabulary (activate, price, purchase, restore purchases …).
+//     Those keys render only on parent screens (iap-store-boundary.test.ts
+//     proves no student screen reaches the rail).
+//   * EVERYTHING ELSE stays exactly as strict as before, child copy included:
+//     no purchase verbs, no price words.
+//   * NOWHERE — rail copy included — may the binary carry an amount or a
+//     currency of its own (AZN, manat, ₼: the only price is the store's own
+//     localised string, supplied at runtime), a URL or olympiq.ai, a price
+//     placeholder, a discount schedule, web-checkout language or a trial
+//     promise. And the rail copy may not point at a website, a browser or a
+//     card at all.
+//
+// Purchasing outside the stores still happens on the web only
+// (docs/STORE_PAYMENTS_COMPLIANCE.md §4/§5); the binary must never point there.
 //
 // The 2026-08-18 compliance pass rewrote the FAQ entries it knew about (q3/a3,
 // q6/a6) and MISSED two. `faq.a7` went on shipping the sibling-discount schedule
@@ -54,7 +71,9 @@ function word(alternatives: string): RegExp {
 }
 
 /**
- * Tokens that must not appear in copy the binary renders.
+ * HARD BANS: tokens that must not appear in ANY copy the binary renders, the
+ * store rail's included. Owner decision 2026-10-10 made Android sell, and
+ * changed none of these: the only price is the store's own runtime string.
  *
  * Percent signs and digit-percent pairs are here because a DISCOUNT SCHEDULE is
  * commercial information about a purchase even though it names no currency —
@@ -63,7 +82,7 @@ function word(alternatives: string): RegExp {
  * Stems (`endirim`, `скидк`, `qiymət`) are matched as substrings on purpose:
  * Azerbaijani and Russian inflect, and `endirimi`/`скидках` are the same claim.
  */
-const BANNED: [RegExp, string][] = [
+const HARD: [RegExp, string][] = [
   [word("azn"), "currency code"],
   [/₼/u, "manat sign"],
   [/manat/iu, "currency word"],
@@ -76,6 +95,19 @@ const BANNED: [RegExp, string][] = [
   [/endirim/iu, "discount (az)"],
   [word("discount|discounts|discounted"), "discount (en)"],
   [/скидк/iu, "discount (ru)"],
+  // Web-checkout language: the binary's only purchase path is the store sheet.
+  [/checkout|ödəniş səhifəsi|страниц\w* оплаты/iu, "web checkout"],
+  [/pays? in (a|the|your) browser|brauzerdə ödə|оплат\w* в браузере/iu, "pay-in-browser"],
+  [/sınaq müddəti|sınağı başlad/iu, "trial promise (az)"],
+  [/free trial|start the trial/iu, "trial promise (en)"],
+  [/пробный период/iu, "trial promise (ru)"],
+];
+
+/**
+ * SALES VOCABULARY: banned everywhere EXCEPT the parent-only store-rail keys
+ * (see RAIL_KEY below). Before 2026-10-10 these were hard bans too.
+ */
+const SALES_VOCAB: [RegExp, string][] = [
   // "qiymətləndirmə" is Azerbaijani for ASSESSMENT and is all over the test
   // screens, so the price stem excludes it rather than being dropped entirely.
   [/qiymət(?!ləndir)/iu, "price (az)"],
@@ -96,11 +128,38 @@ const BANNED: [RegExp, string][] = [
   // the privacy policy ("получить копию" — request a copy). The CTA it labelled,
   // poly.buyNow, is dropped from the catalogue by sync-i18n.mjs instead. A
   // pattern that fires on innocent copy gets allowlisted into uselessness.
-  [/sınaq müddəti|sınağı başlad/iu, "trial promise (az)"],
-  [/free trial|start the trial/iu, "trial promise (en)"],
-  [/пробный период/iu, "trial promise (ru)"],
   [/pay now|indi ödə|оплатить|к оплате/iu, "pay-now CTA"],
 ];
+
+/** Everything at once: the bar for every key outside the store rail. */
+const BANNED: [RegExp, string][] = [...HARD, ...SALES_VOCAB];
+
+/**
+ * THE STORE RAIL'S OWN COPY (owner decision 2026-10-10). Parent-only: the
+ * purchase panel, its restore control, and the parent's trial-ended banner
+ * that leads to them. Rendered on iOS and Android alike.
+ */
+function isRailKey(key: string): boolean {
+  return key.startsWith("mob.iap.") || key.startsWith("mob.trial.banner.");
+}
+
+/**
+ * What the rail copy may NEVER do even though it may sell: point anywhere
+ * but the store sheet. No website, no browser, no card details — the store
+ * owns the whole transaction.
+ */
+const RAIL_EXTRA: [RegExp, string][] = [
+  [/website|web site|browser|\bweb\b/iu, "points at the web (en)"],
+  [/veb|sayt|brauzer/iu, "points at the web (az)"],
+  [/сайт|браузер/iu, "points at the web (ru)"],
+  [word("card|cards"), "card details (en)"],
+  [word("kart\\p{L}*|карт\\p{L}*"), "card details (az/ru)"],
+];
+
+/** The patterns a key is held to. */
+function patternsFor(key: string): [RegExp, string][] {
+  return isRailKey(key) ? [...HARD, ...RAIL_EXTRA] : BANNED;
+}
 
 /** Every key the app can resolve: the synced web catalogue plus the overlay. */
 const CATALOGUE_KEYS: string[] = Array.from(
@@ -125,13 +184,13 @@ const CATALOGUE_KEYS: string[] = Array.from(
  */
 const ALLOWED: Record<string, string> = {
   "privacy.s1.dont":
-    "«On iPhone and iPad a purchase goes through the App Store; the Android app has no purchase at all; on the website payment goes through the bank's own page.» A factual statement of WHERE purchasing exists, rewritten 2026-09-10 because the old wording («there is no checkout in the mobile app») stopped being true when iOS shipped StoreKit. No price, no CTA, nothing comparative — and on the binary this test guards, Android, the sentence is still a statement of absence.",
+    "«On iPhone and iPad a purchase goes through the App Store; the Android app has no purchase at all; on the website payment goes through the bank's own page.» A factual statement of WHERE purchasing exists, rewritten 2026-09-10 because the old wording («there is no checkout in the mobile app») stopped being true when iOS shipped StoreKit. No price, no CTA, nothing comparative. STALE SINCE 2026-10-10: Android now sells through Google Play, so «the Android app has no purchase at all» is no longer true. The string is synced from web-app/src/i18n/messages.ts (not owned by the mobile track) — it must be rewritten there to name Google Play and re-synced with `npm run sync-i18n` before the Android 1.17.0 build is submitted.",
   "privacy.s3.points":
     "«A child can never buy anything. This is enforced on the server, not merely hidden.» The child-safety disclosure itself.",
   "privacy.s5.never":
     "«We never encourage a child to buy anything. No price, no payment option and no purchase button is displayed in a student session.» Names the ban in order to disclaim it.",
   "privacy.s8.list":
-    "The payments section of the privacy policy, rewritten per platform on 2026-09-10: iOS sells through the App Store, the Android app sells nothing, the web rail is a full redirect to the bank. PAN/CVV never reach our servers on either route, and the bullets say what the database keeps for each. It names the currency ('in Azerbaijani manat') as a data-processing fact — no amount, no CTA, no URL. Required disclosure; judged to read as reassurance, not steering.",
+    "The payments section of the privacy policy, rewritten per platform on 2026-09-10: iOS sells through the App Store, the Android app sells nothing (STALE SINCE 2026-10-10 — Android sells through Google Play now; fix in web-app/src/i18n/messages.ts and re-sync before the Android 1.17.0 submission), the web rail is a full redirect to the bank. PAN/CVV never reach our servers on either route, and the bullets say what the database keeps for each. It names the currency ('in Azerbaijani manat') as a data-processing fact — no amount, no CTA, no URL. Required disclosure; judged to read as reassurance, not steering.",
   "privacy.s9.erased":
     "The account-deletion inventory — «subscriptions, access entitlements, discount and coupon records» is a category of DATA that gets erased, not an offer.",
   "privacy.s9.survivesTable":
@@ -182,7 +241,7 @@ describe("no copy in the binary sells anything", () => {
         if (key in ALLOWED || key in KNOWN_GAPS) continue;
         const value = effective(locale, key);
         if (!value) continue;
-        for (const [pattern, why] of BANNED) {
+        for (const [pattern, why] of patternsFor(key)) {
           if (pattern.test(value)) {
             failures.push(`${key} contains ${why}: ${JSON.stringify(value)}`);
           }
@@ -248,7 +307,7 @@ describe("no copy in the binary sells anything", () => {
     for (const key of Object.keys(ALLOWED)) {
       const trips = LOCALES.some((l) => {
         const v = effective(l, key);
-        return v.length > 0 && BANNED.some(([p]) => p.test(v));
+        return v.length > 0 && patternsFor(key).some(([p]) => p.test(v));
       });
       if (!trips) stale.push(key);
     }
@@ -260,7 +319,7 @@ describe("no copy in the binary sells anything", () => {
     for (const key of Object.keys(KNOWN_GAPS)) {
       const trips = LOCALES.some((l) => {
         const v = effective(l, key);
-        return v.length > 0 && BANNED.some(([p]) => p.test(v));
+        return v.length > 0 && patternsFor(key).some(([p]) => p.test(v));
       });
       if (!trips) fixed.push(key);
     }
@@ -412,4 +471,76 @@ describe("the two entries the earlier compliance pass missed", () => {
     expect(effective("en", "faq.a7")).toMatch(/8-digit ID/);
     expect(effective("en", "faq.a7")).not.toMatch(/\d\s*%/);
   });
+});
+
+/**
+ * THE RAIL SCOPE (owner decision 2026-10-10), pinned from both sides: the
+ * exemption is NARROW (parent rail keys only) and it relaxes only the sales
+ * vocabulary — amounts, URLs, web checkout and card talk stay banned in it.
+ */
+describe("the store rail's copy may sell, but only through the store", () => {
+  it("exempts the parent rail keys and nothing else", () => {
+    expect(isRailKey("mob.iap.activate")).toBe(true);
+    expect(isRailKey("mob.iap.play.title")).toBe(true);
+    expect(isRailKey("mob.trial.banner.cta")).toBe(true);
+    // Child-facing and shared keys keep the full ban.
+    for (const key of [
+      "mob.trial.card.ended",
+      "mob.trial.card.endedNote",
+      "oly4.buyNote",
+      "oly3.childNone",
+      "mob.pay.notInApp",
+      "iap.err.generic",
+      "faq.a7",
+    ]) {
+      expect(isRailKey(key)).toBe(false);
+    }
+  });
+
+  it("still catches an amount, a URL, web checkout or card talk in rail copy", () => {
+    const shouldTrip = [
+      "Activate · 9,99 AZN",
+      "Aktivləşdir · 5 ₼",
+      "Finish on olympiq.ai",
+      "Open https://example.com to pay",
+      "Pay on our website instead",
+      "Saytda ödəyin",
+      "Оплатите на сайте",
+      "Enter your card number",
+      "Kart nömrəsini daxil edin",
+      "Введите номер карты",
+      "Go to checkout",
+      "Save 15% with a yearly plan",
+    ];
+    const missed = shouldTrip.filter(
+      (s) => !patternsFor("mob.iap.intro").some(([p]) => p.test(s)),
+    );
+    expect(missed).toEqual([]);
+  });
+
+  it("lets ordinary store-rail vocabulary through in rail keys only", () => {
+    const railSafe = ["Restore purchases", "Activate with Google Play", "Purchase recorded"];
+    for (const s of railSafe) {
+      expect(patternsFor("mob.iap.restore").some(([p]) => p.test(s))).toBe(false);
+      // The same words in a NON-rail key are still a violation.
+      expect(patternsFor("mob.trial.card.ended").some(([p]) => p.test(s))).toBe(
+        /purchase/i.test(s),
+      );
+    }
+  });
+
+  for (const locale of LOCALES) {
+    it(`${locale}: the rail keys carry no price of our own and point nowhere`, () => {
+      const railKeys = CATALOGUE_KEYS.filter(isRailKey);
+      expect(railKeys.length).toBeGreaterThan(20);
+      const failures: string[] = [];
+      for (const key of railKeys) {
+        const value = effective(locale, key);
+        for (const [pattern, why] of [...HARD, ...RAIL_EXTRA]) {
+          if (value && pattern.test(value)) failures.push(`${key}: ${why}`);
+        }
+      }
+      expect(failures).toEqual([]);
+    });
+  }
 });

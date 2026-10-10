@@ -13,9 +13,11 @@ import type { T } from "@/i18n/server";
 // prices it, publishes it and then checks an iPhone will conclude the platform
 // is broken.
 //
-// The web rail (ABB, AZN) and Android are unaffected, which is the half that
-// makes the omission plausible: the subject really does go on sale, just not
-// everywhere. That asymmetry is the whole content of this notice.
+// Since 2026-10-10 the same is true of ANDROID: it sells through Google Play
+// with the same product ids, and a subject appears there only once its three
+// Play products exist and are active. The web rail is the only one a subject
+// reaches the moment it is priced and published — that asymmetry is the whole
+// content of this notice.
 //
 // Rendered from the create form (where the decision is made) and from the edit
 // page of any subject that is still missing products (where it can be acted

@@ -385,6 +385,12 @@ create index if not exists idx_iap_notifications_orig_txn
   on public.iap_notifications (original_transaction_id)
   where original_transaction_id is not null;
 
+-- The Android replay key (migration 184). Pub/Sub repeats messageId verbatim on
+-- every redelivery, exactly as Apple repeats notificationUUID.
+create unique index if not exists uq_iap_notifications_provider_message
+  on public.iap_notifications (platform, provider_message_id)
+  where provider_message_id is not null;
+
 
 create index if not exists idx_notifications_recipient on public.notifications (recipient_profile_id, read_at);
 create index if not exists idx_support_profile_status on public.support_requests (profile_id, status);
@@ -14523,12 +14529,16 @@ grant execute on function public.azericard_reconcile_kick() to service_role;
 -- End of 011_indexes_constraints_functions_triggers.sql
 -- =============================================================================
 
-create or replace function public.manage_child_link(
- p_actor uuid,p_action text,p_student uuid default null,p_invite uuid default null,
- p_parent uuid default null,p_child_id text default null,p_code text default null)
-returns jsonb language plpgsql security definer set search_path=public,extensions,pg_temp
-as $fn$
-declare v_child public.students%rowtype; v_inv public.parent_link_invites%rowtype;
+-- Migration 180's definition, taken verbatim from production (pg_get_functiondef)
+-- on 2026-10-10: the copy that stood here predated 180 and lacked its
+-- create_notification step, which the from-zero rebuild caught (013 check 135).
+CREATE OR REPLACE FUNCTION public.manage_child_link(p_actor uuid, p_action text, p_student uuid DEFAULT NULL::uuid, p_invite uuid DEFAULT NULL::uuid, p_parent uuid DEFAULT NULL::uuid, p_child_id text DEFAULT NULL::text, p_code text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_temp'
+AS $function$
+declare v_child public.students%rowtype; v_inv public.parent_link_invites%rowtype; v_actor_nm text;
  v_admin boolean; v_code text; v_count int; v_actor_parent boolean;
 begin
  select exists(select 1 from public.parents pa join public.profiles p on p.id=pa.profile_id
@@ -14538,7 +14548,10 @@ begin
  if not v_actor_parent and not (v_admin and p_action='revoke') then
    return jsonb_build_object('ok',false,'code','forbidden');
  end if;
- if p_action not in ('issue','redeem','approve','reject','revokeInvite','revoke','leave') or p_action is null then
+ -- 'approve' and 'reject' are REMOVED, not merely unused: a second path that can
+ -- still mint a link is how two code paths drift apart. A caller on the old
+ -- contract gets the same 'invalid' it would get for a typo.
+ if p_action not in ('issue','redeem','revokeInvite','revoke','leave') or p_action is null then
    return jsonb_build_object('ok',false,'code','invalid');
  end if;
  -- Serialize relationship changes, caps, and promotion/deletion on one lock.
@@ -14559,7 +14572,7 @@ begin
        and i.status in ('open','pending') and i.expires_at>now() for update of i;
    if not found then return jsonb_build_object('ok',false,'code','invalidInvite'); end if;
    p_student:=v_inv.student_profile_id;
- elsif p_action in ('approve','reject','revokeInvite') then
+ elsif p_action='revokeInvite' then
    select * into v_inv from public.parent_link_invites where id=p_invite for update;
    if not found then return jsonb_build_object('ok',false,'code','unavailable'); end if;
    p_student:=v_inv.student_profile_id;
@@ -14574,11 +14587,54 @@ begin
      where student_profile_id=p_student and parent_profile_id=p_actor and status='active') then
      return jsonb_build_object('ok',false,'code','alreadyLinked');
    end if;
-   if v_inv.status='pending' then
-     if v_inv.redeemed_by=p_actor then return jsonb_build_object('ok',true,'state','pending'); end if;
+   -- MIGRATION 180: REDEEMING LINKS IMMEDIATELY. There is no pending state and
+   -- no approval. The code IS the creator's consent - they generated it for this
+   -- child and handed it over - so asking them to confirm a second time was
+   -- ceremony, and it was ceremony that never completed: issuing a fresh code
+   -- revoked any pending redemption, so a parent who redeemed, saw no prompt and
+   -- generated another code destroyed their own request.
+   --
+   -- A legacy 'pending' row can still exist from before this migration. Let its
+   -- original redeemer finish rather than stranding them.
+   if v_inv.status='pending' and v_inv.redeemed_by is distinct from p_actor then
      return jsonb_build_object('ok',false,'code','invalidInvite');
    end if;
-   update public.parent_link_invites set status='pending',redeemed_by=p_actor where id=v_inv.id;
+
+   -- THE 4-ADULT CAP MOVES HERE WITH THE LINK. It used to sit on 'issue' and
+   -- 'approve'; approve is gone, and a cap checked only at issue time can be
+   -- outrun by codes issued before the fourth adult joined.
+   select count(*)+1 into v_count from public.parent_student_links
+     where student_profile_id=p_student and status='active'
+       and parent_profile_id<>v_child.created_by_parent_profile_id;
+   if v_count>=4 then return jsonb_build_object('ok',false,'code','limit'); end if;
+
+   insert into public.parent_student_links(parent_profile_id,student_profile_id,status,verified_at,created_by)
+     values(p_actor,p_student,'active',now(),p_actor)
+     on conflict(parent_profile_id,student_profile_id) do update
+       set status='active',verified_at=now(),updated_at=now();
+   update public.parent_link_invites
+     set status='approved',redeemed_by=p_actor,resolved_at=now() where id=v_inv.id;
+
+   -- THE NOTIFICATION REPLACES THE APPROVAL PROMPT. Without it the creator gets
+   -- no signal at all that another adult now reaches their child. Priority 1 is
+   -- exempt from the platform notification switch and from the recipient's own
+   -- mute, because that level is reserved for payment and security - and this is
+   -- the second. Category 'announcement' rather than a new one: the web processor
+   -- sends channelId = category, and a new value would land on an Android channel
+   -- the shipped 1.16.0 binary does not define.
+   select coalesce(nullif(btrim(coalesce(pr.first_name,'')||' '||coalesce(pr.last_name,'')),''),pr.display_name)
+     into v_actor_nm from public.profiles pr where pr.id=p_actor;
+   if v_child.created_by_parent_profile_id is not null then
+     perform public.create_notification(
+       v_child.created_by_parent_profile_id,'child_access_granted',
+       (select display_name from public.profiles where id=p_student),
+       v_actor_nm,
+       jsonb_build_object('student_profile_id',p_student,'parent_profile_id',p_actor,
+                          'parent_name',v_actor_nm,'method','invite'),
+       array['in_app','push'],
+       'child_access_granted:'||p_student::text||':'||p_actor::text,
+       1,null,'announcement',null);
+   end if;
  elsif p_action='leave' then
    if v_child.created_by_parent_profile_id=p_actor then return jsonb_build_object('ok',false,'code','creatorOnly'); end if;
    update public.parent_student_links set status='revoked',updated_at=now()
@@ -14588,7 +14644,7 @@ begin
    if v_child.created_by_parent_profile_id is distinct from p_actor and not(v_admin and p_action='revoke') then
      return jsonb_build_object('ok',false,'code','forbidden');
    end if;
-   if p_action in ('issue','approve') then
+   if p_action='issue' then
      select count(*)+1 into v_count from public.parent_student_links
        where student_profile_id=p_student and status='active' and parent_profile_id<>v_child.created_by_parent_profile_id;
      if v_count>=4 then return jsonb_build_object('ok',false,'code','limit'); end if;
@@ -14602,22 +14658,16 @@ begin
      v_code:=upper(encode(gen_random_bytes(10),'hex'));
      insert into public.parent_link_invites(student_profile_id,issued_by,code_hash)
        values(p_student,p_actor,encode(digest(v_code,'sha256'),'hex')) returning * into v_inv;
-   elsif p_action='approve' then
-     if v_inv.status<>'pending' or v_inv.expires_at<=now() or v_inv.issued_by<>p_actor
-       or not exists(select 1 from public.parents pa join public.profiles pr on pr.id=pa.profile_id
-         where pa.profile_id=v_inv.redeemed_by and pr.status='active') then
-       return jsonb_build_object('ok',false,'code','unavailable');
-     end if;
-     insert into public.parent_student_links(parent_profile_id,student_profile_id,status,verified_at,created_by)
-       values(v_inv.redeemed_by,p_student,'active',now(),p_actor)
-       on conflict(parent_profile_id,student_profile_id) do update
-         set status='active',verified_at=now(),created_by=p_actor,updated_at=now();
-     update public.parent_link_invites set status='approved',resolved_at=now() where id=v_inv.id;
-   elsif p_action in ('reject','revokeInvite') then
+   -- The 'approve' branch that used to live here is DELETED, not left dormant.
+   -- It held a second insert into parent_student_links, and a second way to mint
+   -- a link is how two paths drift apart the day somebody re-adds the action to
+   -- the whitelist to "fix" something. Redeem does the work now.
+   elsif p_action='revokeInvite' then
      if v_inv.issued_by<>p_actor or v_inv.status not in ('open','pending') then
        return jsonb_build_object('ok',false,'code','unavailable');
      end if;
-     update public.parent_link_invites set status=case when p_action='reject' and redeemed_by is not null then 'rejected' else 'revoked' end,
+     -- Only revocation remains: there is no nomination left to reject.
+     update public.parent_link_invites set status='revoked',
        resolved_at=now() where id=v_inv.id;
    elsif p_action='revoke' then
      if p_parent is null or p_parent=v_child.created_by_parent_profile_id then return jsonb_build_object('ok',false,'code','creatorOnly'); end if;
@@ -14630,12 +14680,14 @@ begin
  values(p_actor,'child.sharing.'||p_action,'students',p_student,
    jsonb_build_object('invite_id',v_inv.id,'parent_id',case
      when p_action in ('redeem','leave') then p_actor
-     when p_action in ('approve','reject') then v_inv.redeemed_by
+     when p_action='revokeInvite' then v_inv.redeemed_by
      else p_parent end));
  if p_action='issue' then return jsonb_build_object('ok',true,'code',v_code,'expires_at',v_inv.expires_at,'child_id',v_child.child_unique_id); end if;
- return jsonb_build_object('ok',true,'state',case when p_action='redeem' then 'pending' else 'saved' end);
+ -- Every successful action is simply saved now. 'pending' WAS the approval
+ -- state, and there is no approval.
+ return jsonb_build_object('ok',true,'state','saved');
 end;
-$fn$;
+$function$;
 revoke all on function public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text) from public,anon,authenticated;
 grant execute on function public.manage_child_link(uuid,text,uuid,uuid,uuid,text,text) to service_role;
 

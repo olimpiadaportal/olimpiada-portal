@@ -115,6 +115,19 @@ export function PriceCell({
           <span className="price-not-set">{strings.notSet}</span>
         ) : null}
       </div>
+      {/* What each store did with this save (owner decision 2026-10-10: the
+          stores follow the panel). The AZN price is already saved whatever
+          these say, so they stay visible — a failure must not vanish with the
+          "Saved" tick. */}
+      {!pending && state?.ok && state.stores && state.stores.length > 0 && (
+        <ul className="price-cell-stores">
+          {state.stores.map((note, i) => (
+            <li key={i} className={note.ok ? "inline-status ok" : "inline-status err"}>
+              {note.text}
+            </li>
+          ))}
+        </ul>
+      )}
     </form>
   );
 }

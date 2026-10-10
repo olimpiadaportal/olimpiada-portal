@@ -455,8 +455,9 @@ export const bffAddChild = (fields: AddChildFields) =>
  *  never required to keep an older build working.
  *
  *  The BUYING endpoints (`/quote`, `/subscribe`) are deliberately absent: the
- *  app is purchase-silent (docs/STORE_PAYMENTS_COMPLIANCE.md) and starting a
- *  plan is a web action. Only the change/quote pair below survives, because a
+ *  binary sells only through its store's own in-app purchase (StoreKit / Google
+ *  Play, features/iap) and never starts a WEB plan
+ *  (docs/STORE_PAYMENTS_COMPLIANCE.md); starting one is a web action. Only the change/quote pair below survives, because a
  *  parent must always be able to remove a subject and stop paying. */
 export type BffPlanItem = { subject_id: string; interval: string };
 
@@ -609,11 +610,12 @@ export const bffCancelSubscription = (
     "cancel.err",
   );
 
-// ---- Apple in-app purchase (iOS only; parent bearer) ---------------------------
+// ---- Apple in-app purchase (iOS; parent bearer) -------------------------------
 // The three parent-facing endpoints of the Apple rail. They are declared here
 // like every other BFF call, but NOTHING outside src/features/iap calls them and
-// that module refuses to run off iOS — the Android binary never reaches this
-// section. Errors come back as the server's own i18n keys (iap.err.*).
+// that module routes an iOS build here and an Android build to the Google
+// section below (features/iap/rail.ts). Errors come back as the server's own
+// i18n keys (iap.err.*).
 //
 // NO PRICE CROSSES THIS BOUNDARY IN EITHER DIRECTION. Apple owns the amount;
 // the server never sends one and the app never asks.
@@ -679,6 +681,67 @@ export const bffIapRestore = (transactionIds: string[]) =>
   bffAuthedPost<IapRestoreResult>(
     "/api/mobile/v1/iap/apple/restore",
     { transaction_ids: transactionIds },
+    "iap.err.generic",
+    undefined,
+    IAP_RESTORE_TIMEOUT_MS,
+  );
+
+// ---- Google Play in-app purchase (Android; parent bearer) ----------------------
+// Owner decision 2026-10-10: Android sells through Google Play Billing exactly
+// like the Apple rail above, and these three endpoints mirror it field for
+// field (web-app/src/app/api/mobile/v1/iap/google/*). Same envelope, same
+// iap.err.* keys, same response shapes — only the store-specific identifiers
+// differ:
+//   intent  → the `intent_id` becomes Play's obfuscatedAccountId (the twin of
+//             appAccountToken): the only thing tying a Google purchase to ONE
+//             child.
+//   redeem  → `purchase_token` is what the server verifies with the Android
+//             Publisher API; `order_id` (GPA.…) rides along for audit only.
+//   restore → every unconsumed purchase Play still holds, with its product.
+// The SERVER consumes a purchase after it grants it. Nothing here sends a
+// price, and the server never returns one.
+
+export const bffGoogleIapIntent = (studentProfileId: string, productId: string) =>
+  bffAuthedPost<IapIntent>(
+    "/api/mobile/v1/iap/google/intent",
+    { student_profile_id: studentProfileId, product_id: productId },
+    "iap.err.generic",
+  );
+
+export const bffGoogleIapRedeem = (
+  intentId: string,
+  productId: string,
+  purchaseToken: string,
+  orderId: string | null,
+) =>
+  bffAuthedPost<IapRedeemResult>(
+    "/api/mobile/v1/iap/google/redeem",
+    {
+      intent_id: intentId,
+      product_id: productId,
+      purchase_token: purchaseToken,
+      // Optional on the server; omitted rather than sent empty.
+      ...(orderId ? { order_id: orderId } : {}),
+    },
+    "iap.err.generic",
+    undefined,
+    // Same budget as Apple's redeem, for the same reason: the server makes its
+    // own verified call out to Google (and a consume) before it answers.
+    IAP_REDEEM_TIMEOUT_MS,
+  );
+
+export type GoogleIapRestoreResult = {
+  checked: number;
+  granted: number;
+  results: { purchase_token?: string; status: "granted" | "pending" | "refused" }[];
+};
+
+export const bffGoogleIapRestore = (
+  purchases: { product_id: string; purchase_token: string }[],
+) =>
+  bffAuthedPost<GoogleIapRestoreResult>(
+    "/api/mobile/v1/iap/google/restore",
+    { purchases },
     "iap.err.generic",
     undefined,
     IAP_RESTORE_TIMEOUT_MS,

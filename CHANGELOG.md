@@ -35,6 +35,29 @@ tester who keeps reporting.
 
 ---
 
+## 1.17.0 — not built yet (new native build required: Play Billing)
+
+- `[store]` Parents on Android can activate a child's subject access through Google
+  Play, the same way as on iPhone: one row per subject, pick weekly, monthly or
+  yearly, pay with Google Play. Access opens for that child as soon as Google
+  confirms the payment. Prices are Google Play's own.
+
+- `[store]` App Store and Google Play prices now follow the prices set by
+  OlympIQ, so the price on a phone matches the current price list.
+
+- `[web]` The privacy policy describes Google Play as the purchase route on
+  Android, alongside the App Store on iPhone and the bank page on the website.
+
+- `[admin]` Saving a subject price also updates the App Store and Google Play
+  prices. Subjects shows each store's live price, whether it matches, and a
+  sync button per subject and for all.
+
+- `[internal]` Google Play rail: purchase verification, grant and consume
+  (`/api/mobile/v1/iap/google/*`), real-time notifications and a refund sweep,
+  migration 184 (inactive Android products, notification platform columns,
+  `store.fx.azn_per_usd`). The Play Billing permission is no longer blocked in
+  the Android manifest. Version 1.17.0.
+
 ## 1.16.0 — build 6; approved by Apple 2026-09-15, REJECTED by Google Play 2026-09-22
 
 **Deliberately not filed under 1.15.0.** Build 5 of 1.15.0 was approved by Apple

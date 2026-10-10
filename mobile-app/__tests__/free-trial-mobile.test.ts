@@ -4,8 +4,9 @@
 // BEHAVIOUR for the pure clock (lib/trialClock): it must run on SERVER time, so
 // a phone whose clock is wrong shows what the web shows. SOURCE for the parts
 // that exist only as an arrangement of code: the wizard step calls the BFF and
-// nothing else, the banner's CTA exists only behind the build-time iOS
-// constant, and no trial surface reaches a purchase API.
+// nothing else, the banner's CTA exists only behind the build-time store-rail
+// constant (iOS and, since the owner decision of 2026-10-10, Android), and no
+// trial surface reaches a purchase API.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -131,10 +132,18 @@ describe("the wizard step", () => {
 
 describe("the parent's banner is per platform, as a build-time fact", () => {
   const banner = read("src/features/trial/TrialEndedBanner.tsx");
-  it("shows its one CTA only behind the iOS constant", () => {
+  // The CTA used to be iOS-only because Android was purchase-silent. Owner
+  // decision 2026-10-10: Android sells through Google Play, so the same
+  // build-time constant now opens it on both stores. What still matters, and
+  // is still pinned: the CTA is gated by a BUILD-TIME constant (never config),
+  // and it leads to an in-app screen, not a URL.
+  it("shows its one CTA only behind the build-time store-rail constant", () => {
     expect(banner).toContain('import { IAP_PLATFORM_SUPPORTED } from "@/features/iap/platform";');
     expect(banner).toMatch(/\{IAP_PLATFORM_SUPPORTED \? \(\s*<Button/);
     expect(banner).not.toMatch(/useMobileConfig|flags\./);
+    // In-app route only: no external link, no web checkout.
+    expect(banner).toContain('pathname: "/(parent)/children/[id]/subscribe"');
+    expect(banner).not.toMatch(/Linking|openURL|openBrowserAsync|https?:\/\//);
   });
   it("is never on the child's side, and the countdown never on the parent's", () => {
     const parentHome = read("src/app/(parent)/(tabs)/home.tsx");
@@ -152,7 +161,7 @@ describe("copy", () => {
     "mob.trial.skip", "mob.trial.none", "mob.trial.started", "mob.trial.subjects", "mob.trial.endsIn",
     "mob.trial.step", "mob.trial.card.title", "mob.trial.card.remaining", "mob.trial.card.ended",
     "mob.trial.card.endedNote", "mob.trial.card.extended", "mob.trial.banner.body",
-    "mob.trial.banner.bodyIos", "mob.trial.banner.cta", "mob.trial.banner.dismiss",
+    "mob.trial.banner.bodyStore", "mob.trial.banner.cta", "mob.trial.banner.dismiss",
     "mob.trial.err.used", "mob.trial.err.limit", "mob.trial.err.subjects", "mob.trial.err.covered",
     "mob.trial.err.generic", "mob.child.manageAccess", "mob.access.trialActive", "mob.access.trialExpired",
   ];

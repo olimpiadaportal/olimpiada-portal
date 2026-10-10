@@ -2,14 +2,15 @@
 // presentation only: the mode comes from get_mobile_config() and every money
 // mutation is re-validated by the BFF/server — nothing here grants anything.
 //
-// Android is purchase-silent. iOS has the approved StoreKit rail, but the
-// admin control plane still decides whether paid access is available right
-// now. The platform constant and this runtime availability decision are kept
-// separate: Android never contains a visible purchase surface, while iOS
-// closes it during giveaway, scheduled free-access and payment-off states.
+// Both store builds carry an in-app rail: StoreKit on iOS (approved
+// 2026-09-09) and Google Play Billing on Android (owner decision 2026-10-10).
+// The admin control plane still decides whether paid access is available
+// right now. The platform constant (features/iap/platform.ts) and this runtime
+// availability decision are kept separate: the constant decides WHICH rail a
+// binary contains, this decides only whether that rail is open — closed during
+// giveaway, scheduled free-access and payment-off states.
 //
-//   'real'     → iOS may show the approved StoreKit rail; Android remains
-//                status-only and purchase-silent.
+//   'real'     → the build's store rail may be shown (StoreKit / Play).
 //   'giveaway' → subscription access is free (activation, no payment step).
 //   'off'      → identical to 'real' on screen. NOTHING in the app reports
 //                that payments are off: that is a platform state, it reached
@@ -50,7 +51,7 @@ export function resolvePosture(
   };
 }
 
-/** Paid StoreKit offers may be shown only during the real-payment posture and
+/** Paid store offers may be shown only during the real-payment posture and
  * outside an admin-scheduled free-access window. The caller must still combine
  * this with IAP_PLATFORM_SUPPORTED; this helper never decides the platform. */
 export function paidAccessAvailable(posture: CommercePosture): boolean {
@@ -182,7 +183,7 @@ export type AccessPill = { key: string; tone: "ok" | "bad" | "muted" };
  * the parent to read: `mob.access.trialActive` while it runs and
  * `mob.access.trialExpired` once it is over with nothing else open (`trialEnded`).
  * Status, not a sales line — it names no price and offers nothing, so it is the
- * same on the purchase-silent Android binary.
+ * same on every platform.
  *
  * FAIL OPEN. `entitled === false` is the entitlement reader's own safe fallback
  * (that is what it returns when the RPC hiccups) and `onTrial === false` is the
@@ -221,9 +222,10 @@ export function isCancellable(status: string | null | undefined): boolean {
 }
 
 // ---- formatting ----------------------------------------------------------------
-// There is no database-money formatter here. Android stays purchase-silent and
-// every iOS amount must be StoreKit's own localized display string, so a helper
-// that can print "27,00 AZN" would create an unsafe second source of truth.
+// There is no database-money formatter here. Every amount the app shows is the
+// store's own localized display string (StoreKit on iOS, Google Play on
+// Android), so a helper that can print "27,00 AZN" would create an unsafe
+// second source of truth.
 
 /** Locale long date (+ optional time) in the product's home timezone
  *  (Asia/Baku). Thin wrapper over the Hermes-safe formatLongDate (Round 42:

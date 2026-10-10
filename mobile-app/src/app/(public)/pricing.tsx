@@ -8,8 +8,9 @@
 // funnel, the trial line, the sibling-discount percentages, and the package
 // price + "Əldə et" CTA. A parent reaches this screen from the account sheet,
 // so an amount here is an amount inside a parent session — which is exactly
-// what Apple 3.1.1 / the Play Payments policy forbid in a purchase-silent
-// binary. No price, no CTA, no destination named.
+// what Apple 3.1.1 / the Play Payments policy forbid outside the store's own
+// purchase sheet. No price, no CTA, no destination named — the binary's only
+// prices are the store's strings on the parent's in-app panel.
 // Redesign (plan §4-Public): the popular interval keeps its gradient border +
 // "Populyar" pill.
 import React, { useState } from "react";

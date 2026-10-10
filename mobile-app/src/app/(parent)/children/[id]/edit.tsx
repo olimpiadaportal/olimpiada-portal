@@ -823,8 +823,8 @@ export default function EditChildScreen() {
         <View style={{ paddingTop: spacing.md, paddingBottom: spacing.xl }}>
           {/* Children → Child → Edit → manage the child's subjects and access
               (owner, 2026-10-10; web: "Manage Subscription"). The screen it
-              opens is per-platform already: the App Store rail on iOS, status
-              only on the purchase-silent Android binary. */}
+              opens carries the build's store rail: the App Store on iOS, Google
+              Play on Android (owner decision 2026-10-10). */}
           <Button
             title={t("mob.child.manageAccess")}
             variant="ghost"

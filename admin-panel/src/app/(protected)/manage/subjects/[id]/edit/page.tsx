@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { Suspense } from "react";
 import { requireAdmin } from "@/lib/admin/guards";
 import { getT } from "@/i18n/server";
 import { SubjectLifecycle } from "@/components/SubjectLifecycle";
@@ -9,6 +10,7 @@ import { PRICE_INTERVALS } from "@/lib/admin/pricing-shared";
 import { SubjectForm } from "../../SubjectForm";
 import { IapNotice } from "../../IapNotice";
 import { loadSubject } from "../../data";
+import { StorePrices, StorePricesLoading } from "../../StorePrices";
 import {
   intervalLabels,
   subjectDeleteStrings,
@@ -38,6 +40,9 @@ import {
 // NAME therefore cannot re-post three amounts read off a page that may be
 // minutes old, which is how a rename could silently undo somebody else's
 // reprice. Two actions, two tables, no overlap.
+// Saving a price syncs both stores (and "Sync store prices" runs here too).
+export const maxDuration = 60;
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -185,6 +190,12 @@ export default async function EditSubjectPage({
           <p className="hint">{t("subj.repriceNote")}</p>
           <p className="hint">{t("subj.currencyNote")}</p>
         </section>
+
+        {/* What the App Store and Google Play charge for these three cycles,
+            live, with a sync button for this subject. */}
+        <Suspense fallback={<StorePricesLoading t={t} />}>
+          <StorePrices t={t} subjects={[subject]} single />
+        </Suspense>
 
         <section className="card">
           <div className="card-head">

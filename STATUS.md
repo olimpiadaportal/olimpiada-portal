@@ -6,6 +6,79 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## DONE (code) — STORE PRICES FOLLOW THE ADMIN PANEL + ANDROID SELLS (2026-10-10)
+
+**Shipped in code; live only after the owner's console setup + new builds.**
+- Admin (track A): `storePriceSync.ts` — AZN save first, then App Store
+  (nearest AZE point; 2/7/70 AZN → USD 1.19/4.09/40.99 at 1.70) and Google
+  Play (`monetization.onetimeproducts`, AZ price in AZN if Play bills AZ in
+  AZN, else USD); live store prices + sync buttons on Subjects; audit
+  `admin.store.price.sync*`; /iap activates android rows only after a Play
+  preflight (product exists, purchase option ACTIVE). Script
+  `mobile-app/scripts/create-play-products.mjs` (dry-run default).
+  Not exercised against Apple/Google for real (stubs only; local ASC key empty).
+- Server (track B): `lib/payments/google/*`, `/api/mobile/v1/iap/google/
+  {intent,redeem,restore}`, RTDN `/api/payments/google/notifications`
+  (Pub/Sub OIDC), `/api/payments/google/reconcile` (voided purchases).
+  Grant via entitlement_grant source google_play, consume after grant,
+  revoked never re-granted. Migration 184 applied STAGING → PRODUCTION
+  (23 inactive android rows, iap_notifications.platform/provider_message_id,
+  `store.fx.azn_per_usd` = 1.70); 013 on production: all pass except 88
+  (tolerated); 138 PASS.
+- App (track C): 1.17.0 (native → new builds, not OTA). `IAP_STORE` by
+  Platform.OS; Play Billing via expo-iap (intent id = obfuscatedAccountId;
+  device consume only after server grant, ITEM_NOT_OWNED tolerated); BILLING
+  permission unblocked; store-copy sweep split into hard bans vs sales
+  vocabulary allowed only on parent rail keys.
+- Docs: root CLAUDE.md, mobile-app/CLAUDE.md, STORE_PAYMENTS_COMPLIANCE.md
+  record the decision; privacy policy (s1, s7 table, s8, status lines)
+  names Google Play on Android in az/en/ru.
+- From-zero rebuild proof on STAGING (owed since 117): 001–012,014,015,016
+  sourced clean; 013 found ONE real divergence — check 135: the canonical
+  `manage_child_link` in 011 predated migration 180 (no create_notification).
+  Replaced with production's live definition; re-checked on staging: every
+  check passes except 102 (expected on schema-only).
+- Gates: web tsc 0 / 1734 tests / build OK; admin tsc 0 / 1222 tests / build
+  OK; mobile tsc 0 / 77 suites / 1628 tests.
+- Known, not done: lost PURCHASED notifications cannot be swept (tokens are
+  not stored) — redeem/restore and Google's 3-day refund cover it;
+  `npm audit` in web-app reports 5 prod findings (next ≤15.5.26, sharp,
+  brace-expansion) unrelated to this change — needs its own task.
+
+**Owner decisions (2026-10-10):** (1) iOS App Store prices are AUTO-SYNCED from
+Admin → Subjects (reverses the "App Store Connect is read-only" rule in
+admin-panel/src/lib/admin/appStoreConnect.ts — owner choice). (2) ANDROID SELLS:
+Google Play Billing like iOS, prices following the admin panel. This retires
+"Android stays purchase-silent" once the Play setup and a new build exist.
+
+**Found:** admin prices are 2 / 7 / 70 AZN for every subject; iOS still sells
+USD 1.79 / 5.29 / 52.99 (the old 3 / 9 / 90 AZN). Apple bills Azerbaijan in USD
+at fixed price points, so iOS can only follow the NEAREST point (rate setting,
+default 1 USD = 1.70 AZN). Google lists Azerbaijan as a supported merchant
+country and accepts arbitrary amounts.
+
+**Plan (as executed) — three tracks, disjoint files:**
+- A (admin-panel): saving a subject price pushes the Apple price (App Store
+  Connect API, nearest AZE price point) and the Google Play price (Android
+  Publisher API) for that subject/cycle; per-subject store price + sync state
+  shown; a "sync all" action; Play product creation script.
+- B (web-app + supabase): Google Play verification (service account, purchases
+  API, consume), BFF `/api/mobile/v1/iap/google/{intent,redeem,restore}`
+  mirroring the Apple routes, `google_play` entitlement grant, RTDN endpoint +
+  voided-purchase reconcile; migration seeding inactive android products and
+  the FX-rate setting (staging first).
+- C (mobile-app): Android purchase flow via expo-iap Play Billing, intent id as
+  obfuscatedAccountId, unblock com.android.vending.BILLING, store-copy rules
+  per platform, version bump (native change → new build, not OTA).
+
+**Owner prerequisites (cannot be done from code):** Play Console payments
+profile (merchant); a Google Cloud service account with Play Console access
+(JSON key to Vercel env for web-app and admin-panel); App Store Connect API key
+with the App Manager role; Play Data safety update (purchase history) BEFORE the
+build that collects it; a new Android + iOS build.
+
+---
+
 ## SHEETS 80% + IAP GROUPING + SUBJECT HIDE (2026-10-10, round 2)
 
 **Sheets.** `components/swipeDismiss.ts` detents: open at min(content, 80% of

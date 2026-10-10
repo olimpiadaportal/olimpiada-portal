@@ -27,11 +27,22 @@ import {
   parsePriceAmount,
   type PriceInterval,
 } from "@/lib/admin/pricing-shared";
+import {
+  describeOutcome,
+  loadFxRate,
+  loadProductMap,
+  syncSubjectIntervalToStores,
+} from "@/lib/admin/storePriceSync";
 
 const UUID_SHAPE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type PriceSaveState = { error?: string; ok?: boolean } | null;
+/** One translated line per store, shown under the cell after a save. */
+export type StoreNote = { ok: boolean; text: string };
+
+export type PriceSaveState =
+  | { error?: string; ok?: boolean; stores?: StoreNote[] }
+  | null;
 
 // Saves ONE subject × interval price. Each pricing cell is its own form, so
 // the returned state is already scoped to the cell that submitted it.
@@ -39,7 +50,7 @@ export async function saveSubjectPrice(
   _prev: PriceSaveState,
   formData: FormData,
 ): Promise<PriceSaveState> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
 
   const subjectId = String(formData.get("subject_id") ?? "").trim();
   const interval = String(formData.get("interval") ?? "").trim();
@@ -94,5 +105,45 @@ export async function saveSubjectPrice(
   // figure. (/pricing is gone — it now redirects here.)
   revalidatePath("/manage/subjects");
   revalidatePath("/manage/subjects/" + subjectId + "/edit");
-  return { ok: true };
+
+  // THE STORES FOLLOW, AFTER THE SAVE (owner decision 2026-10-10). The AZN row
+  // above is the source of truth and is already committed; nothing below can
+  // undo or block it. Each store answers with an outcome that is printed
+  // beside "Saved" — a failure reads "Google Play: not updated — <reason>",
+  // never as a failed save. Audited inside syncSubjectIntervalToStores.
+  const stores = await syncStores(ctx.profileId, subjectId, interval as PriceInterval, amount);
+  return { ok: true, stores };
+}
+
+async function syncStores(
+  actorProfileId: string | null,
+  subjectId: string,
+  interval: PriceInterval,
+  amount: number,
+): Promise<StoreNote[]> {
+  const t = await getT();
+  try {
+    const supabase = await createClient();
+    const [rate, products] = await Promise.all([
+      loadFxRate(supabase),
+      loadProductMap(supabase, [subjectId]),
+    ]);
+    const outcomes = await syncSubjectIntervalToStores({
+      subjectId,
+      interval,
+      amountAzn: amount,
+      actorProfileId,
+      rate,
+      products,
+    });
+    return outcomes.map((o) => describeOutcome(t, o));
+  } catch (error) {
+    // Belt and braces: the store clients do not throw, but a price that is
+    // already saved must never be reported as a crash.
+    console.error(
+      "[admin] store price sync crashed",
+      error instanceof Error ? error.name : "unknown",
+    );
+    return [{ ok: false, text: t("subj.store.syncCrashed") }];
+  }
 }

@@ -5204,3 +5204,27 @@ select '137_free_trial_ledger_extensions' as check_name,
    and not has_function_privilege('authenticated', to_regprocedure('public.trial_email_key(text)'), 'EXECUTE')
    and not has_function_privilege('anon', to_regprocedure('public.grant_free_trial_extension(uuid,text)'), 'EXECUTE')
  then 'PASS' else 'FAIL' end as status;
+
+-- 138. The Google Play rail (migration 184): every ios product has an android
+--      twin selling the same target and interval, iap_notifications records the
+--      platform with its constraints and the android replay index, the FX-rate
+--      setting is a positive number, and both entitlement writers stay
+--      service_role-only.
+select '138_google_play_rail' as check_name,
+ case when
+   not exists (select 1 from public.iap_products i
+                where i.platform='ios'
+                  and not exists (select 1 from public.iap_products a
+                                   where a.platform='android' and a.product_id=i.product_id
+                                     and a.scope=i.scope
+                                     and a.subject_id is not distinct from i.subject_id
+                                     and a.package_id is not distinct from i.package_id
+                                     and a.grade_id is not distinct from i.grade_id
+                                     and a."interval" is not distinct from i."interval"))
+   and (select count(*) from information_schema.columns where table_schema='public' and table_name='iap_notifications' and column_name in ('platform','provider_message_id'))=2
+   and (select count(*) from pg_constraint where conrelid='public.iap_notifications'::regclass and conname in ('ck_iap_notification_platform','ck_iap_notification_message_id','ck_iap_notification_android_message'))=3
+   and exists (select 1 from pg_indexes where schemaname='public' and indexname='uq_iap_notifications_provider_message')
+   and exists (select 1 from public.system_settings where key='store.fx.azn_per_usd' and jsonb_typeof(value_json)='number' and (value_json #>> '{}')::numeric > 0)
+   and not has_function_privilege('authenticated', 'public.entitlement_grant(uuid, public.entitlement_scope, public.entitlement_source, text, uuid, uuid, uuid, text, timestamptz, timestamptz, uuid, text)', 'EXECUTE')
+   and not has_function_privilege('authenticated', 'public.entitlement_revoke(public.entitlement_source, text, text)', 'EXECUTE')
+ then 'PASS' else 'FAIL' end as status;

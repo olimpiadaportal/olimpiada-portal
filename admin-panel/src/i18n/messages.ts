@@ -330,11 +330,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.importNameHint":
       "Toplu yükləmə faylları fənni bu daxili adla tanıyır və ad dəyişikliyi ona toxunmur:",
     // Apple ilə bağlı xəbərdarlıq: burada fənn yaratmaq Apple məhsulu yaratmır.
-    "subj.iapHeading": "Apple App Store: yeni fənn iOS-da dərhal satılmır",
+    "subj.iapHeading":
+      "App Store və Google Play: yeni fənn mobil tətbiqdə dərhal satılmır",
     "subj.iapNotice":
-      "Burada fənn yaratmaq Apple məhsulu yaratmır. iOS-da abunəlik yalnız App Store Connect-də üç ayrıca məhsul — həftəlik, aylıq və illik — yaradılıb qiymətləndirildikdən və Apple tərəfindən təsdiqləndikdən sonra mümkün olur. O vaxtadək bu fənn iOS tətbiqinin alış siyahısında ümumiyyətlə görünmür: xəta verilmir, sadəcə orada olmur. Sayt (ABB, AZN) və Android bundan asılı deyil — fənn qiymətləri daxil edilib dərc olunan kimi saytda satılır.",
+      "Burada fənn yaratmaq mağaza məhsulu yaratmır. iOS-da fənn yalnız App Store Connect-də, Android-də isə yalnız Google Play-də üç məhsul — həftəlik, aylıq və illik — mövcud olduqda və aktiv olduqda satılır (App Store-da əlavə olaraq Apple-ın təsdiqi lazımdır). O vaxtadək bu fənn həmin platformanın alış siyahısında ümumiyyətlə görünmür: xəta verilmir, sadəcə orada olmur.",
     "subj.iapSteps":
-      "Ardıcıllıq: 1) fənni burada yaradın, hər üç qiyməti daxil edin və dərc edin; 2) App Store Connect-də bu fənn üçün üç məhsul nömrəsini (həftəlik, aylıq, illik) yaradın, qiymətlərini təyin edin və Apple-ın təsdiqini alın — məhsulları yerli skript yaradır, admin paneli yox; 3) həmin nömrələri fənnə bağlayan sətirlər bazaya miqrasiya ilə əlavə olunur; 4) «App Store məhsul siyahısı» ekranında hər üç sətri açın. Hər üç məhsul təsdiqlənib tətbiqdə təklif edilməyincə valideyn bu fənni iOS-da ala bilmir.",
+      "Ardıcıllıq: 1) fənni burada yaradın, hər üç qiyməti daxil edin və dərc edin; 2) App Store Connect-də və Google Play-də bu fənn üçün üç məhsul nömrəsini (həftəlik, aylıq, illik) yaradın — məhsulları yerli skriptlər yaradır, admin paneli yox; qiymətləri isə bu ekran özü ötürür; 3) həmin nömrələri fənnə bağlayan sətirlər bazaya miqrasiya ilə əlavə olunur; 4) «Mağaza məhsulları» ekranında hər platforma üçün üç sətri açın. Məhsul mağazada aktiv olmayınca valideyn bu fənni həmin platformada ala bilmir.",
     "subj.iosNotSellable": "iOS-da satılmır",
     "subj.iosNotSellableHint":
       "Bu fənnin hər üç dövr üçün aktiv App Store məhsulu yoxdur, ona görə iOS tətbiqində alına bilmir. Saytdakı satışa təsiri yoxdur.",
@@ -345,6 +346,46 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.iosUnknown": "iOS statusu yoxlanılmadı",
     "subj.iosUnknownHint":
       "App Store məhsullarının siyahısı oxunmadı, ona görə bu fənnin iOS-da satılıb-satılmadığı bilinmir. Bu, fənndə problem olduğunu göstərmir. Səhifəni yeniləyin; təkrarlanarsa «App Store məhsulları» bölməsini yoxlayın.",
+    // ---- Store prices follow the admin panel (owner decision 2026-10-10) ----
+    "subj.store.appStore": "App Store",
+    "subj.store.googlePlay": "Google Play",
+    "subj.store.heading": "Mağaza qiymətləri: App Store və Google Play",
+    "subj.store.intro": "Mobil tətbiqdəki qiymətlər buradakı AZN qiymətlərinə uyğunlaşdırılır: qiyməti yadda saxlayanda hər iki mağaza avtomatik yenilənir. App Store Azərbaycanda ödənişi ABŞ dolları ilə və yalnız sabit qiymət pillələri ilə qəbul edir, ona görə iOS qiyməti «AZN ÷ məzənnə»yə ən yaxın pillə olur. Google Play-də Azərbaycan üçün qiymət birbaşa buradan təyin edilir.",
+    "subj.store.rate": "Məzənnə: 1 USD = {rate} AZN (store.fx.azn_per_usd ayarı).",
+    "subj.store.loading": "Mağaza qiymətləri oxunur…",
+    "subj.store.syncAll": "Bütün mağaza qiymətlərini eyniləşdir",
+    "subj.store.syncSubject": "Mağaza qiymətlərini eyniləşdir",
+    "subj.store.syncing": "Eyniləşdirilir…",
+    "subj.store.reload": "Serverə qoşulmaq alınmadı. Səhifəni yeniləyib yenidən cəhd edin.",
+    "subj.store.ind.inSync": "Uyğundur",
+    "subj.store.ind.outOfSync": "Uyğun deyil",
+    "subj.store.ind.notCreated": "Məhsul yoxdur",
+    "subj.store.ind.unknown": "Bilinmir",
+    "subj.store.expected": "olmalıdır: {price}",
+    "subj.store.none": "qiymət yoxdur",
+    "subj.store.problem.appStore": "App Store qiymətləri oxunmadı: {reason}.",
+    "subj.store.problem.googlePlay": "Google Play qiymətləri oxunmadı: {reason}.",
+    "subj.store.productMapFailed": "Mağaza məhsullarının siyahısı oxunmadı, ona görə mağaza statusu bilinmir.",
+    "subj.store.updated": "{store}: qiymət yeniləndi — {price}",
+    "subj.store.unchanged": "{store}: qiymət artıq uyğundur — {price}",
+    "subj.store.notMapped": "{store}: bu dövr üçün məhsul yoxdur",
+    "subj.store.failed": "{store}: yenilənmədi — {reason}",
+    "subj.store.syncCrashed": "Qiymət yadda saxlanıldı, amma mağazalar yenilənmədi. «Mağaza qiymətlərini eyniləşdir» düyməsi ilə yenidən cəhd edin.",
+    "subj.store.summary": "Yeniləndi: {updated} · artıq uyğun: {unchanged} · alınmadı: {failed} · məhsulsuz: {notMapped}",
+    "subj.store.err.notConfigured": "serverdə mağaza bağlantısı qurulmayıb",
+    "subj.store.err.keyRejected": "mağaza API açarı qəbul edilmədi",
+    "subj.store.err.needsAppManager": "App Store Connect API açarına «App Manager» rolu lazımdır",
+    "subj.store.err.needsPlayPermission": "xidmət hesabının Play Console-da bu tətbiq üçün icazəsi yoxdur",
+    "subj.store.err.notCreated": "məhsul mağazada hələ yaradılmayıb",
+    "subj.store.err.unreachable": "mağaza cavab vermədi",
+    "subj.store.err.rateLimited": "sorğu limiti aşılıb — bir neçə dəqiqədən sonra yenidən cəhd edin",
+    "subj.store.err.rejected": "mağaza dəyişikliyi qəbul etmədi",
+    "subj.store.err.currencyMismatch": "App Store Azərbaycanda ödənişi USD ilə almır — heç nə dəyişdirilmədi",
+    "subj.store.err.noPricePoint": "uyğun qiymət pilləsi tapılmadı",
+    "subj.store.err.verifyFailed": "yeni qiymət təsdiqlənmədi — mağazanı yoxlayın",
+    "subj.store.err.currencyUnsupported": "Google Play Azərbaycan üçün gözlənilməz valyuta istifadə edir — heç nə dəyişdirilmədi",
+    "subj.store.err.noPurchaseOption": "məhsulun alış variantı yoxdur",
+    "subj.store.err.productMapUnreadable": "məhsul siyahısı oxunmadı",
     "nav.topics": "Mövzular",
     "nav.subtopics": "Alt mövzular",
     "nav.cities": "Şəhərlər",
@@ -1839,15 +1880,22 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Cavabsız suallar həmişəlik silinir. Cavablandırılmış suallar isə silinmir — arxivlənir, şagirdlərin cavab tarixçəsi olduğu kimi qalır. Hansının hansı olduğunu baza əməliyyat anında müəyyən edir.",
     "del.bulk.deleteAction": "Seçilmiş sualları sil",
     // ---- App Store məhsulları (iap_products, miqrasiya 164) ----
-    "nav.iap": "App Store məhsul siyahısı",
-    "iap.title": "App Store məhsul siyahısı",
-    "iap.subtitle": "Bu ekran yalnız göstərir: bizim bazamızdakı sətirlər və App Store Connect-in həmin məhsullar barədə bildirdiyi vəziyyət yan-yana. Burada məhsul yaradılmır, dəyişdirilmir və silinmir.",
-    "iap.readonly.title": "Bu ekran Apple tərəfdə heç nəyi dəyişmir",
-    "iap.readonly.body": "App Store Connect-də məhsulları yalnız sahibin öz kompüterində işlətdiyi skript yaradır (mobile-app/scripts/create-iap-products.mjs). Buradakı yeganə düymə məhsulun bizim tətbiqimizdə təklif olunub-olunmamasını müəyyən edir; Apple-dəki vəziyyətə, qiymətə və ya təsdiqə toxunmur.",
+    "nav.iap":
+      "Mağaza məhsulları",
+    "iap.title":
+      "Mağaza məhsulları: App Store və Google Play",
+    "iap.subtitle":
+      "Bu ekran yalnız göstərir: bizim bazamızdakı sətirlər və App Store Connect ilə Google Play-in həmin məhsullar barədə bildirdiyi vəziyyət yan-yana. Burada məhsul yaradılmır, dəyişdirilmir və silinmir.",
+    "iap.readonly.title":
+      "Bu ekran mağazalarda heç nəyi dəyişmir",
+    "iap.readonly.body":
+      "Məhsulları mağazalarda yalnız sahibin öz kompüterində işlətdiyi skriptlər yaradır: App Store Connect üçün create-iap-products.mjs, Google Play üçün create-play-products.mjs. Qiymətlər «Fənlər» ekranından hər iki mağazaya ötürülür. Buradakı yeganə düymə məhsulun bizim tətbiqimizdə təklif olunub-olunmamasını müəyyən edir; mağazadakı vəziyyətə, qiymətə və ya təsdiqə toxunmur.",
     "iap.loadError": "Məhsul siyahısı yüklənmədi. Səhifəni yeniləyin və ya server loglarını yoxlayın.",
     "iap.empty": "Bazada məhsul sətri yoxdur. Sətirlər miqrasiya ilə əlavə olunur; bu ekrandan yaradıla bilməz.",
-    "iap.androidNote": "Android üçün məhsul yoxdur və ola da bilməz: Play versiyası yalnız məzmun göstərir, heç nə satmır. Bunu cədvəlin quruluşu təmin edir, hər hansı ayar yox.",
-    "iap.priceNote": "Qiymətlər burada saxlanılmır. iOS qiymətini App Store Connect müəyyən edir və tətbiq onu birbaşa mağazadan oxuyur.",
+    "iap.androidNote":
+      "Android məhsulları Google Play-də iOS ilə eyni nömrələrlə yaradılır. Android sətri yalnız Google Play-də məhsul mövcud olduqda və onun alış variantı aktiv olduqda açıla bilər.",
+    "iap.priceNote":
+      "Qiymətlər burada saxlanılmır: «Fənlər» ekranındakı qiymət hər iki mağazaya ötürülür, tətbiq isə qiyməti birbaşa mağazadan oxuyur.",
     "iap.refresh.stamp": "Son yoxlama: {at}",
     "iap.refresh.action": "Yenilə",
     "iap.refresh.working": "Yoxlanılır…",
@@ -1855,9 +1903,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     "iap.store.link.notConfigured": "App Store Connect bağlantısı qurulmayıb, ona görə Apple sütunu boşdur. Serverdə APP_STORE_CONNECT_* dəyərlərini təyin edin.",
     "iap.store.link.unreachable": "App Store Connect cavab vermədi, ona görə Apple sütunu boşdur. Bir az sonra yenidən yoxlayın.",
     "iap.banner.none.title": "Hazırda tətbiqdə heç nə təklif olunmur",
-    "iap.banner.none.body": "Heç bir sətir açıq deyil, ona görə iOS tətbiqində nə abunəlik, nə də paket alına bilmir. Bu, tamamilə düzgün vəziyyət ola bilər — sətri açmazdan əvvəl Apple sütununa baxın.",
+    "iap.banner.none.body":
+      "Heç bir sətir açıq deyil, ona görə mobil tətbiqdə nə abunəlik, nə də paket alına bilmir. Bu, tamamilə düzgün vəziyyət ola bilər — sətri açmazdan əvvəl mağaza sütununa baxın.",
     "iap.banner.live.title": "Tətbiqdə {n} məhsul təklif olunur",
-    "iap.banner.live.body": "Açıq sətirlər iOS tətbiqində alına bilir. Alışın baş tutması üçün hər birinin App Store Connect-də təsdiqlənmiş qarşılığı olmalıdır.",
+    "iap.banner.live.body":
+      "Açıq sətirlər öz platformasında (iOS və ya Android) alına bilir. Alışın baş tutması üçün hər birinin həmin mağazada aktiv qarşılığı olmalıdır.",
     "iap.group.subject": "Fənn abunəlikləri",
     "iap.group.package": "Olimpiada paketləri",
     "iap.groupCount": "{total} sətirdən {active} açıqdır",
@@ -1895,24 +1945,32 @@ export const messages: Record<Locale, Record<string, string>> = {
     "iap.diverge.offeredUnknown": "Uyğunsuzluq: biz bu məhsulu təklif edirik, Apple isə tanımadığımız vəziyyət bildirir.",
     "iap.diverge.approvedIdle": "Apple təsdiqləyib, biz isə tətbiqdə təklif etmirik.",
     "iap.diverge.absentAtApple": "App Store Connect-də belə məhsul yoxdur, ona görə bu sətir hazırkı halda açıla bilməz.",
-    "iap.diverge.summary": "{n} sətir App Store Connect ilə üst-üstə düşmür",
-    "iap.diverge.summaryBody": "Aşağıdakı sətirlər tətbiqdə təklif olunur, lakin App Store Connect tərəfdə alına bilən vəziyyətdə deyil. Ya həmin sətri təklifdən çıxarın, ya da məhsulu App Store Connect-də qaydasına salın.",
-    "iap.unmapped.heading": "Bazada qarşılığı olmayan Apple məhsulları",
-    "iap.unmapped.body": "App Store Connect bu məhsulları saxlayır, bizim bazamızda isə onlara uyğun sətir yoxdur. Belə məhsul alınarsa, server ödənişi heç bir girişə çevirə bilmir. Sətir yalnız miqrasiya ilə əlavə olunur.",
-    "iap.unmapped.col.name": "Apple-dəki adı",
+    "iap.diverge.summary":
+      "{n} sətir mağaza ilə üst-üstə düşmür",
+    "iap.diverge.summaryBody":
+      "Aşağıdakı sətirlər tətbiqdə təklif olunur, lakin mağaza tərəfdə alına bilən vəziyyətdə deyil. Ya həmin sətri təklifdən çıxarın, ya da məhsulu App Store Connect-də və ya Play Console-da qaydasına salın.",
+    "iap.unmapped.heading":
+      "Bazada qarşılığı olmayan mağaza məhsulları",
+    "iap.unmapped.body":
+      "Mağaza bu məhsulları saxlayır, bizim bazamızda isə həmin platforma üçün onlara uyğun sətir yoxdur. Belə məhsul alınarsa, server ödənişi heç bir girişə çevirə bilmir. Sətir yalnız miqrasiya ilə əlavə olunur.",
+    "iap.unmapped.col.name":
+      "Mağazadakı adı",
     "iap.blockedTitle": "Bu məhsul təklif edilə bilməz",
     "iap.action.activate": "Tətbiqdə təklif et",
     "iap.action.deactivate": "Təklifi dayandır",
     "iap.confirm.title": "Tətbiqdəki təklifi dəyişin",
-    "iap.confirm.on": "Bundan sonra məhsul iOS tətbiqində dərhal alına bilən olacaq. Eyni nömrəli məhsul App Store Connect-də mövcud və təsdiqlənmiş deyilsə, alış hər istifadəçidə uğursuz olacaq.",
-    "iap.confirm.off": "Məhsul iOS tətbiqində görünməyəcək və alına bilməyəcək. Artıq alınmış girişlərə toxunulmur.",
-    "iap.confirm.localOnly": "Bu düymə yalnız bizim tətbiqimizə təsir edir. App Store Connect-də məhsul olduğu kimi qalır — Apple tərəfdə satışı dayandırmaq üçün oraya daxil olmaq lazımdır.",
-    "iap.confirm.ack": "Yuxarıdakı App Store Connect vəziyyətini oxudum və bu məhsulun satıla biləcəyini təsdiq edirəm.",
+    "iap.confirm.on":
+      "Bundan sonra məhsul öz platformasının tətbiqində dərhal alına bilən olacaq. Eyni nömrəli məhsul mağazada mövcud və aktiv deyilsə, alış hər istifadəçidə uğursuz olacaq.",
+    "iap.confirm.off":
+      "Məhsul tətbiqdə görünməyəcək və alına bilməyəcək. Artıq alınmış girişlərə toxunulmur.",
+    "iap.confirm.localOnly":
+      "Bu düymə yalnız bizim tətbiqimizə təsir edir. Mağazada məhsul olduğu kimi qalır — mağazada satışı dayandırmaq üçün App Store Connect-ə və ya Play Console-a daxil olmaq lazımdır.",
+    "iap.confirm.ack":
+      "Yuxarıdakı mağaza vəziyyətini oxudum və bu məhsulun satıla biləcəyini təsdiq edirəm.",
     "iap.confirm.yesOn": "Bəli, təklif et",
     "iap.confirm.yesOff": "Bəli, təklifi dayandır",
     "iap.err.server": "Əməliyyat alınmadı. Bir az sonra yenidən cəhd edin.",
     "iap.err.notFound": "Bu məhsul artıq mövcud deyil. Səhifəni yeniləyin.",
-    "iap.err.iosOnly": "Yalnız iOS məhsulları təklif edilə bilər. Android versiyası heç nə satmır.",
     "iap.err.targetMissing": "Satılan şey artıq mövcud deyil, ona görə məhsul təklif edilmədi.",
     "iap.err.targetArchived": "Satılan şey hazırda ailələrə göstərilmir. Əvvəlcə onu yenidən dərc edin.",
     "iap.err.gradeMissing": "Məhsula bağlanmış sinif artıq mövcud deyil.",
@@ -1930,6 +1988,31 @@ export const messages: Record<Locale, Record<string, string>> = {
     "iap.err.storeRemoved": "Bu məhsul App Store Connect-də satışdan çıxarılıb.",
     "iap.err.storeUnknownState":
       "App Store Connect bu məhsul üçün tanımadığımız vəziyyət qaytardı. Təhlükəsizlik üçün təklif edilmədi.",
+    // ---- Google Play rows on the store products screen (2026-10-10) ----
+    "iap.col.store": "Mağazada",
+    "iap.col.play": "Google Play-də",
+    "iap.platform.ios": "iOS",
+    "iap.platform.android": "Android",
+    "iap.play.state.active": "Aktiv",
+    "iap.play.state.draft": "Qaralama",
+    "iap.play.state.inactive": "Deaktiv",
+    "iap.play.state.noBuyOption": "Alış variantı yoxdur",
+    "iap.play.state.unknown": "Tanımadığımız vəziyyət",
+    "iap.play.absent": "Google Play-də yoxdur",
+    "iap.play.link.ok": "Android sətirləri Google Play-dən oxundu.",
+    "iap.play.link.notConfigured": "Google Play bağlantısı qurulmayıb, ona görə Android sətirlərinin mağaza sütunu boşdur. Serverdə GOOGLE_PLAY_SERVICE_ACCOUNT_JSON dəyərini təyin edin.",
+    "iap.play.link.unreachable": "Google Play cavab vermədi, ona görə Android sətirlərinin mağaza sütunu boşdur. Bir az sonra yenidən yoxlayın.",
+    "iap.diverge.play.offeredMissing": "Uyğunsuzluq: biz bu məhsulu təklif edirik, Google Play-də isə belə məhsul yoxdur — alış hər istifadəçidə uğursuz olur.",
+    "iap.diverge.play.offeredBlocked": "Uyğunsuzluq: biz bu məhsulu təklif edirik, Google Play-də isə onun alış variantı aktiv deyil.",
+    "iap.diverge.play.offeredUnknown": "Uyğunsuzluq: biz bu məhsulu təklif edirik, Google Play isə tanımadığımız vəziyyət bildirir.",
+    "iap.diverge.play.approvedIdle": "Google Play-də aktivdir, biz isə tətbiqdə təklif etmirik.",
+    "iap.diverge.play.absentAtApple": "Google Play-də belə məhsul yoxdur, ona görə bu sətir hazırkı halda açıla bilməz.",
+    "iap.err.unknownPlatform": "Bu sətrin platforması tanınmır, ona görə məhsul təklif edilmədi.",
+    "iap.err.playNotConfigured": "Google Play bağlantısı qurulmayıb və ya açar qəbul edilmədi, ona görə məhsul təklif edilmədi. Serverdə GOOGLE_PLAY_SERVICE_ACCOUNT_JSON dəyərini yoxlayın.",
+    "iap.err.playNoPermission": "Xidmət hesabının Play Console-da bu tətbiq üçün icazəsi yoxdur. «İstifadəçilər və icazələr» bölməsində ona giriş verin.",
+    "iap.err.playMissingProduct": "Google Play-də bu nömrə ilə məhsul yoxdur. Əvvəlcə onu yaradın (create-play-products.mjs).",
+    "iap.err.playInactive": "Məhsul Google Play-də var, amma alış variantı aktiv deyil. Play Console-da onu aktivləşdirin.",
+    "iap.err.playUnreachable": "Google Play cavab vermədi. Heç nə dəyişdirilmədi — bir az sonra yenidən cəhd edin.",
   },
   en: {
     // ---- #15: generic async-button pending labels (ActionButton/SubmitButton) ----
@@ -2251,11 +2334,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.importNameHint":
       "Bulk-import files identify this subject by its internal name, and renaming does not change it:",
     // The Apple warning: creating a subject here does not create an Apple product.
-    "subj.iapHeading": "Apple App Store: a new subject is not sold on iOS right away",
+    "subj.iapHeading":
+      "App Store and Google Play: a new subject is not sold in the mobile app straight away",
     "subj.iapNotice":
-      "Creating a subject here does not create an Apple product. On iOS it can only be bought once three separate products — weekly, monthly and yearly — are created in App Store Connect, priced, and approved by Apple. Until then the subject simply does not appear in the iOS purchase list: no error, it is just absent. The website (ABB, AZN) and Android are unaffected — the subject sells on the web as soon as it is priced and published.",
+      "Creating a subject here does not create a store product. On iOS a subject sells only once its three products — weekly, monthly and yearly — exist and are active in App Store Connect (and Apple has approved them); on Android, only once they exist and are active on Google Play. Until then the subject is simply missing from that platform's purchase list: there is no error, it just is not there.",
     "subj.iapSteps":
-      "The order: 1) create the subject here, enter all three prices and publish it; 2) in App Store Connect create the three product ids for this subject (weekly, monthly, yearly), set their prices and get them approved by Apple — products are created by the local script, never by the admin panel; 3) the rows tying those ids to this subject arrive in the database with a migration; 4) on the App Store product list, switch all three rows on. Until all three products are approved and offered in the app, a parent cannot buy this subject on iOS.",
+      "Order: 1) create the subject here, enter all three prices and publish it; 2) create its three product ids (weekly, monthly, yearly) in App Store Connect and on Google Play — local scripts create the products, not the admin panel, while this screen pushes the prices itself; 3) the rows binding those ids to the subject are added to the database by a migration; 4) switch on the three rows per platform on the Store products screen. Until a product is active in its store, a parent cannot buy the subject on that platform.",
     "subj.iosNotSellable": "not sold on iOS",
     "subj.iosNotSellableHint":
       "This subject has no active App Store product for all three cycles, so it cannot be bought in the iOS app. Selling on the website is unaffected.",
@@ -2266,6 +2350,46 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.iosUnknown": "iOS status not checked",
     "subj.iosUnknownHint":
       "The App Store product list could not be read, so whether this subject sells on iOS is unknown. It does not mean anything is wrong with the subject. Reload the page, and if it keeps happening, check the App Store products section.",
+    // ---- Store prices follow the admin panel (owner decision 2026-10-10) ----
+    "subj.store.appStore": "App Store",
+    "subj.store.googlePlay": "Google Play",
+    "subj.store.heading": "Store prices: App Store and Google Play",
+    "subj.store.intro": "Mobile app prices follow the AZN prices set here: saving a price updates both stores automatically. The App Store bills Azerbaijan in US dollars and only at fixed price points, so the iOS price is the point nearest to AZN ÷ rate. On Google Play, the Azerbaijan price is set directly from here.",
+    "subj.store.rate": "Rate: 1 USD = {rate} AZN (setting store.fx.azn_per_usd).",
+    "subj.store.loading": "Reading store prices…",
+    "subj.store.syncAll": "Sync all store prices",
+    "subj.store.syncSubject": "Sync store prices",
+    "subj.store.syncing": "Syncing…",
+    "subj.store.reload": "Could not reach the server. Reload the page and try again.",
+    "subj.store.ind.inSync": "In sync",
+    "subj.store.ind.outOfSync": "Out of sync",
+    "subj.store.ind.notCreated": "Not created",
+    "subj.store.ind.unknown": "Unknown",
+    "subj.store.expected": "should be {price}",
+    "subj.store.none": "no price",
+    "subj.store.problem.appStore": "App Store prices could not be read: {reason}.",
+    "subj.store.problem.googlePlay": "Google Play prices could not be read: {reason}.",
+    "subj.store.productMapFailed": "The store product list could not be read, so the store status is unknown.",
+    "subj.store.updated": "{store}: updated to {price}",
+    "subj.store.unchanged": "{store}: already {price}",
+    "subj.store.notMapped": "{store}: no product for this cycle",
+    "subj.store.failed": "{store}: not updated — {reason}",
+    "subj.store.syncCrashed": "The price was saved, but the stores were not updated. Try again with “Sync store prices”.",
+    "subj.store.summary": "Updated: {updated} · already right: {unchanged} · failed: {failed} · no product: {notMapped}",
+    "subj.store.err.notConfigured": "the store connection is not set up on the server",
+    "subj.store.err.keyRejected": "the store rejected the API key",
+    "subj.store.err.needsAppManager": "the App Store Connect key needs the App Manager role",
+    "subj.store.err.needsPlayPermission": "the service account has no permission for this app in Play Console",
+    "subj.store.err.notCreated": "the product does not exist in the store yet",
+    "subj.store.err.unreachable": "the store did not respond",
+    "subj.store.err.rateLimited": "too many requests — try again in a few minutes",
+    "subj.store.err.rejected": "the store refused the change",
+    "subj.store.err.currencyMismatch": "the App Store no longer bills Azerbaijan in USD — nothing was changed",
+    "subj.store.err.noPricePoint": "no suitable price point was found",
+    "subj.store.err.verifyFailed": "the new price could not be confirmed — check the store",
+    "subj.store.err.currencyUnsupported": "Google Play prices Azerbaijan in an unexpected currency — nothing was changed",
+    "subj.store.err.noPurchaseOption": "the product has no purchase option",
+    "subj.store.err.productMapUnreadable": "the product list could not be read",
     "nav.topics": "Topics",
     "nav.subtopics": "Subtopics",
     "nav.cities": "Cities",
@@ -3746,15 +3870,22 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Unanswered questions are deleted for good. Answered ones are not deleted — they are archived, so the students' answer history stays exactly as it is. Which is which is decided by the database as it runs.",
     "del.bulk.deleteAction": "Delete the selected questions",
     // ---- App Store products (iap_products, migration 164) ----
-    "nav.iap": "App Store product list",
-    "iap.title": "App Store product list",
-    "iap.subtitle": "A read-only view: the rows in our database side by side with what App Store Connect reports about the same products. Nothing here is created, edited or deleted.",
-    "iap.readonly.title": "This screen changes nothing at Apple",
-    "iap.readonly.body": "Products in App Store Connect are created only by the script the owner runs locally (mobile-app/scripts/create-iap-products.mjs). The one button here decides whether our app offers the product; it does not touch Apple's state, price or approval.",
+    "nav.iap":
+      "Store products",
+    "iap.title":
+      "Store products: App Store and Google Play",
+    "iap.subtitle":
+      "This screen only shows: our rows side by side with what App Store Connect and Google Play report about the same products. Nothing is created, edited or deleted here.",
+    "iap.readonly.title":
+      "This screen changes nothing in the stores",
+    "iap.readonly.body":
+      "Products are created in the stores only by scripts the owner runs on their own computer: create-iap-products.mjs for App Store Connect and create-play-products.mjs for Google Play. Prices are pushed to both stores from the Subjects screen. The only button here decides whether our app offers a product; it does not touch its state, price or approval in the store.",
     "iap.loadError": "Could not load the product list. Refresh the page or check the server logs.",
     "iap.empty": "There are no product rows in the database. Rows arrive with a migration; they cannot be created from this screen.",
-    "iap.androidNote": "There is no Android product here and there cannot be one: the Play build only shows content and sells nothing. That comes from the shape of this table, not from a setting.",
-    "iap.priceNote": "Prices are not stored here. App Store Connect owns the iOS price and the app reads it straight from the store.",
+    "iap.androidNote":
+      "Android products are created on Google Play with the same ids as iOS. An Android row can be switched on only when the product exists on Google Play and its purchase option is active.",
+    "iap.priceNote":
+      "Prices are not kept here: the price on the Subjects screen is pushed to both stores, and the app reads the price straight from the store.",
     "iap.refresh.stamp": "Last checked: {at}",
     "iap.refresh.action": "Refresh",
     "iap.refresh.working": "Checking…",
@@ -3762,9 +3893,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     "iap.store.link.notConfigured": "App Store Connect is not connected, so the Apple column is empty. Set the APP_STORE_CONNECT_* values on the server.",
     "iap.store.link.unreachable": "App Store Connect did not respond, so the Apple column is empty. Check again shortly.",
     "iap.banner.none.title": "Nothing is offered in the app right now",
-    "iap.banner.none.body": "No row is switched on, so neither a subscription nor a package can be bought in the iOS app. That can be entirely correct — read the Apple column before switching a row on.",
+    "iap.banner.none.body":
+      "No row is switched on, so nothing — no subscription, no package — can be bought in the mobile app. That can be entirely correct; check the store column before switching a row on.",
     "iap.banner.live.title": "{n} product(s) offered in the app",
-    "iap.banner.live.body": "Rows that are switched on can be bought in the iOS app. Each one needs an approved counterpart in App Store Connect for the purchase to go through.",
+    "iap.banner.live.body":
+      "Switched-on rows can be bought on their own platform (iOS or Android). For a purchase to go through, each needs a live counterpart in that store.",
     "iap.group.subject": "Subject subscriptions",
     "iap.group.package": "Olympiad packages",
     "iap.groupCount": "{active} of {total} rows switched on",
@@ -3802,24 +3935,32 @@ export const messages: Record<Locale, Record<string, string>> = {
     "iap.diverge.offeredUnknown": "Mismatch: we offer this product and Apple reports a state we do not recognise.",
     "iap.diverge.approvedIdle": "Approved at Apple, not offered in the app.",
     "iap.diverge.absentAtApple": "App Store Connect has no such product, so this row cannot be switched on as things stand.",
-    "iap.diverge.summary": "{n} row(s) do not match App Store Connect",
-    "iap.diverge.summaryBody": "The rows below are offered in the app but are not in a purchasable state at Apple. Either stop offering them here, or fix the product in App Store Connect.",
-    "iap.unmapped.heading": "Apple products with no row here",
-    "iap.unmapped.body": "App Store Connect holds these products and our database maps none of them. A purchase of one reaches the server as an id that grants nothing. Rows are added by a migration only.",
-    "iap.unmapped.col.name": "Name at Apple",
+    "iap.diverge.summary":
+      "{n} rows disagree with their store",
+    "iap.diverge.summaryBody":
+      "The rows below are offered in the app but are not in a buyable state in their store. Either stop offering the row, or fix the product in App Store Connect or Play Console.",
+    "iap.unmapped.heading":
+      "Store products with no row here",
+    "iap.unmapped.body":
+      "The store holds these products, but our database has no row for them on that platform. If one is bought, the server cannot turn the payment into access. Rows are added only by a migration.",
+    "iap.unmapped.col.name":
+      "Name in the store",
     "iap.blockedTitle": "This product cannot be offered",
     "iap.action.activate": "Offer in the app",
     "iap.action.deactivate": "Stop offering",
     "iap.confirm.title": "Change what the app offers",
-    "iap.confirm.on": "From now on the product is immediately purchasable in the iOS app. If a product with the same id does not exist and is not approved in App Store Connect, the purchase fails for every user.",
-    "iap.confirm.off": "The product disappears from the iOS app and nobody can buy it. Access that was already bought is untouched.",
-    "iap.confirm.localOnly": "This button only affects our app. The product stays exactly as it is in App Store Connect — stopping the sale at Apple has to be done there.",
-    "iap.confirm.ack": "I have read the App Store Connect state shown above and confirm this product can be sold.",
+    "iap.confirm.on":
+      "From now on the product can be bought straight away in the app on its platform. If the store has no live product with this id, the purchase will fail for every user.",
+    "iap.confirm.off":
+      "The product will no longer be shown or sold in the app. Access already bought is not affected.",
+    "iap.confirm.localOnly":
+      "This button only affects our app. The product stays as it is in the store — to stop selling it there, go to App Store Connect or Play Console.",
+    "iap.confirm.ack":
+      "I have read the store status above and confirm this product can be sold.",
     "iap.confirm.yesOn": "Yes, offer it",
     "iap.confirm.yesOff": "Yes, stop offering it",
     "iap.err.server": "That did not work. Try again in a moment.",
     "iap.err.notFound": "This product no longer exists. Refresh the page.",
-    "iap.err.iosOnly": "Only iOS products can be offered. The Android build sells nothing.",
     "iap.err.targetMissing": "What this product sells no longer exists, so it is not offered.",
     "iap.err.targetArchived": "What this product sells is not shown to families right now. Publish it again first.",
     "iap.err.gradeMissing": "The grade pinned to this product no longer exists.",
@@ -3837,6 +3978,31 @@ export const messages: Record<Locale, Record<string, string>> = {
     "iap.err.storeRemoved": "This product has been removed from sale in App Store Connect.",
     "iap.err.storeUnknownState":
       "App Store Connect returned a status we do not recognise for this product, so it is not offered.",
+    // ---- Google Play rows on the store products screen (2026-10-10) ----
+    "iap.col.store": "In the store",
+    "iap.col.play": "On Google Play",
+    "iap.platform.ios": "iOS",
+    "iap.platform.android": "Android",
+    "iap.play.state.active": "Active",
+    "iap.play.state.draft": "Draft",
+    "iap.play.state.inactive": "Inactive",
+    "iap.play.state.noBuyOption": "No purchase option",
+    "iap.play.state.unknown": "Unrecognised state",
+    "iap.play.absent": "Not on Google Play",
+    "iap.play.link.ok": "Android rows were read from Google Play.",
+    "iap.play.link.notConfigured": "Google Play is not connected, so the store column is empty for Android rows. Set GOOGLE_PLAY_SERVICE_ACCOUNT_JSON on the server.",
+    "iap.play.link.unreachable": "Google Play did not respond, so the store column is empty for Android rows. Check again in a little while.",
+    "iap.diverge.play.offeredMissing": "Mismatch: we offer this product, but Google Play has no such product — the purchase fails for every user.",
+    "iap.diverge.play.offeredBlocked": "Mismatch: we offer this product, but its purchase option on Google Play is not active.",
+    "iap.diverge.play.offeredUnknown": "Mismatch: we offer this product, but Google Play reports a state we do not recognise.",
+    "iap.diverge.play.approvedIdle": "Active on Google Play, but we do not offer it in the app.",
+    "iap.diverge.play.absentAtApple": "Google Play has no such product, so this row cannot be switched on as things stand.",
+    "iap.err.unknownPlatform": "This row's platform is not recognised, so the product was not offered.",
+    "iap.err.playNotConfigured": "Google Play is not connected, or its key was rejected, so the product was not offered. Check GOOGLE_PLAY_SERVICE_ACCOUNT_JSON on the server.",
+    "iap.err.playNoPermission": "The service account has no permission for this app in Play Console. Grant it access under Users and permissions.",
+    "iap.err.playMissingProduct": "Google Play has no product with this id. Create it first (create-play-products.mjs).",
+    "iap.err.playInactive": "The product exists on Google Play, but its purchase option is not active. Activate it in Play Console.",
+    "iap.err.playUnreachable": "Google Play did not respond. Nothing was changed — try again in a little while.",
   },
   ru: {
     // ---- #15: generic async-button pending labels (ActionButton/SubmitButton) ----
@@ -4158,11 +4324,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.importNameHint":
       "Файлы массовой загрузки определяют предмет по этому внутреннему названию, и переименование его не меняет:",
     // Предупреждение об Apple: создание предмета здесь не создаёт продукт Apple.
-    "subj.iapHeading": "Apple App Store: новый предмет не сразу продаётся в iOS",
+    "subj.iapHeading":
+      "App Store и Google Play: новый предмет не продаётся в мобильном приложении сразу",
     "subj.iapNotice":
-      "Создание предмета здесь не создаёт продукт Apple. В iOS его можно будет купить только после того, как в App Store Connect будут созданы три отдельных продукта — недельный, месячный и годовой, — им назначена цена и они одобрены Apple. До этого предмет просто не появляется в списке покупок в iOS: ошибки нет, его там нет. Сайт (ABB, AZN) и Android от этого не зависят — предмет продаётся на сайте, как только у него заданы цены и он опубликован.",
+      "Создание предмета здесь не создаёт товар в магазине. В iOS предмет продаётся только когда три его товара — недельный, месячный и годовой — существуют и активны в App Store Connect (и одобрены Apple), в Android — только когда они существуют и активны в Google Play. До этого предмета просто нет в списке покупок этой платформы: ошибки нет, его там просто нет.",
     "subj.iapSteps":
-      "Порядок: 1) создайте предмет здесь, укажите все три цены и опубликуйте его; 2) в App Store Connect создайте три идентификатора продукта для этого предмета (недельный, месячный, годовой), задайте им цены и получите одобрение Apple — продукты создаёт локальный скрипт, а не админ-панель; 3) строки, связывающие эти идентификаторы с предметом, появляются в базе миграцией; 4) на экране «Список продуктов App Store» включите все три строки. Пока все три продукта не одобрены и не предлагаются в приложении, родитель не может купить этот предмет в iOS.",
+      "Порядок: 1) создайте предмет здесь, укажите все три цены и опубликуйте его; 2) создайте три его товара (недельный, месячный, годовой) в App Store Connect и в Google Play — товары создают локальные скрипты, а не админ-панель, цены же этот экран передаёт сам; 3) строки, связывающие эти идентификаторы с предметом, добавляются в базу миграцией; 4) включите по три строки для каждой платформы на экране «Товары в магазинах». Пока товар не активен в магазине, родитель не может купить предмет на этой платформе.",
     "subj.iosNotSellable": "не продаётся в iOS",
     "subj.iosNotSellableHint":
       "У этого предмета нет активного продукта App Store для всех трёх периодов, поэтому в приложении для iOS его нельзя купить. На продажу через сайт это не влияет.",
@@ -4173,6 +4340,46 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.iosUnknown": "статус iOS не проверен",
     "subj.iosUnknownHint":
       "Список продуктов App Store не удалось прочитать, поэтому неизвестно, продаётся ли этот предмет в iOS. Это не означает, что с предметом что-то не так. Обновите страницу, а если повторится — проверьте раздел «Продукты App Store».",
+    // ---- Store prices follow the admin panel (owner decision 2026-10-10) ----
+    "subj.store.appStore": "App Store",
+    "subj.store.googlePlay": "Google Play",
+    "subj.store.heading": "Цены в магазинах: App Store и Google Play",
+    "subj.store.intro": "Цены в мобильном приложении следуют за ценами в AZN, заданными здесь: при сохранении цены оба магазина обновляются автоматически. App Store выставляет счета в Азербайджане в долларах США и только по фиксированным ценовым ступеням, поэтому цена в iOS — ближайшая ступень к «AZN ÷ курс». В Google Play цена для Азербайджана задаётся напрямую отсюда.",
+    "subj.store.rate": "Курс: 1 USD = {rate} AZN (настройка store.fx.azn_per_usd).",
+    "subj.store.loading": "Загружаем цены из магазинов…",
+    "subj.store.syncAll": "Синхронизировать все цены в магазинах",
+    "subj.store.syncSubject": "Синхронизировать цены",
+    "subj.store.syncing": "Синхронизация…",
+    "subj.store.reload": "Не удалось связаться с сервером. Обновите страницу и попробуйте ещё раз.",
+    "subj.store.ind.inSync": "Совпадает",
+    "subj.store.ind.outOfSync": "Не совпадает",
+    "subj.store.ind.notCreated": "Не создан",
+    "subj.store.ind.unknown": "Неизвестно",
+    "subj.store.expected": "должно быть: {price}",
+    "subj.store.none": "цены нет",
+    "subj.store.problem.appStore": "Не удалось прочитать цены App Store: {reason}.",
+    "subj.store.problem.googlePlay": "Не удалось прочитать цены Google Play: {reason}.",
+    "subj.store.productMapFailed": "Не удалось прочитать список продуктов магазинов, поэтому их статус неизвестен.",
+    "subj.store.updated": "{store}: цена обновлена — {price}",
+    "subj.store.unchanged": "{store}: цена уже актуальна — {price}",
+    "subj.store.notMapped": "{store}: для этого периода нет продукта",
+    "subj.store.failed": "{store}: не обновлено — {reason}",
+    "subj.store.syncCrashed": "Цена сохранена, но магазины не обновились. Повторите через «Синхронизировать цены».",
+    "subj.store.summary": "Обновлено: {updated} · уже актуально: {unchanged} · ошибок: {failed} · без продукта: {notMapped}",
+    "subj.store.err.notConfigured": "подключение к магазину на сервере не настроено",
+    "subj.store.err.keyRejected": "магазин отклонил ключ API",
+    "subj.store.err.needsAppManager": "ключу App Store Connect нужна роль App Manager",
+    "subj.store.err.needsPlayPermission": "у сервисного аккаунта нет доступа к этому приложению в Play Console",
+    "subj.store.err.notCreated": "продукт в магазине ещё не создан",
+    "subj.store.err.unreachable": "магазин не ответил",
+    "subj.store.err.rateLimited": "слишком много запросов — повторите через несколько минут",
+    "subj.store.err.rejected": "магазин отклонил изменение",
+    "subj.store.err.currencyMismatch": "App Store больше не выставляет счета в Азербайджане в USD — ничего не изменено",
+    "subj.store.err.noPricePoint": "подходящая ценовая ступень не найдена",
+    "subj.store.err.verifyFailed": "новую цену не удалось подтвердить — проверьте магазин",
+    "subj.store.err.currencyUnsupported": "Google Play использует для Азербайджана неожиданную валюту — ничего не изменено",
+    "subj.store.err.noPurchaseOption": "у продукта нет варианта покупки",
+    "subj.store.err.productMapUnreadable": "не удалось прочитать список продуктов",
     "nav.topics": "Темы",
     "nav.subtopics": "Подтемы",
     "nav.cities": "Города",
@@ -5665,15 +5872,22 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Вопросы без ответов удаляются безвозвратно. Отвеченные не удаляются — они уходят в архив, и история ответов учеников остаётся нетронутой. Что к чему относится, база определяет прямо во время операции.",
     "del.bulk.deleteAction": "Удалить выбранные вопросы",
     // ---- Продукты App Store (iap_products, миграция 164) ----
-    "nav.iap": "Список продуктов App Store",
-    "iap.title": "Список продуктов App Store",
-    "iap.subtitle": "Экран только показывает: строки нашей базы рядом с тем, что о тех же продуктах сообщает App Store Connect. Здесь ничего не создаётся, не изменяется и не удаляется.",
-    "iap.readonly.title": "Этот экран ничего не меняет на стороне Apple",
-    "iap.readonly.body": "Продукты в App Store Connect создаёт только скрипт, который владелец запускает у себя (mobile-app/scripts/create-iap-products.mjs). Единственная кнопка здесь решает, предлагает ли продукт наше приложение, и не трогает ни статус, ни цену, ни одобрение на стороне Apple.",
+    "nav.iap":
+      "Товары в магазинах",
+    "iap.title":
+      "Товары в магазинах: App Store и Google Play",
+    "iap.subtitle":
+      "Этот экран только показывает: наши строки рядом с тем, что App Store Connect и Google Play сообщают о тех же товарах. Здесь ничего не создаётся, не меняется и не удаляется.",
+    "iap.readonly.title":
+      "Этот экран ничего не меняет в магазинах",
+    "iap.readonly.body":
+      "Товары в магазинах создают только скрипты, которые владелец запускает на своём компьютере: create-iap-products.mjs для App Store Connect и create-play-products.mjs для Google Play. Цены передаются в оба магазина с экрана «Предметы». Единственная кнопка здесь решает, предлагает ли наше приложение товар; его статус, цену и одобрение в магазине она не меняет.",
     "iap.loadError": "Не удалось загрузить список продуктов. Обновите страницу или проверьте журналы сервера.",
     "iap.empty": "В базе нет ни одной строки продукта. Строки появляются миграцией — с этого экрана их создать нельзя.",
-    "iap.androidNote": "Продуктов для Android здесь нет и быть не может: версия для Play только показывает материалы и ничего не продаёт. Это обеспечено устройством самой таблицы, а не настройкой.",
-    "iap.priceNote": "Цены здесь не хранятся. Цену для iOS задаёт App Store Connect, и приложение читает её прямо из магазина.",
+    "iap.androidNote":
+      "Товары для Android создаются в Google Play с теми же идентификаторами, что и для iOS. Строку Android можно включить, только если товар есть в Google Play и его вариант покупки активен.",
+    "iap.priceNote":
+      "Цены здесь не хранятся: цена с экрана «Предметы» передаётся в оба магазина, а приложение берёт цену прямо из магазина.",
     "iap.refresh.stamp": "Последняя проверка: {at}",
     "iap.refresh.action": "Обновить",
     "iap.refresh.working": "Проверка…",
@@ -5681,9 +5895,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     "iap.store.link.notConfigured": "App Store Connect не подключён, поэтому столбец Apple пуст. Задайте значения APP_STORE_CONNECT_* на сервере.",
     "iap.store.link.unreachable": "App Store Connect не ответил, поэтому столбец Apple пуст. Повторите проверку чуть позже.",
     "iap.banner.none.title": "Сейчас в приложении ничего не предлагается",
-    "iap.banner.none.body": "Ни одна строка не включена, поэтому в приложении для iOS нельзя купить ни подписку, ни пакет. Это может быть совершенно правильно — перед включением строки посмотрите столбец Apple.",
+    "iap.banner.none.body":
+      "Ни одна строка не включена, поэтому в мобильном приложении нельзя купить ни подписку, ни пакет. Это может быть вполне правильным состоянием — перед включением строки посмотрите на столбец магазина.",
     "iap.banner.live.title": "В приложении предлагается продуктов: {n}",
-    "iap.banner.live.body": "Включённые строки можно купить в приложении для iOS. Для каждой нужен одобренный продукт в App Store Connect, иначе покупка не пройдёт.",
+    "iap.banner.live.body":
+      "Включённые строки можно купить на своей платформе (iOS или Android). Чтобы покупка прошла, у каждой должен быть активный товар в соответствующем магазине.",
     "iap.group.subject": "Подписки на предметы",
     "iap.group.package": "Олимпиадные пакеты",
     "iap.groupCount": "Включено {active} из {total}",
@@ -5721,24 +5937,32 @@ export const messages: Record<Locale, Record<string, string>> = {
     "iap.diverge.offeredUnknown": "Расхождение: мы предлагаем этот продукт, а Apple сообщает неизвестный нам статус.",
     "iap.diverge.approvedIdle": "У Apple одобрено, а в приложении не предлагается.",
     "iap.diverge.absentAtApple": "В App Store Connect такого продукта нет, поэтому эту строку сейчас включить нельзя.",
-    "iap.diverge.summary": "Строк, не совпадающих с App Store Connect: {n}",
-    "iap.diverge.summaryBody": "Строки ниже предлагаются в приложении, но у Apple они не в том состоянии, в котором возможна покупка. Либо перестаньте предлагать их здесь, либо приведите продукт в порядок в App Store Connect.",
-    "iap.unmapped.heading": "Продукты Apple без строки в базе",
-    "iap.unmapped.body": "Эти продукты есть в App Store Connect, но в нашей базе им ничего не соответствует. Покупка такого продукта приходит на сервер идентификатором, который ничего не даёт. Строки добавляются только миграцией.",
-    "iap.unmapped.col.name": "Название у Apple",
+    "iap.diverge.summary":
+      "Строк, не совпадающих с магазином: {n}",
+    "iap.diverge.summaryBody":
+      "Строки ниже предлагаются в приложении, но в магазине их нельзя купить. Либо снимите строку с предложения, либо приведите товар в порядок в App Store Connect или Play Console.",
+    "iap.unmapped.heading":
+      "Товары в магазинах без строки в нашей базе",
+    "iap.unmapped.body":
+      "Эти товары есть в магазине, но в нашей базе для этой платформы нет соответствующей строки. Если такой товар купят, сервер не сможет превратить оплату в доступ. Строки добавляются только миграцией.",
+    "iap.unmapped.col.name":
+      "Название в магазине",
     "iap.blockedTitle": "Этот продукт нельзя предлагать",
     "iap.action.activate": "Предлагать в приложении",
     "iap.action.deactivate": "Перестать предлагать",
     "iap.confirm.title": "Изменить то, что предлагает приложение",
-    "iap.confirm.on": "После этого продукт сразу можно будет купить в приложении для iOS. Если продукта с таким же идентификатором нет в App Store Connect или он не одобрен, покупка сорвётся у каждого пользователя.",
-    "iap.confirm.off": "Продукт исчезнет из приложения для iOS, и купить его будет нельзя. Уже оплаченный доступ не затрагивается.",
-    "iap.confirm.localOnly": "Кнопка влияет только на наше приложение. В App Store Connect продукт остаётся как есть — прекратить продажу у Apple можно только там.",
-    "iap.confirm.ack": "Я прочитал статус App Store Connect выше и подтверждаю, что этот продукт можно продавать.",
+    "iap.confirm.on":
+      "С этого момента товар сразу можно будет купить в приложении на его платформе. Если в магазине нет активного товара с этим идентификатором, покупка не пройдёт ни у одного пользователя.",
+    "iap.confirm.off":
+      "Товар больше не будет показываться и продаваться в приложении. Уже купленный доступ не затрагивается.",
+    "iap.confirm.localOnly":
+      "Эта кнопка влияет только на наше приложение. В магазине товар остаётся как есть — чтобы снять его с продажи там, зайдите в App Store Connect или Play Console.",
+    "iap.confirm.ack":
+      "Я прочитал(а) статус в магазине выше и подтверждаю, что этот товар можно продавать.",
     "iap.confirm.yesOn": "Да, предлагать",
     "iap.confirm.yesOff": "Да, перестать предлагать",
     "iap.err.server": "Не получилось. Повторите попытку чуть позже.",
     "iap.err.notFound": "Этого продукта больше нет. Обновите страницу.",
-    "iap.err.iosOnly": "Предлагать можно только продукты для iOS. Версия для Android ничего не продаёт.",
     "iap.err.targetMissing": "То, что продаёт этот продукт, больше не существует, поэтому он не предложен.",
     "iap.err.targetArchived": "То, что продаёт этот продукт, сейчас не показывается семьям. Сначала опубликуйте это снова.",
     "iap.err.gradeMissing": "Класс, привязанный к этому продукту, больше не существует.",
@@ -5756,5 +5980,30 @@ export const messages: Record<Locale, Record<string, string>> = {
     "iap.err.storeRemoved": "Этот продукт снят с продажи в App Store Connect.",
     "iap.err.storeUnknownState":
       "App Store Connect вернул неизвестный нам статус для этого продукта, поэтому он не предложен.",
+    // ---- Google Play rows on the store products screen (2026-10-10) ----
+    "iap.col.store": "В магазине",
+    "iap.col.play": "В Google Play",
+    "iap.platform.ios": "iOS",
+    "iap.platform.android": "Android",
+    "iap.play.state.active": "Активен",
+    "iap.play.state.draft": "Черновик",
+    "iap.play.state.inactive": "Неактивен",
+    "iap.play.state.noBuyOption": "Нет варианта покупки",
+    "iap.play.state.unknown": "Неизвестный статус",
+    "iap.play.absent": "Нет в Google Play",
+    "iap.play.link.ok": "Строки Android прочитаны из Google Play.",
+    "iap.play.link.notConfigured": "Google Play не подключён, поэтому столбец магазина для строк Android пуст. Задайте GOOGLE_PLAY_SERVICE_ACCOUNT_JSON на сервере.",
+    "iap.play.link.unreachable": "Google Play не ответил, поэтому столбец магазина для строк Android пуст. Проверьте чуть позже.",
+    "iap.diverge.play.offeredMissing": "Несоответствие: мы предлагаем этот товар, а в Google Play такого товара нет — покупка не пройдёт ни у кого.",
+    "iap.diverge.play.offeredBlocked": "Несоответствие: мы предлагаем этот товар, а его вариант покупки в Google Play неактивен.",
+    "iap.diverge.play.offeredUnknown": "Несоответствие: мы предлагаем этот товар, а Google Play сообщает неизвестный нам статус.",
+    "iap.diverge.play.approvedIdle": "Активен в Google Play, но в приложении мы его не предлагаем.",
+    "iap.diverge.play.absentAtApple": "В Google Play нет такого товара, поэтому сейчас эту строку включить нельзя.",
+    "iap.err.unknownPlatform": "Платформа этой строки не распознана, поэтому товар не предложен.",
+    "iap.err.playNotConfigured": "Google Play не подключён или его ключ отклонён, поэтому товар не предложен. Проверьте GOOGLE_PLAY_SERVICE_ACCOUNT_JSON на сервере.",
+    "iap.err.playNoPermission": "У сервисного аккаунта нет доступа к этому приложению в Play Console. Выдайте доступ в разделе «Пользователи и разрешения».",
+    "iap.err.playMissingProduct": "В Google Play нет товара с этим идентификатором. Сначала создайте его (create-play-products.mjs).",
+    "iap.err.playInactive": "Товар есть в Google Play, но его вариант покупки неактивен. Активируйте его в Play Console.",
+    "iap.err.playUnreachable": "Google Play не ответил. Ничего не изменено — попробуйте чуть позже.",
   },
 };

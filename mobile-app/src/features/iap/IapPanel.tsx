@@ -1,11 +1,12 @@
-// THE iOS PURCHASE SURFACE. One card, one child, one section per sellable
-// subject.
+// THE PURCHASE SURFACE — iOS (StoreKit) and, since the owner decision of
+// 2026-10-10, Android (Google Play Billing). One card, one child, one section
+// per sellable subject. Parent screens only: a child never reaches this file.
 //
 // LAYOUT (owner feedback, 2026-10-10): this used to be one flat row per SKU —
 // seven subjects times three periods, twenty-one price buttons in a column. It
 // is now the standard paywall shape, grouped by subject (offerGroups.ts): each
 // subject is an accordion row; the open one lists its periods as radio options
-// with StoreKit's price on each, and carries ONE action whose label repeats the
+// with the store's price on each, and carries ONE action whose label repeats the
 // chosen price. One section is open at a time, the first by default, so a
 // price is on screen without a tap. Monthly is preselected.
 //
@@ -13,16 +14,17 @@
 // end, a purchase button with no price, a raw error, or a red screen. Every
 // branch below renders a sentence somebody wrote on purpose.
 //
-// PRICES ARE StoreKit'S OWN STRINGS. `displayPrice` is rendered verbatim on the
-// period option and in the action's label — already localised, already in the
-// viewer's storefront currency, already correct about tax. This app formats no
+// PRICES ARE THE STORE'S OWN STRINGS (StoreKit's displayPrice, Play's
+// formattedPrice). `displayPrice` is rendered verbatim on the period option and
+// in the action's label — already localised, already in the viewer's
+// storefront currency, already correct about tax. This app formats no
 // amount anywhere, and a helper that could print one is exactly how a wrong
 // price gets back onto a screen.
 //
 // The panel is also given the current server-resolved availability. During an
 // admin giveaway, scheduled free access, or payment-off state it renders
 // nothing and its press handler refuses to start. The BFF repeats the gate
-// before an intent is written, so a stale frame cannot open StoreKit.
+// before an intent is written, so a stale frame cannot open the store sheet.
 import React, { useState } from "react";
 import { LayoutAnimation, Pressable, View } from "react-native";
 import { ChevronDown } from "lucide-react-native";
@@ -34,9 +36,10 @@ import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { INTERVAL_NAME_KEY } from "@/features/parent/commerce";
-import { bffIapApi } from "./api";
+import { IAP_STORE } from "./platform";
 import { runPurchase } from "./purchaseFlow";
-import { appleStore } from "./store";
+import { rail } from "./rail";
+import { storeCopyKey } from "./storeCopy";
 import {
   groupIapOffers,
   openSubjectId,
@@ -62,7 +65,7 @@ export function IapPanel({
   refetch: () => void;
   /** Refresh whatever shows entitlement, so access appears without a reload. */
   onSettled: () => void;
-  /** Runtime admin gate. Android remains excluded by the platform boundary. */
+  /** Runtime admin gate: closes the rail, never opens another one. */
   purchaseEnabled?: boolean;
 }) {
   const { t } = useT();
@@ -131,8 +134,8 @@ export function IapPanel({
     let result: PurchaseOutcome = { status: "failed", messageKey: "mob.iap.err.generic" };
     try {
       result = await runPurchase({
-        store: appleStore,
-        api: bffIapApi,
+        store: rail.store,
+        api: rail.api,
         productId: offer.productId,
         studentProfileId,
       });
@@ -149,9 +152,9 @@ export function IapPanel({
     });
     // ONLY A GRANT REMOVES THE OFFER. `granted` is the one outcome that means
     // the entitlement now EXISTS and the refetch below is merely on its way to
-    // confirming it. `recorded` is Apple-verified but grants nothing, `deferred`
-    // is still waiting on the family organiser and `pending` is a grant we could
-    // not confirm — withdrawing a purchase button on the strength of any of
+    // confirming it. `recorded` is store-verified but grants nothing, `deferred`
+    // is still waiting on the family organiser (iOS) or on a payment Google has
+    // not confirmed (Android), and `pending` is a grant we could not confirm — withdrawing a purchase button on the strength of any of
     // those would hide a sale that has not happened, which is the one direction
     // an offer filter must never fail in.
     //
@@ -198,12 +201,12 @@ export function IapPanel({
 
   const body =
     state === "loading" ? (
-      <AppText variant="muted">{t("mob.iap.loading")}</AppText>
+      <AppText variant="muted">{t(sk("mob.iap.loading"))}</AppText>
     ) : state === "unavailable" ? (
       // WE SELL SOMETHING BUT COULD NOT PRICE IT. Say so plainly and offer the
       // retry; never a bare spinner and never an unpriced button.
       <View style={{ gap: spacing.md }}>
-        <AppText variant="muted">{t("mob.iap.err.unavailable")}</AppText>
+        <AppText variant="muted">{t(sk("mob.iap.err.unavailable"))}</AppText>
         <Button title={t("mob.retry")} variant="ghost" onPress={refetch} />
       </View>
     ) : (
@@ -227,8 +230,8 @@ export function IapPanel({
 
   return (
     <Card style={{ gap: spacing.md }}>
-      <AppText variant="subtitle">{t("mob.iap.title")}</AppText>
-      <AppText variant="muted">{t("mob.iap.intro")}</AppText>
+      <AppText variant="subtitle">{t(sk("mob.iap.title"))}</AppText>
+      <AppText variant="muted">{t(sk("mob.iap.intro"))}</AppText>
       {body}
       <PurchaseNotice outcome={outcome} />
     </Card>
@@ -338,8 +341,8 @@ function SubjectList({
                   ))}
                 </View>
                 {/* ONE action per subject. Its label carries the chosen
-                    period's price — Apple's string, untouched — so what the
-                    sheet will charge is written on the button that opens it. */}
+                    period's price — the store's string, untouched — so what
+                    the sheet will charge is written on the button that opens it. */}
                 <Button
                   title={`${t("mob.iap.activate")} · ${chosen.displayPrice}`}
                   pending={pendingId === chosen.productId}
@@ -356,7 +359,7 @@ function SubjectList({
   );
 }
 
-/** One period of one subject: a radio option with StoreKit's price on it. */
+/** One period of one subject: a radio option with the store's price on it. */
 function PeriodOption({
   offer,
   selected,
@@ -418,8 +421,8 @@ function PeriodOption({
       <AppText variant="label" style={{ flex: 1, minWidth: 0 }} numberOfLines={2}>
         {period}
       </AppText>
-      {/* Apple's string, untouched. Allowed to wrap rather than truncate: a
-          clipped price is worse than a taller row. */}
+      {/* The store's string, untouched. Allowed to wrap rather than truncate:
+          a clipped price is worse than a taller row. */}
       <AppText
         variant="label"
         // pillText, not accent: it is the readable ink on pillBg in both themes.
@@ -443,14 +446,14 @@ function PurchaseNotice({ outcome }: { outcome: PurchaseOutcome | null }) {
     return <AppText color={tokens.ok}>{t("mob.iap.done")}</AppText>;
   }
   if (outcome.status === "deferred") {
-    return <AppText variant="muted">{t("mob.iap.deferred")}</AppText>;
+    return <AppText variant="muted">{t(sk("mob.iap.deferred"))}</AppText>;
   }
   if (outcome.status === "recorded") {
     // Verified by Apple, acknowledged by our server, no access created — a
     // sandbox purchase made while APPLE_IAP_SANDBOX_GRANTS is off, NOT what App
     // Review gets (see buy(): the reviewer's sandbox purchase is granted). No
     // real money moved, so neutral, not red.
-    return <AppText variant="muted">{t(outcome.messageKey)}</AppText>;
+    return <AppText variant="muted">{t(sk(outcome.messageKey))}</AppText>;
   }
   if (outcome.status === "pending") {
     // THE MOST IMPORTANT LINE IN THIS FILE. Money has moved and we could not
@@ -462,7 +465,7 @@ function PurchaseNotice({ outcome }: { outcome: PurchaseOutcome | null }) {
       <View style={{ gap: spacing.xs }}>
         <AppText color={tokens.text}>{t("mob.iap.pending")}</AppText>
         {outcome.detailKey ? (
-          <AppText variant="muted">{t(outcome.detailKey)}</AppText>
+          <AppText variant="muted">{t(sk(outcome.detailKey))}</AppText>
         ) : null}
       </View>
     );
@@ -472,5 +475,11 @@ function PurchaseNotice({ outcome }: { outcome: PurchaseOutcome | null }) {
   // into the DANGER tone by accident. Only `failed` — where nothing was charged
   // — is allowed to look like an error.
   if (outcome.status === "cancelled") return null;
-  return <AppText color={tokens.danger}>{t(outcome.messageKey)}</AppText>;
+  return <AppText color={tokens.danger}>{t(sk(outcome.messageKey))}</AppText>;
+}
+
+/** This build's wording for a rail key: the Google Play twin on Android, the
+ *  key itself on iOS (storeCopy.ts). */
+function sk(key: string): string {
+  return storeCopyKey(key, IAP_STORE);
 }

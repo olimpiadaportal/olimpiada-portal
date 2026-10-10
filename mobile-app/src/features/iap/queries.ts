@@ -1,45 +1,51 @@
-// React Query wiring for the iOS purchase surface.
+// React Query wiring for the purchase surface (iOS StoreKit; Android Google
+// Play Billing since the owner decision of 2026-10-10).
 //
-// EVERY HOOK HERE IS INERT OFF iOS. `IAP_PLATFORM_SUPPORTED` is a build-time
-// platform constant and it gates `enabled` on every query in this file — so on
-// Android nothing is fetched, nothing is rendered and the binary behaves
-// exactly as it did before this rail existed. The caller supplies a second,
-// runtime availability gate for iOS free-access/payment-off states; that gate
-// can close StoreKit but cannot change which payment rail the binary contains.
+// EVERY HOOK HERE IS INERT WITHOUT A STORE RAIL. `IAP_PLATFORM_SUPPORTED` is a
+// build-time platform constant and it gates `enabled` on every query in this
+// file. The caller supplies a second, runtime availability gate for
+// free-access/payment-off states; that gate can close the store sheet but
+// cannot change which payment rail the binary contains.
 //
 // NEITHER QUERY IS ALLOWED TO LEAVE THE SCREEN IN A SPINNER. Both resolve or
 // fail within react-query's own budget, both report failure as a rendered
 // sentence rather than a thrown error, and the surface has a manual retry.
 import { useQuery } from "@tanstack/react-query";
 import { fetchTaughtSubjectIds } from "@/lib/data";
-import { buildOffers, fetchIosIapCatalog, sellableProductIds, type IapOffer } from "./catalog";
-import { appleStore, IAP_PLATFORM_SUPPORTED } from "./store";
+import { buildOffers, fetchIapCatalog, sellableProductIds, type IapOffer } from "./catalog";
+import { IAP_DB_PLATFORM } from "./platform";
+import { rail } from "./rail";
+import { IAP_PLATFORM_SUPPORTED } from "./store";
 import type { IapCatalogRow, StoreProduct } from "./types";
 
+/** "ios" / "android" — keys the cache per platform, so the two can never mix. */
+const P = IAP_DB_PLATFORM ?? "none";
+
 const QK = {
-  catalog: ["iap", "ios", "catalog"] as const,
-  products: (ids: string) => ["iap", "ios", "storekit", ids] as const,
-  taught: (gradeId: string) => ["iap", "ios", "taught", gradeId] as const,
+  catalog: ["iap", P, "catalog"] as const,
+  products: (ids: string) => ["iap", P, "store", ids] as const,
+  taught: (gradeId: string) => ["iap", P, "taught", gradeId] as const,
 };
 
 /**
  * WHAT THE PURCHASE SURFACE SHOULD DO RIGHT NOW.
  *
- *   off       — not iOS. Render nothing at all.
- *   loading   — one of the reads (catalogue, StoreKit, grade rule) is still in
+ *   off       — no store rail in this build, or the rail is closed. Render
+ *               nothing at all.
+ *   loading   — one of the reads (catalogue, store, grade rule) is still in
  *               flight.
- *   none      — the platform sells nothing on iOS yet (every `iap_products` row
- *               is inactive, which is production's state until the owner turns
- *               products on in App Store Connect). The surface renders NOTHING
+ *   none      — the platform sells nothing yet (every `iap_products` row of
+ *               this platform is inactive — Android's state until the owner
+ *               creates the Play products and switches the rows on). The surface renders NOTHING
  *               and the screen keeps the sentence it already showed. An empty
  *               "no items available" panel would read to a reviewer as an
  *               unfinished feature — the exact 2.1.0 rejection this app already
  *               collected once.
- *   unavailable — we DO sell something, but StoreKit could not be reached or
+ *   unavailable — we DO sell something, but the store could not be reached or
  *               returned no priced product. Say so and offer a retry; never a
  *               blank, never a permanent spinner, never a purchase button
  *               without a price.
- *   ready     — offers, each carrying Apple's own price string.
+ *   ready     — offers, each carrying the store's own price string.
  */
 export type IapSurfaceState = "off" | "loading" | "none" | "unavailable" | "ready";
 
@@ -49,17 +55,17 @@ export type IapOffers = {
   refetch: () => void;
 };
 
-/** Active iOS catalogue rows (empty and non-failing off iOS). */
-function useIosCatalog(enabled: boolean) {
+/** Active catalogue rows for this build's platform (none without a rail). */
+function usePlatformCatalog(enabled: boolean) {
   return useQuery<IapCatalogRow[]>({
     queryKey: QK.catalog,
-    queryFn: fetchIosIapCatalog,
+    queryFn: () => (IAP_DB_PLATFORM ? fetchIapCatalog(IAP_DB_PLATFORM) : Promise.resolve([])),
     enabled: IAP_PLATFORM_SUPPORTED && enabled,
     staleTime: 10 * 60_000,
   });
 }
 
-/** StoreKit's answer for those SKUs — connection included, failures contained. */
+/** The store's answer for those SKUs — connection included, failures contained. */
 function useStoreProducts(productIds: string[], enabled: boolean) {
   const key = [...productIds].sort().join(",");
   return useQuery<StoreProduct[]>({
@@ -67,9 +73,10 @@ function useStoreProducts(productIds: string[], enabled: boolean) {
     queryFn: async () => {
       // The connection is opened here rather than at app start: a store
       // connection is only ever needed by this surface, and opening it lazily
-      // keeps StoreKit entirely out of a session that never visits it.
-      await appleStore.connect();
-      return appleStore.fetchProducts(key.length > 0 ? key.split(",") : []);
+      // keeps the billing library entirely out of a session that never
+      // visits it.
+      await rail.store.connect();
+      return rail.store.fetchProducts(key.length > 0 ? key.split(",") : []);
     },
     enabled: IAP_PLATFORM_SUPPORTED && enabled && key.length > 0,
     staleTime: 10 * 60_000,
@@ -94,9 +101,8 @@ function useTaughtSubjects(gradeId: string | null, enabled: boolean) {
   return useQuery<ReadonlySet<string> | null>({
     queryKey: QK.taught(gradeId ?? "-"),
     queryFn: () => fetchTaughtSubjectIds(gradeId),
-    // Off iOS, and for a child with no grade, nothing is fetched: an Android
-    // build must issue no request it did not issue yesterday, and a null grade
-    // is already the answer.
+    // With the rail closed, and for a child with no grade, nothing is fetched:
+    // a closed rail issues no request, and a null grade is already the answer.
     enabled: IAP_PLATFORM_SUPPORTED && enabled && gradeId !== null,
     staleTime: 10 * 60_000,
   });
@@ -119,7 +125,7 @@ export function useIapOffers(
   enabled = true,
 ): IapOffers {
   const active = IAP_PLATFORM_SUPPORTED && enabled;
-  const catalog = useIosCatalog(active);
+  const catalog = usePlatformCatalog(active);
   const rows = catalog.data ?? [];
   const ids = sellableProductIds(rows);
   const products = useStoreProducts(ids, active);
@@ -149,13 +155,13 @@ export function useIapOffers(
   // unfiltered list for the moment this read is in flight is long enough for a
   // parent to tap a subject their child's grade does not study, and the sale
   // that follows is the silent one. `isLoading`, never `isPending`: the query is
-  // DISABLED off iOS and for a gradeless child, and a disabled query stays
+  // DISABLED when the rail is closed and for a gradeless child, and a disabled query stays
   // pending forever — the panel would hold a spinner it never leaves.
   if (taught.isLoading) return { state: "loading", offers: [], refetch };
 
   const offers = buildOffers(rows, products.data ?? [], coveredSubjectIds, taught.data ?? null);
-  // Products exist in the catalogue but StoreKit priced none of them (not yet
-  // approved, wrong bundle id, no storefront). Honest sentence + retry.
+  // Products exist in the catalogue but the store priced none of them (not yet
+  // approved/active, wrong bundle id or package, no storefront). Honest sentence + retry.
   if ((products.data ?? []).length === 0) return { state: "unavailable", offers: [], refetch };
   // Everything on offer is already covered for this child. Nothing to sell and
   // nothing is wrong — the plan card above already says what they have.

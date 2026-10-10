@@ -1,20 +1,22 @@
-// Shared vocabulary for the Apple in-app-purchase rail.
+// Shared vocabulary for the in-app-purchase rails: Apple StoreKit on iOS and,
+// since the owner decision of 2026-10-10, Google Play Billing on Android.
 //
 // NOTHING HERE IMPORTS expo-iap, react-native OR react. That is deliberate: the
 // purchase SEQUENCE is the part a mistake is expensive in (an order swap loses a
 // paid-for transaction), so it has to be testable without a native module, a
-// renderer or a device. `store.ts` is the only file in the app that touches
-// StoreKit; everything else in this directory talks in the types below.
+// renderer or a device. `store.ts` is the only file in the app that touches a
+// billing library; everything else in this directory talks in the types below,
+// and the SAME sequence drives both stores.
 //
 // NO PRICE TYPE APPEARS IN THIS FILE except `displayPrice`, and that is a STRING
-// that came out of StoreKit already localised and currency-correct. The app must
-// never hold a number it could format itself: a price formatted by us is wrong
-// the day Apple changes a tier, wrong in every storefront but one, and wrong
-// about tax.
+// that came out of the store (StoreKit or Play Billing) already localised and
+// currency-correct. The app must never hold a number it could format itself: a
+// price formatted by us is wrong the day a store changes a tier, wrong in every
+// storefront but one, and wrong about tax.
 
-/** One sellable row of `public.iap_products` (platform = ios, active = true). */
+/** One sellable row of `public.iap_products` (this build's platform, active). */
 export type IapCatalogRow = {
-  /** The App Store Connect product id. Also the SKU handed to StoreKit. */
+  /** The store product id — identical on iOS and Android. Also the SKU. */
   productId: string;
   scope: "subject" | "olympiad_package";
   subjectId: string | null;
@@ -25,7 +27,8 @@ export type IapCatalogRow = {
   subjectName: string | null;
 };
 
-/** What StoreKit knows about one product. `displayPrice` is Apple's own string. */
+/** What the store knows about one product. `displayPrice` is the store's own
+ *  string (StoreKit's displayPrice / Play's formattedPrice). */
 export type StoreProduct = {
   id: string;
   /** e.g. "₺129,99" / "$4.99" — rendered VERBATIM, never parsed, never rebuilt. */
@@ -33,18 +36,35 @@ export type StoreProduct = {
   title: string | null;
 };
 
-/** A completed StoreKit transaction, reduced to what our server needs. */
+/** A completed store transaction, reduced to what our server needs. */
 export type StorePurchase = {
-  /** PurchaseIOS.transactionId — the id `/iap/apple/redeem` asks Apple about. */
+  /**
+   * The id our server verifies with the store:
+   *   Apple  — PurchaseIOS.transactionId (asked of the App Store Server API);
+   *   Google — the Play `purchaseToken` (asked of the Android Publisher API).
+   */
   transactionId: string;
   productId: string;
-  /** The appAccountToken StoreKit echoed back; our intent id when it is ours. */
+  /**
+   * Our intent id as the store echoed it back: StoreKit's `appAccountToken`,
+   * Play's `obfuscatedAccountIdAndroid`. The only thing tying a purchase to
+   * ONE child.
+   */
   appAccountToken: string | null;
-  /** 'pending' = Ask-to-Buy awaiting a guardian; nothing is charged yet. */
+  /**
+   * 'pending' = no money has moved yet: Ask-to-Buy awaiting a guardian on iOS,
+   * a slow payment method (cash, bank transfer) awaiting Google on Android.
+   */
   purchaseState: "pending" | "purchased" | "unknown";
+  /** Google's order id (GPA.…), sent alongside the token for support/audit.
+   *  Absent on iOS. Never used as the verification key. */
+  orderId?: string | null;
   /** The untouched payload, passed straight back to finishTransaction. */
   raw: unknown;
 };
+
+/** One purchase the device still holds, as Restore sends it to the server. */
+export type RestoreItem = { transactionId: string; productId: string | null };
 
 /** Why a StoreKit call failed, in terms this app makes decisions on. */
 export type StoreFailureKind =
@@ -58,6 +78,12 @@ export type StoreFailureKind =
   | "unavailable"
   /** We stopped waiting. We do NOT know whether money moved. */
   | "timeout"
+  /**
+   * GOOGLE ONLY: Play still holds an UNCONSUMED earlier purchase of this SKU on
+   * this account (the server could not consume it yet), so Play refuses to sell
+   * it again. Nothing was charged now; Restore settles the earlier one.
+   */
+  | "alreadyOwned"
   /** Anything else. */
   | "unknown";
 
@@ -75,10 +101,19 @@ export function storeFailureKind(err: unknown): StoreFailureKind {
 }
 
 /**
- * The StoreKit seam. `store.ts` provides the real one; tests provide a fake.
- * Every method may reject with a StoreError.
+ * The billing seam. `store.ts` provides the real ones (Apple and Google); tests
+ * provide a fake. Every method may reject with a StoreError.
  */
 export type IapStore = {
+  /**
+   * WHEN `finish` MAY RUN. Absent/false = the Apple rule: after ANY answer the
+   * server acknowledged (granted or recorded). True = the Google rule: only
+   * after the server GRANTED. On Play, `finish` CONSUMES the purchase, and a
+   * consumed purchase disappears from getAvailablePurchases() — so a purchase
+   * the server acknowledged without granting must stay on the device where
+   * Restore can still find it.
+   */
+  finishOnlyWhenGranted?: boolean;
   /** Idempotent. Resolves once the billing client is connected. */
   connect(): Promise<void>;
   /** Unknown SKUs are omitted rather than thrown — a short list is normal. */
@@ -92,8 +127,13 @@ export type IapStore = {
   finish(purchase: StorePurchase): Promise<void>;
   /** AppStore.sync() — may prompt for the Apple ID password. Best effort. */
   sync(): Promise<void>;
-  /** Every transaction id StoreKit still knows about on THIS device. */
+  /** Every transaction id the store still knows about on THIS device. */
   transactionIds(): Promise<string[]>;
+  /**
+   * The same list WITH the product each id is for. Optional: Apple's restore
+   * needs only the ids; Google's restore must name the product of every token.
+   */
+  restorableItems?(): Promise<RestoreItem[]>;
 };
 
 /** The three BFF calls, injected so the flows can be tested without a network. */
@@ -108,6 +148,8 @@ export type IapApi = {
   redeem(
     intentId: string,
     transactionId: string,
+    /** Google's redeem needs the product and (optionally) the order id. */
+    context?: { productId: string; orderId: string | null },
   ): Promise<
     | {
         ok: true;
@@ -122,6 +164,8 @@ export type IapApi = {
   >;
   restore(
     transactionIds: string[],
+    /** The same ids with their products — what Google's restore requires. */
+    items?: readonly RestoreItem[],
   ): Promise<
     | { ok: true; data: { checked: number; granted: number } | null }
     | { ok: false; error: string; retryable: boolean }
@@ -139,7 +183,8 @@ export type IapApi = {
  */
 export type PurchaseOutcome =
   | { status: "granted"; already: boolean; endsAt: string | null }
-  /** Verified by Apple, acknowledged by our server, no access yet (sandbox). */
+  /** Verified by the store, acknowledged by our server, no access yet (sandbox
+   *  / license-tester purchase). */
   | { status: "recorded"; messageKey: string }
   | { status: "pending"; detailKey: string | null }
   | { status: "deferred" }

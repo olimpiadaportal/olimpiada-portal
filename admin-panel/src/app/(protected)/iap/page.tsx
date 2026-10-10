@@ -5,7 +5,7 @@ import { listIapCatalogue, type IapProductRow } from "@/lib/admin/iap";
 import { IapToggle, type IapToggleStrings } from "./IapToggle";
 import { IapRefreshButton } from "./IapRefreshButton";
 
-// App Store products (public.iap_products) — ADMINISTRATOR ONLY, never Content
+// Store products (public.iap_products) — ADMINISTRATOR ONLY, never Content
 // Manager: this is a payment module, and CLAUDE.md keeps Content Managers out
 // of every one of them. requireAdmin() is the boundary; the nav entry hiding it
 // is cosmetic.
@@ -24,6 +24,12 @@ import { IapRefreshButton } from "./IapRefreshButton";
 // LOCAL — it decides what our app offers and changes nothing at Apple — and
 // every string around it says so.
 //
+// BOTH STORES (owner decision 2026-10-10). Android sells through Google Play
+// with the same product ids, so android rows sit beside ios rows, each mirrored
+// against its OWN store: ios → App Store Connect, android → Google Play (the
+// buy option's state). The platform cell names the store; the freshness card
+// carries one line per store.
+//
 // WHY THE FRESHNESS STAMP IS NOT DECORATION. Silent divergence is the failure
 // mode that produced a Guideline 3.1.1 rejection here: both halves looked fine
 // separately. A mirror whose age is invisible invites exactly that mistake
@@ -39,7 +45,7 @@ export default async function IapProductsPage() {
   const t = await getT();
   const locale = await getLocale();
 
-  const { rows, unmapped, store, loadFailed } = await listIapCatalogue();
+  const { rows, unmapped, store, play, loadFailed } = await listIapCatalogue();
 
   // The action returns i18n KEYS, never prose (project law: no raw server text
   // reaches a user). The client components cannot call getT(), so the whole
@@ -47,7 +53,7 @@ export default async function IapProductsPage() {
   const ERROR_KEYS = [
     "iap.err.server",
     "iap.err.notFound",
-    "iap.err.iosOnly",
+    "iap.err.unknownPlatform",
     "iap.err.targetMissing",
     "iap.err.targetArchived",
     "iap.err.gradeMissing",
@@ -59,6 +65,11 @@ export default async function IapProductsPage() {
     "iap.err.storeRejected",
     "iap.err.storeRemoved",
     "iap.err.storeUnknownState",
+    "iap.err.playNotConfigured",
+    "iap.err.playNoPermission",
+    "iap.err.playMissingProduct",
+    "iap.err.playInactive",
+    "iap.err.playUnreachable",
   ] as const;
   const errors: Record<string, string> = {};
   for (const k of ERROR_KEYS) errors[k] = t(k);
@@ -81,6 +92,13 @@ export default async function IapProductsPage() {
     errors,
     errFallback: t("iap.err.server"),
   };
+
+  const isAndroid = (row: { platform: string }) => row.platform === "android";
+  const statusOf = (row: { platform: string }) => (isAndroid(row) ? play : store);
+  const platformLabel = (platform: string) =>
+    platform === "ios" || platform === "android"
+      ? t(`iap.platform.${platform}`)
+      : platform;
 
   const intervalLabel = (iv: string | null) =>
     iv ? t(`iap.interval.${iv}`) : "—";
@@ -109,11 +127,14 @@ export default async function IapProductsPage() {
   // never printed: "MISSING_METADATA" is a status no App Store Connect screen
   // shows, so an admin would go hunting for it (see lib/admin/appStoreConnect).
   const storeCell = (row: IapProductRow) => {
-    if (!store.ok) {
+    if (!statusOf(row).ok) {
       return { text: t("iap.store.unread"), tone: "pill-muted" };
     }
     if (!row.store) {
-      return { text: t("iap.store.absent"), tone: "pill-warn" };
+      return {
+        text: t(isAndroid(row) ? "iap.play.absent" : "iap.store.absent"),
+        tone: "pill-warn",
+      };
     }
     return {
       text: t(row.store.labelKey),
@@ -127,7 +148,11 @@ export default async function IapProductsPage() {
   const divergenceOf = (row: IapProductRow) =>
     row.divergence
       ? {
-          text: t(`iap.diverge.${row.divergence}`),
+          text: t(
+            isAndroid(row)
+              ? `iap.diverge.play.${row.divergence}`
+              : `iap.diverge.${row.divergence}`,
+          ),
           severe: SEVERE.has(row.divergence),
         }
       : null;
@@ -162,7 +187,7 @@ export default async function IapProductsPage() {
                 <th>{t("iap.col.grants")}</th>
                 <th>{t("iap.col.platform")}</th>
                 <th>{t("iap.col.ours")}</th>
-                <th>{t("iap.col.apple")}</th>
+                <th>{t("iap.col.store")}</th>
                 <th>{t("iap.col.action")}</th>
               </tr>
             </thead>
@@ -203,7 +228,7 @@ export default async function IapProductsPage() {
                         </span>
                       ) : null}
                     </td>
-                    <td className="nowrap">{row.platform}</td>
+                    <td className="nowrap">{platformLabel(row.platform)}</td>
                     <td className="nowrap">
                       <span
                         className={`pill pill-sm ${
@@ -224,9 +249,13 @@ export default async function IapProductsPage() {
                         productId={row.product_id}
                         grants={grantsOf(row)}
                         active={row.active}
-                        storeText={store.ok ? apple.text : null}
+                        storeText={statusOf(row).ok ? apple.text : null}
                         blockedReason={problem}
-                        strings={toggleStrings}
+                        strings={
+                          isAndroid(row)
+                            ? { ...toggleStrings, storeLabel: t("iap.col.play") }
+                            : toggleStrings
+                        }
                       />
                     </td>
                   </tr>
@@ -271,6 +300,13 @@ export default async function IapProductsPage() {
                 : store.problem === "storeNotConfigured"
                   ? t("iap.store.link.notConfigured")
                   : t("iap.store.link.unreachable")}
+            </p>
+            <p className="muted" style={{ margin: "4px 0 0" }}>
+              {play.ok
+                ? t("iap.play.link.ok")
+                : play.problem === "storeNotConfigured"
+                  ? t("iap.play.link.notConfigured")
+                  : t("iap.play.link.unreachable")}
             </p>
           </div>
           <IapRefreshButton
@@ -351,16 +387,18 @@ export default async function IapProductsPage() {
               <thead>
                 <tr>
                   <th>{t("iap.col.productId")}</th>
+                  <th>{t("iap.col.platform")}</th>
                   <th>{t("iap.unmapped.col.name")}</th>
-                  <th>{t("iap.col.apple")}</th>
+                  <th>{t("iap.col.store")}</th>
                 </tr>
               </thead>
               <tbody>
                 {unmapped.map((p) => (
-                  <tr key={p.productId}>
+                  <tr key={`${p.platform}:${p.productId}`}>
                     <td>
                       <code>{p.productId}</code>
                     </td>
+                    <td className="nowrap">{platformLabel(p.platform)}</td>
                     <td>{p.name ?? "—"}</td>
                     <td className="nowrap">
                       <span

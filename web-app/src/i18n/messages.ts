@@ -997,6 +997,11 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Bu ödənişin aid olduğu övlad hesabı artıq mövcud deyil. Dəstəyə yazın.",
     "iap.msg.recorded":
       "Ödənişiniz qeydə alındı. Giriş görünmürsə, tətbiqi yenidən açın.",
+    // Google Play rail (2026-10-10): the same facts, naming Google Play.
+    "iap.err.notVerifiedPlay":
+      "Google Play bu ödənişi təsdiqləyə bilmədi. Məbləğ tutulubsa, dəstəyə yazın.",
+    "iap.msg.pending":
+      "Ödəniş hələ tamamlanmayıb. Tamamlanan kimi giriş avtomatik açılacaq.",
     "fa.title": "Pulsuz giriş",
     "fa.sub": "Bütün abunə imkanları hazırda sizin üçün pulsuzdur.",
     "gate.olympiadOff": "Olimpiada modulu hazırda aktiv deyil.",
@@ -1474,7 +1479,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Məlumatları satmırıq, icarəyə vermirik, mübadilə etmirik və marketinq məqsədi ilə heç kimə ötürmürük.\n" +
       "Cihazınızın məkanını oxumuruq: nə məkan, nə kamera, nə kontakt, nə də mikrofon icazəsi istəmirik. Uşağın profilindəki şəhər və rayonu valideyn siyahıdan özü seçir — onlar cihazdan oxunmur.\n" +
       "Uşaq davranışına görə reklam profili qurmuruq.\n" +
-      "Kart məlumatlarınızı görmürük. iPhone və iPad-də alış App Store vasitəsilə gedir; Android tətbiqində alış ümumiyyətlə yoxdur; veb saytda isə ödəniş bankın öz səhifəsində aparılır.",
+      "Kart məlumatlarınızı görmürük. iPhone və iPad-də alış App Store, Android-də isə Google Play vasitəsilə gedir; veb saytda isə ödəniş bankın öz səhifəsində aparılır.",
 
     "privacy.s2.title": "Biz kimik və bizimlə necə əlaqə saxlamaq olar",
     "privacy.s2.product": "Məhsul",
@@ -1743,6 +1748,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Google Maps | «Əlaqə» səhifəsindəki xəritə | Həmin səhifəni açdığınız anda IP ünvanı və identifikasiya sətri. Hesab məlumatı ötürülmür | Aktiv\n" +
       "Sentry | Nasazlıq və xəta hesabatları | Texniki xəta məlumatı: xətanın adı, proqram kodumuzun izi, cihazın modeli, əməliyyat sisteminin və tətbiqin versiyası, xətanın baş verdiyi səhifə və ya ekranın ünvanı (sorğu parametrləri olmadan) və tətbiqdə atılmış son addımların qısa izi. Bundan əlavə, əlaqə Sentry-nin serverlərinə çatdığı üçün onlar IP ünvanınızı görür: hesabatın özündə IP ünvanı yoxdur və Sentry hesabında IP ünvanlarının saxlanmasının qarşısını alan tənzimləmə aktivdir. Şəxsi məlumatlar — ad, e-poçt, 8 rəqəmli giriş nömrəsi, məktəb, şəhər — hesabata heç vaxt əlavə olunmur, hesabatın mətni isə göndərilməzdən əvvəl avtomatik süzgəcdən keçir. Ekran şəkli və ekran yazısı ümumiyyətlə göndərilmir | Serverlər Aİ (Avropa İttifaqı) regionunda; yalnız nasazlıq baş verdikdə göndərilir, adi istifadə izlənmir\n" +
       "Apple (App Store) | iPhone və iPad-də tətbiqdaxili ödəniş | Əməliyyatı Apple özü aparır. Ona hər əməliyyat üçün yaratdığımız təsadüfi identifikator ötürülür ki, giriş düzgün uşağa yazılsın. Ad, e-poçt və digər hesab məlumatı ötürülmür | Yalnız iOS-da; Android tətbiqində yoxdur\n" +
+      "Google (Google Play) | Android-də tətbiqdaxili ödəniş | Əməliyyatı Google özü aparır. Ona hər əməliyyat üçün yaratdığımız təsadüfi identifikator ötürülür ki, giriş düzgün uşağa yazılsın. Ad, e-poçt və digər hesab məlumatı ötürülmür | Yalnız Android-də\n" +
       "Ödəniş təminatçısı (bank) | Veb saytda kart ödənişi | Əməliyyat bankın öz səhifəsində aparılır, kart məlumatı bizə çatmır | «Ödənişlər» bölməsinə baxın",
     "privacy.s7.pushOff":
       "Hazırda push bildirişləri işləmir: funksiya server tərəfdə söndürülüb, buna görə cihaz nişanı ümumiyyətlə yaradılmır və Expo, Apple və Google bu funksiya üzrə heç nə almır.",
@@ -1770,14 +1776,14 @@ export const messages: Record<Locale, Record<string, string>> = {
     //
     // LIST KEY: az/en/ru must keep the same line count (4).
     "privacy.s8.list":
-      "Alışın harada mümkün olduğu platformadan asılıdır: iPhone və iPad-də valideyn fənn girişini App Store-un tətbiqdaxili alışı ilə ala bilər; Android tətbiqində alış ümumiyyətlə yoxdur; veb saytda isə valideyn brauzerdə, Azərbaycan manatı ilə ödəniş edir.\n" +
-      "Kart məlumatlarınızı heç bir halda görmürük. iPhone və iPad-də əməliyyatı əvvəldən axıradək App Store aparır; veb saytda isə ödəniş bankın öz səhifəsinə tam yönləndirmə ilə gedir.\n" +
+      "Alışın harada mümkün olduğu platformadan asılıdır: iPhone və iPad-də valideyn fənn girişini App Store-un tətbiqdaxili alışı ilə, Android-də isə Google Play-in tətbiqdaxili alışı ilə ala bilər; veb saytda isə valideyn brauzerdə, Azərbaycan manatı ilə ödəniş edir.\n" +
+      "Kart məlumatlarınızı heç bir halda görmürük. iPhone və iPad-də əməliyyatı əvvəldən axıradək App Store, Android-də isə Google Play aparır; veb saytda isə ödəniş bankın öz səhifəsinə tam yönləndirmə ilə gedir.\n" +
       "Kart nömrəsi, CVV və digər kart məlumatları nə bir yolla, nə də digəri ilə OlympIQ serverlərinə düşür və bizdə saxlanılmır.\n" +
       "Verilənlər bazasında veb ödənişi üzrə yalnız məbləğ, valyuta, status və təminatçının əməliyyat nömrəsi qeyd olunur; App Store alışı üzrə isə həmin alış üçün yaratdığımız təsadüfi identifikator (girişin düzgün uşağa yazılması üçün), Apple-ın əməliyyat nömrəsi və məhsulun kodu.",
     "privacy.s8.statusOff":
-      "Hazırkı vəziyyət: veb saytdakı kart ödənişləri bankla inteqrasiya olunub, lakin hazırda heç bir kart ödənişi alınmır — heç kimdən məbləğ silinmir. iPhone və iPad-də fənn girişi App Store vasitəsilə ayrıca alına bilər; Android tətbiqində alış prosesi yoxdur.",
+      "Hazırkı vəziyyət: veb saytdakı kart ödənişləri bankla inteqrasiya olunub, lakin hazırda heç bir kart ödənişi alınmır — heç kimdən məbləğ silinmir. iPhone və iPad-də fənn girişi App Store, Android-də isə Google Play vasitəsilə ayrıca alına bilər.",
     "privacy.s8.statusOn":
-      "Hazırkı vəziyyət: ödənişlər açıqdır. Veb saytda ödəniş bankın öz ödəniş səhifəsi vasitəsilə aparılır; iPhone və iPad-də fənn girişi App Store vasitəsilə alına bilər; Android tətbiqində alış prosesi yoxdur.",
+      "Hazırkı vəziyyət: ödənişlər açıqdır. Veb saytda ödəniş bankın öz ödəniş səhifəsi vasitəsilə aparılır; iPhone və iPad-də fənn girişi App Store, Android-də isə Google Play vasitəsilə alına bilər.",
 
     "privacy.s9.title": "Məlumatların saxlanması və silinməsi",
     "privacy.s9.activeTitle": "Hesab aktiv olduğu müddətdə",
@@ -3225,6 +3231,10 @@ export const messages: Record<Locale, Record<string, string>> = {
       "The child this payment was for no longer exists. Please contact support.",
     "iap.msg.recorded":
       "Your payment has been recorded. If access does not appear, reopen the app.",
+    "iap.err.notVerifiedPlay":
+      "Google Play could not confirm this payment. If you were charged, contact support.",
+    "iap.msg.pending":
+      "Your payment is still pending. Access opens automatically once it completes.",
     "fa.title": "Free access",
     "fa.sub": "All subscription features are free for you right now.",
     "gate.olympiadOff": "The olympiad module is currently unavailable.",
@@ -3631,7 +3641,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "We do not sell, rent or trade your data, and we never hand it to anyone for marketing.\n" +
       "We do not read your device's location, and we ask for no location, camera, contacts or microphone permission. The city and district on a child's profile are chosen by a parent from a list — they are not read from a device.\n" +
       "We do not build advertising profiles from a child's behaviour.\n" +
-      "We never see your card details. On iPhone and iPad a purchase goes through the App Store; the Android app has no purchase at all; on the website payment goes through the bank's own page.",
+      "We never see your card details. On iPhone and iPad a purchase goes through the App Store, and on Android through Google Play; on the website payment goes through the bank's own page.",
 
     "privacy.s2.title": "Who we are and how to reach us",
     "privacy.s2.product": "Product",
@@ -3831,6 +3841,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Google Maps | The map on the «Contact» screen | Your IP address and user agent at the moment that screen is opened. No account data is passed | Active\n" +
       "Sentry | Crash and error reports | Technical error information: the name of the error, a trace through our own program code, the device model, the operating system version, the app version, the address of the page or screen the error happened on (without the query string) and a short trail of the last steps taken in the app. Sentry's servers also see your IP address, because the connection reaches them: the report itself carries no IP address, and the account setting that prevents Sentry storing one is on. Personal details — a name, an email address, the 8-digit login ID, a school, a city — are never attached to a report, and the text of every report passes an automatic filter before it is sent. No screenshot and no screen recording is ever sent | Servers in the EU region; sent only when something goes wrong — ordinary use is not tracked\n" +
       "Apple (App Store) | In-app payment on iPhone and iPad | Apple runs the transaction itself. It receives a random identifier we create for that transaction, so the access lands on the right child. No name, no email address and no other account data is passed | iOS only; not in the Android app\n" +
+      "Google (Google Play) | In-app payment on Android | Google runs the transaction itself. It receives a random identifier we create for that transaction, so the access lands on the right child. No name, email or other account detail is passed on | Android only\n" +
       "Payment provider (bank) | Card payments on the website | The transaction runs on the bank's own page, and card details never reach us | See the «Payments» section",
     "privacy.s7.pushOff":
       "Push notifications are not operational today: the feature is switched off server-side, so no device token is ever created and Expo, Apple and Google receive nothing at all for it.",
@@ -3845,14 +3856,14 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     "privacy.s8.title": "Payments",
     "privacy.s8.list":
-      "Where a purchase is possible depends on the platform: on iPhone and iPad a parent can buy subject access through the App Store's own in-app purchase; the Android app has no purchase at all; on the website a parent pays in a browser, in Azerbaijani manat.\n" +
-      "We never see your card details, on either route. On iPhone and iPad the App Store handles the transaction from end to end; on the website payment uses a full redirect to the bank's own hosted page.\n" +
+      "Where a purchase is possible depends on the platform: on iPhone and iPad a parent can buy subject access through the App Store's own in-app purchase, and on Android through Google Play's own in-app purchase; on the website a parent pays in a browser, in Azerbaijani manat.\n" +
+      "We never see your card details, on any route. On iPhone and iPad the App Store, and on Android Google Play, handles the transaction from end to end; on the website payment uses a full redirect to the bank's own hosted page.\n" +
       "Card numbers, CVV codes and other card details never reach OlympIQ servers by either route, and are never stored by us.\n" +
       "For a website payment our database records only the amount, the currency, the status and the provider's transaction reference. For an App Store purchase it records the random identifier we create for that purchase (so the access lands on the right child), Apple's transaction reference and the product code.",
     "privacy.s8.statusOff":
-      "Current status: card payments on this website are integrated with our bank, but no card payment is being taken at the moment — nobody is being charged. On iPhone and iPad subject access can be bought separately through the App Store; the Android app has no purchase at all.",
+      "Current status: card payments on this website are integrated with our bank, but no card payment is being taken at the moment — nobody is being charged. On iPhone and iPad subject access can be bought separately through the App Store, and on Android through Google Play.",
     "privacy.s8.statusOn":
-      "Current status: payments are open. On this website they go through the bank's own hosted payment page; on iPhone and iPad subject access is bought through the App Store; the Android app has no purchase at all.",
+      "Current status: payments are open. On this website they go through the bank's own hosted payment page; on iPhone and iPad subject access is bought through the App Store, and on Android through Google Play.",
 
     "privacy.s9.title": "Retention and deletion",
     "privacy.s9.activeTitle": "While the account is open",
@@ -5293,6 +5304,10 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Ребёнка, для которого была эта оплата, больше не существует. Напишите в поддержку.",
     "iap.msg.recorded":
       "Ваша оплата записана. Если доступ не появился, перезапустите приложение.",
+    "iap.err.notVerifiedPlay":
+      "Google Play не смог подтвердить эту оплату. Если деньги списаны, напишите в поддержку.",
+    "iap.msg.pending":
+      "Платёж ещё не завершён. Доступ откроется автоматически, как только он пройдёт.",
     "fa.title": "Бесплатный доступ",
     "fa.sub": "Все возможности подписки сейчас для вас бесплатны.",
     "gate.olympiadOff": "Модуль олимпиад в данный момент недоступен.",
@@ -5699,7 +5714,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Мы не продаём, не сдаём в аренду и не обмениваем ваши данные и не передаём их никому в маркетинговых целях.\n" +
       "Мы не считываем местоположение вашего устройства и не запрашиваем разрешения на геолокацию, камеру, контакты и микрофон. Город и район в профиле ребёнка родитель выбирает из списка сам — с устройства они не считываются.\n" +
       "Мы не строим рекламные профили на основе поведения ребёнка.\n" +
-      "Мы не видим данные вашей карты. На iPhone и iPad покупка проходит через App Store, в приложении для Android покупок нет вообще, а на сайте оплата проходит на собственной странице банка.",
+      "Мы не видим данные вашей карты. На iPhone и iPad покупка проходит через App Store, на Android — через Google Play, а на сайте оплата проходит на собственной странице банка.",
 
     "privacy.s2.title": "Кто мы и как с нами связаться",
     "privacy.s2.product": "Продукт",
@@ -5900,6 +5915,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Google Maps | Карта на странице «Контакты» | IP-адрес и строку браузера в момент открытия этой страницы. Данные аккаунта не передаются | Активен\n" +
       "Sentry | Отчёты о сбоях и ошибках | Техническая информация об ошибке: название ошибки, трассировка по нашему программному коду, модель устройства, версия операционной системы, версия приложения, адрес страницы или экрана, где произошла ошибка (без параметров запроса), и короткий след последних действий в приложении. Кроме того, серверы Sentry видят ваш IP-адрес, потому что соединение приходит к ним: в самом отчёте IP-адреса нет, а в аккаунте включена настройка, запрещающая Sentry хранить IP-адреса. Личные данные — имя, адрес электронной почты, 8-значный номер для входа, школа, город — к отчёту никогда не прикрепляются, а текст отчёта проходит автоматический фильтр перед отправкой. Снимки экрана и запись экрана не отправляются никогда | Серверы в регионе ЕС; отправляется только при сбое — обычное использование не отслеживается\n" +
       "Apple (App Store) | Оплата внутри приложения на iPhone и iPad | Операцию проводит сама Apple. Ей передаётся случайный идентификатор, который мы создаём для этой операции, чтобы доступ достался нужному ребёнку. Имя, адрес электронной почты и другие данные аккаунта не передаются | Только на iOS; в приложении для Android отсутствует\n" +
+      "Google (Google Play) | Оплата внутри приложения на Android | Операцию проводит сама Google. Ей передаётся случайный идентификатор, который мы создаём для этой операции, чтобы доступ достался нужному ребёнку. Имя, адрес электронной почты и другие данные аккаунта не передаются | Только на Android\n" +
       "Платёжный провайдер (банк) | Оплата картой на сайте | Операция проходит на собственной странице банка, данные карты до нас не доходят | См. раздел «Платежи»",
     "privacy.s7.pushOff":
       "Сейчас push-уведомления не работают: функция отключена на сервере, поэтому токен устройства вообще не создаётся, и Expo, Apple и Google по этой функции не получают ничего.",
@@ -5914,14 +5930,14 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     "privacy.s8.title": "Платежи",
     "privacy.s8.list":
-      "Где возможна покупка, зависит от платформы: на iPhone и iPad родитель может купить доступ к предметам через встроенную покупку App Store; в приложении для Android покупки нет вообще; на сайте родитель платит в браузере, в азербайджанских манатах.\n" +
-      "Данные вашей карты мы не видим ни в одном из этих случаев. На iPhone и iPad операцию полностью проводит App Store; на сайте оплата проходит полным перенаправлением на собственную страницу банка.\n" +
+      "Где возможна покупка, зависит от платформы: на iPhone и iPad родитель может купить доступ к предметам через встроенную покупку App Store, а на Android — через встроенную покупку Google Play; на сайте родитель платит в браузере, в азербайджанских манатах.\n" +
+      "Данные вашей карты мы не видим ни в одном из этих случаев. На iPhone и iPad операцию полностью проводит App Store, на Android — Google Play; на сайте оплата проходит полным перенаправлением на собственную страницу банка.\n" +
       "Ни тем, ни другим путём номер карты, код CVV и другие данные карты не попадают на серверы OlympIQ и у нас не хранятся.\n" +
       "По оплате на сайте в нашей базе фиксируются только сумма, валюта, статус и номер операции у провайдера. По покупке в App Store — случайный идентификатор, который мы создаём для этой покупки (чтобы доступ достался нужному ребёнку), номер операции у Apple и код продукта.",
     "privacy.s8.statusOff":
-      "Текущее состояние: приём карт на этом сайте подключён к нашему банку, но сейчас оплата картой не взимается — ни с кого не списываются средства. На iPhone и iPad доступ к предметам можно купить отдельно, через App Store; в приложении для Android покупки нет.",
+      "Текущее состояние: приём карт на этом сайте подключён к нашему банку, но сейчас оплата картой не взимается — ни с кого не списываются средства. На iPhone и iPad доступ к предметам можно купить отдельно, через App Store, а на Android — через Google Play.",
     "privacy.s8.statusOn":
-      "Текущее состояние: оплата открыта. На этом сайте она проходит через собственную платёжную страницу банка; на iPhone и iPad доступ к предметам покупается через App Store; в приложении для Android покупки нет.",
+      "Текущее состояние: оплата открыта. На этом сайте она проходит через собственную платёжную страницу банка; на iPhone и iPad доступ к предметам покупается через App Store, а на Android — через Google Play.",
 
     "privacy.s9.title": "Хранение и удаление данных",
     "privacy.s9.activeTitle": "Пока аккаунт активен",

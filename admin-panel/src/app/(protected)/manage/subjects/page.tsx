@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { requireAdmin } from "@/lib/admin/guards";
 import { getT } from "@/i18n/server";
 import { FilterBar } from "@/components/FilterBar";
@@ -8,6 +9,7 @@ import { PriceCell } from "@/components/PriceCell";
 import { sanitizeSearchTerm } from "@/lib/admin/search";
 import { PRICE_INTERVALS } from "@/lib/admin/pricing-shared";
 import { loadSubjects } from "./data";
+import { StorePrices, StorePricesLoading } from "./StorePrices";
 import {
   intervalLabels,
   subjectDeleteStrings,
@@ -49,6 +51,10 @@ import {
 // admin_upsert_subject_price's own in-body is_admin() guard with no
 // has_permission() escape hatch.
 const STATUS_VALUES = ["active", "inactive", "archived"] as const;
+
+// "Sync all store prices" runs inside this page's function: 21 products × two
+// stores, three at a time. 60 s is the ceiling every Vercel plan accepts.
+export const maxDuration = 60;
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -258,6 +264,15 @@ export default async function SubjectsPage({
           </div>
         )}
       </section>
+
+      {/* STORE PRICES (owner decision 2026-10-10). Live App Store / Google
+          Play prices against the AZN amounts above, streamed in after the
+          table: two third-party reads must never hold up the price editors. */}
+      {!failed && rows.length > 0 && (
+        <Suspense fallback={<StorePricesLoading t={t} />}>
+          <StorePrices t={t} subjects={rows} />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -1,6 +1,8 @@
 // The commerce posture after the demo payment mode was deleted (owner,
-// 2026-08-18) and the app went purchase-silent: three modes, no demoPay, and
-// no branch that could put a checkout back on screen.
+// 2026-08-18): three modes, no demoPay, and no branch that could put a web
+// checkout back on screen. The posture only OPENS or CLOSES the build's store
+// rail (StoreKit on iOS; Google Play Billing on Android since the owner
+// decision of 2026-10-10) — it never chooses the rail.
 //
 // Plus accessPill: the parent Home card's label, which read "No access" over a
 // child their parent had just paid for.
@@ -38,7 +40,7 @@ describe("resolvePosture", () => {
     expect(Object.keys(resolvePosture("real", false))).not.toContain("demoPay");
   });
 
-  it("offers paid iOS access only in real mode outside every free window", () => {
+  it("offers paid store access (iOS and Android) only in real mode outside every free window", () => {
     expect(paidAccessAvailable(resolvePosture("real", false))).toBe(true);
     expect(paidAccessAvailable(resolvePosture("real", true))).toBe(false);
     expect(paidAccessAvailable(resolvePosture("giveaway", false))).toBe(false);

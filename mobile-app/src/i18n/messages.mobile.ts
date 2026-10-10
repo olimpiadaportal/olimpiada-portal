@@ -171,7 +171,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.trial.card.endedNote": "Öyrənməyə davam etmək üçün valideyninlə danış.",
     "mob.trial.card.extended": "Uzadılıb",
     "mob.trial.banner.body": "Övladınız {name} üçün 24 saatlıq pulsuz giriş bitdi.",
-    "mob.trial.banner.bodyIos": "Övladınız {name} üçün 24 saatlıq pulsuz giriş bitdi. Öyrənməyə davam etmək üçün girişi aktivləşdirin.",
+    "mob.trial.banner.bodyStore": "Övladınız {name} üçün 24 saatlıq pulsuz giriş bitdi. Öyrənməyə davam etmək üçün girişi aktivləşdirin.",
     "mob.trial.banner.cta": "Girişi aktivləşdir",
     "mob.trial.banner.dismiss": "Bağla",
     "mob.trial.err.used": "Bu uşaq pulsuz 24 saatdan artıq istifadə edib.",
@@ -232,9 +232,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // reading a Guideline 3.1.1 rejection is made of.
     "mob.sub.accessActive": "Giriş aktivdir",
     "mob.sub.activeSubjects": "Aktiv fənlər",
-    // ---- APPLE IN-APP PURCHASE (iOS ONLY) ------------------------------
-    // Rendered only where IAP_PLATFORM_SUPPORTED is true; an Android build
-    // resolves none of these keys because nothing asks for them.
+    // ---- IN-APP PURCHASE (iOS StoreKit + Android Google Play) ----------
+    // Rendered only where IAP_PLATFORM_SUPPORTED is true, on PARENT surfaces
+    // only. Written for iOS; the keys that name the App Store have Google Play
+    // twins below (owner decision 2026-10-10: Android sells too).
     //
     // NO AMOUNT APPEARS IN ANY OF THESE STRINGS AND NONE EVER MAY. The only
     // price the app shows is StoreKit's own `displayPrice`, straight onto the
@@ -243,10 +244,11 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // the world on the day it was typed.
     //
     // The vocabulary is deliberately plain (activate / access / restore) rather
-    // than the obvious selling verbs. Two reasons, and neither is squeamishness:
-    // the app's shared copy sweep bans that vocabulary catalogue-wide because it
-    // also reaches the CHILD side of this one binary, and "access" is simply
-    // what a non-renewing period actually is.
+    // than the obvious selling verbs: "access" is simply what a non-renewing
+    // period actually is. Since 2026-10-10 the copy sweep exempts these
+    // parent-only keys from its sales-vocabulary ban (store-copy.test.ts,
+    // isRailKey) — but never from its bans on amounts, URLs, web checkout and
+    // card talk.
     "mob.iap.title": "App Store ilə aktivləşdirmə",
     "mob.iap.intro":
       "Övladınız üçün fənn seçin. Aktivləşdirmə App Store vasitəsilə tamamlanır və giriş dərhal açılır.",
@@ -275,6 +277,21 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // Calm, not an error: this is the ordinary answer on a fresh device.
     "mob.iap.restoreNothing":
       "Bərpa ediləcək bir şey tapılmadı. Bu cihazda bu Apple ID ilə əvvəlki əməliyyat yoxdur.",
+    // ---- GOOGLE PLAY TWINS (Android, owner decision 2026-10-10) -------
+    // storeCopy.ts swaps a key that names the App Store / an Apple ID for
+    // its mob.iap.play.* twin on Android. Same rules as above: no amount,
+    // activation/access vocabulary, parent-only surfaces.
+    // mob.iap.err.alreadyOwned is store-neutral: Play refuses a SKU while an
+    // earlier purchase of it is still unconsumed, and Restore settles it.
+    "mob.iap.err.alreadyOwned": "Bu seçimin əvvəlki aktivləşdirməsi hələ tamamlanmayıb. Aşağıdakı «Girişi bərpa et» düyməsinə toxunun, sonra yenidən cəhd edin.",
+    "mob.iap.play.title": "Google Play ilə aktivləşdirmə",
+    "mob.iap.play.intro": "Övladınız üçün fənn seçin. Aktivləşdirmə Google Play vasitəsilə tamamlanır və giriş dərhal açılır.",
+    "mob.iap.play.loading": "Google Play yoxlanılır…",
+    "mob.iap.play.deferred": "Ödəniş hələ təsdiqlənməyib. Google Play ödənişi təsdiqləyən kimi giriş avtomatik açılacaq.",
+    "mob.iap.play.err.unavailable": "Google Play ilə əlaqə qurulmadı. İnternet bağlantını yoxlayıb yenidən cəhd edin.",
+    "mob.iap.play.err.notAllowed": "Bu cihazda Google Play əməliyyatları mümkün deyil. Play Market tətbiqinin quraşdırıldığını və Google hesabına daxil olduğunuzu yoxlayın.",
+    "mob.iap.play.err.notVerified": "Google Play bu ödənişi təsdiqləyə bilmədi. Məbləğ tutulubsa, dəstəyə yazın.",
+    "mob.iap.play.restoreNothing": "Bərpa ediləcək bir şey tapılmadı. Bu Google hesabında tamamlanmamış Google Play əməliyyatı yoxdur.",
     "subjedit.noChargeNow": "İndi heç bir ödəniş yoxdur — fənn dərhal açılır.",
     "mob.subjedit.notInApp": "Bu dəyişiklik tətbiqdə tamamlanmır. Fənni silmək və ya ləğv etdiyin fənni geri qaytarmaq isə burada mümkündür.",
     // WAS: "Olimpiada paketləri bu tətbiqdə əldə edilmir..." — "are not obtained
@@ -463,7 +480,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.trial.card.endedNote": "Talk to your parent to keep learning.",
     "mob.trial.card.extended": "Extended",
     "mob.trial.banner.body": "Your child {name}'s 24 hours of free access have ended.",
-    "mob.trial.banner.bodyIos": "Your child {name}'s 24 hours of free access have ended. Activate access to keep learning.",
+    "mob.trial.banner.bodyStore": "Your child {name}'s 24 hours of free access have ended. Activate access to keep learning.",
     "mob.trial.banner.cta": "Activate access",
     "mob.trial.banner.dismiss": "Dismiss",
     "mob.trial.err.used": "This child has already used their free 24 hours.",
@@ -500,9 +517,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // reading a Guideline 3.1.1 rejection is made of.
     "mob.sub.accessActive": "Access is active",
     "mob.sub.activeSubjects": "Active subjects",
-    // ---- APPLE IN-APP PURCHASE (iOS ONLY) ------------------------------
-    // Rendered only where IAP_PLATFORM_SUPPORTED is true; an Android build
-    // resolves none of these keys because nothing asks for them.
+    // ---- IN-APP PURCHASE (iOS StoreKit + Android Google Play) ----------
+    // Rendered only where IAP_PLATFORM_SUPPORTED is true, on PARENT surfaces
+    // only. Written for iOS; the keys that name the App Store have Google Play
+    // twins below (owner decision 2026-10-10: Android sells too).
     //
     // NO AMOUNT APPEARS IN ANY OF THESE STRINGS AND NONE EVER MAY. The only
     // price the app shows is StoreKit's own `displayPrice`, straight onto the
@@ -511,10 +529,11 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // the world on the day it was typed.
     //
     // The vocabulary is deliberately plain (activate / access / restore) rather
-    // than the obvious selling verbs. Two reasons, and neither is squeamishness:
-    // the app's shared copy sweep bans that vocabulary catalogue-wide because it
-    // also reaches the CHILD side of this one binary, and "access" is simply
-    // what a non-renewing period actually is.
+    // than the obvious selling verbs: "access" is simply what a non-renewing
+    // period actually is. Since 2026-10-10 the copy sweep exempts these
+    // parent-only keys from its sales-vocabulary ban (store-copy.test.ts,
+    // isRailKey) — but never from its bans on amounts, URLs, web checkout and
+    // card talk.
     "mob.iap.title": "Activate with the App Store",
     "mob.iap.intro":
       "Choose a subject for your child. The App Store completes the activation and access opens straight away.",
@@ -543,6 +562,21 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // Calm, not an error: this is the ordinary answer on a fresh device.
     "mob.iap.restoreNothing":
       "There is nothing to restore. This device has no earlier App Store transaction for this Apple ID.",
+    // ---- GOOGLE PLAY TWINS (Android, owner decision 2026-10-10) -------
+    // storeCopy.ts swaps a key that names the App Store / an Apple ID for
+    // its mob.iap.play.* twin on Android. Same rules as above: no amount,
+    // activation/access vocabulary, parent-only surfaces.
+    // mob.iap.err.alreadyOwned is store-neutral: Play refuses a SKU while an
+    // earlier purchase of it is still unconsumed, and Restore settles it.
+    "mob.iap.err.alreadyOwned": "An earlier activation of this option hasn't finished yet. Tap “Restore access” below, then try again.",
+    "mob.iap.play.title": "Activate with Google Play",
+    "mob.iap.play.intro": "Choose a subject for your child. Google Play completes the activation and access opens straight away.",
+    "mob.iap.play.loading": "Checking Google Play…",
+    "mob.iap.play.deferred": "This payment hasn't been confirmed yet. Access opens automatically as soon as Google Play confirms it.",
+    "mob.iap.play.err.unavailable": "Google Play could not be reached. Check your connection and try again.",
+    "mob.iap.play.err.notAllowed": "Google Play transactions aren't available on this device. Check that the Play Store app is installed and signed in to a Google account.",
+    "mob.iap.play.err.notVerified": "Google Play could not confirm this payment. If you were charged, contact support.",
+    "mob.iap.play.restoreNothing": "There is nothing to restore. This Google account has no unfinished Google Play transaction.",
     "subjedit.noChargeNow": "Nothing is charged now — the subject is unlocked right away.",
     "mob.subjedit.notInApp": "This change can't be completed in the app. Removing a subject, or restoring one you cancelled, still works here.",
     // See the az block: "are not obtained in this app" implied an external
@@ -718,7 +752,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.trial.card.endedNote": "Поговори с родителем, чтобы продолжить учиться.",
     "mob.trial.card.extended": "Продлён",
     "mob.trial.banner.body": "24 часа бесплатного доступа вашего ребёнка {name} закончились.",
-    "mob.trial.banner.bodyIos": "24 часа бесплатного доступа вашего ребёнка {name} закончились. Активируйте доступ, чтобы продолжить обучение.",
+    "mob.trial.banner.bodyStore": "24 часа бесплатного доступа вашего ребёнка {name} закончились. Активируйте доступ, чтобы продолжить обучение.",
     "mob.trial.banner.cta": "Активировать доступ",
     "mob.trial.banner.dismiss": "Закрыть",
     "mob.trial.err.used": "Этот ребёнок уже использовал свои бесплатные 24 часа.",
@@ -755,9 +789,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // reading a Guideline 3.1.1 rejection is made of.
     "mob.sub.accessActive": "Доступ активен",
     "mob.sub.activeSubjects": "Активные предметы",
-    // ---- APPLE IN-APP PURCHASE (iOS ONLY) ------------------------------
-    // Rendered only where IAP_PLATFORM_SUPPORTED is true; an Android build
-    // resolves none of these keys because nothing asks for them.
+    // ---- IN-APP PURCHASE (iOS StoreKit + Android Google Play) ----------
+    // Rendered only where IAP_PLATFORM_SUPPORTED is true, on PARENT surfaces
+    // only. Written for iOS; the keys that name the App Store have Google Play
+    // twins below (owner decision 2026-10-10: Android sells too).
     //
     // NO AMOUNT APPEARS IN ANY OF THESE STRINGS AND NONE EVER MAY. The only
     // price the app shows is StoreKit's own `displayPrice`, straight onto the
@@ -766,10 +801,11 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // the world on the day it was typed.
     //
     // The vocabulary is deliberately plain (activate / access / restore) rather
-    // than the obvious selling verbs. Two reasons, and neither is squeamishness:
-    // the app's shared copy sweep bans that vocabulary catalogue-wide because it
-    // also reaches the CHILD side of this one binary, and "access" is simply
-    // what a non-renewing period actually is.
+    // than the obvious selling verbs: "access" is simply what a non-renewing
+    // period actually is. Since 2026-10-10 the copy sweep exempts these
+    // parent-only keys from its sales-vocabulary ban (store-copy.test.ts,
+    // isRailKey) — but never from its bans on amounts, URLs, web checkout and
+    // card talk.
     "mob.iap.title": "Активация через App Store",
     "mob.iap.intro":
       "Выберите предмет для ребёнка. Активация завершается в App Store, и доступ открывается сразу.",
@@ -798,6 +834,21 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // Calm, not an error: this is the ordinary answer on a fresh device.
     "mob.iap.restoreNothing":
       "Восстанавливать нечего. На этом устройстве нет прежних операций App Store для этого Apple ID.",
+    // ---- GOOGLE PLAY TWINS (Android, owner decision 2026-10-10) -------
+    // storeCopy.ts swaps a key that names the App Store / an Apple ID for
+    // its mob.iap.play.* twin on Android. Same rules as above: no amount,
+    // activation/access vocabulary, parent-only surfaces.
+    // mob.iap.err.alreadyOwned is store-neutral: Play refuses a SKU while an
+    // earlier purchase of it is still unconsumed, and Restore settles it.
+    "mob.iap.err.alreadyOwned": "Предыдущая активация этого варианта ещё не завершена. Нажмите «Восстановить доступ» ниже и попробуйте снова.",
+    "mob.iap.play.title": "Активация через Google Play",
+    "mob.iap.play.intro": "Выберите предмет для ребёнка. Активация завершается в Google Play, и доступ открывается сразу.",
+    "mob.iap.play.loading": "Проверяем Google Play…",
+    "mob.iap.play.deferred": "Платёж ещё не подтверждён. Доступ откроется автоматически, как только Google Play его подтвердит.",
+    "mob.iap.play.err.unavailable": "Не удалось связаться с Google Play. Проверьте подключение и попробуйте ещё раз.",
+    "mob.iap.play.err.notAllowed": "Операции Google Play недоступны на этом устройстве. Убедитесь, что Play Маркет установлен и вы вошли в аккаунт Google.",
+    "mob.iap.play.err.notVerified": "Google Play не смог подтвердить эту оплату. Если деньги списаны, напишите в поддержку.",
+    "mob.iap.play.restoreNothing": "Восстанавливать нечего. В этом аккаунте Google нет незавершённых операций Google Play.",
     "subjedit.noChargeNow": "Сейчас ничего не списывается — предмет открывается сразу.",
     "mob.subjedit.notInApp": "Это изменение нельзя завершить в приложении. Удалить предмет или вернуть отменённый можно здесь.",
     // См. блок az: «не оформляются в этом приложении» указывало на внешний

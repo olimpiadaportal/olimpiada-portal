@@ -291,3 +291,72 @@ deliberate and cannot be changed later without creating new products: Apple
 allows only one active auto-renewing subscription per group per Apple ID, and
 OlympIQ subscriptions are per child — a parent with three children needs three
 at the same time.
+
+---
+
+## Prices now follow the admin panel (2026-10-10)
+
+The owner decided that **whatever price is set in Admin → Subjects is what the
+apps charge**. Saving a subject price in the admin panel now also updates the
+matching App Store product (nearest price point to AZN ÷ rate, because Apple
+bills Azerbaijan in US dollars at fixed points) and the matching Google Play
+product. The Subjects screen shows the live store prices and has a **Sync store
+prices** button. `set-iap-prices.mjs` is no longer the way to change a price —
+it still works, but the panel will move the price back to the AZN amount the
+next time it syncs.
+
+For the panel to write App Store prices, the App Store Connect API key on the
+admin panel server must have the **App Manager** (or Admin) role. A Developer
+key reads prices but every save will report "the key needs the App Manager role".
+
+---
+
+## Google Play: `create-play-products.mjs`
+
+Creates the same 21 products on Google Play, with the **same identifiers** as
+iOS, as one-time products with one "buy" option. Prices come from the admin AZN
+price of each subject and cycle; Azerbaijan gets that exact price (or its US
+dollar equivalent, if Google prices Azerbaijan in dollars), and Google converts
+every other country from it.
+
+### What you need
+
+1. **A Google Cloud service account with access to the app.**
+   - Google Cloud console → *IAM & Admin → Service accounts* → create one, then
+     *Keys → Add key → JSON*. Keep the downloaded file private — never put it in
+     this repository.
+   - Play Console → *Users and permissions* → *Invite new users* → paste the
+     service account's email → *App permissions* → add OlympIQ with at least
+     **View app information** and **Manage store presence** (products and
+     prices). The purchase verification server also needs **Manage orders and
+     subscriptions**.
+2. **A Play Console payments profile** (merchant account) — Google will not let
+   you create paid products without one.
+3. `psql` and the production database URL in your terminal (read-only use).
+
+### Run it (from `mobile-app/`)
+
+```bash
+# 1. Offline check: listings within Google's limits, no price in the text.
+node ./scripts/create-play-products.mjs --self-test
+
+# 2. Dry run: reads the database and Google Play, writes nothing.
+export OLIMPIADA_PROD_DB_URL="<already set in your terminal>"
+export GOOGLE_PLAY_SERVICE_ACCOUNT_FILE="/path/to/your-service-account.json"
+node ./scripts/create-play-products.mjs
+
+# 3. Create ONE product and check it in Play Console → Monetize → One-time products.
+node ./scripts/create-play-products.mjs --apply --only ai.olympiq.app.sub.math.week
+
+# 4. Create the rest. Products that already exist are left alone.
+node ./scripts/create-play-products.mjs --apply
+```
+
+Products start as drafts at Google; the script activates each one right after
+creating it. Re-running is safe: an existing product is never touched (its price
+is the admin panel's job from then on).
+
+The admin panel needs the same key to keep Play prices in step:
+`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` (the file's contents, or the contents
+base64-encoded) and optionally `GOOGLE_PLAY_PACKAGE_NAME` (default
+`ai.olympiq.app`) in the admin panel's Vercel environment.

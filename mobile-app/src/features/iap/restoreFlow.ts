@@ -7,12 +7,17 @@
 // app look broken to the one person who is definitely going to tap it: the
 // reviewer.
 //
+// BOTH STORES (owner decision 2026-10-10). On Android "the device still
+// remembers" means Play still holds the purchase UNCONSUMED — which is exactly
+// the set a grant may still be owed for, because consumption only ever follows
+// a grant. The server grants and consumes; this flow never consumes.
+//
 // NOTHING IS EVER FINISHED HERE. Restore's whole value is that the device still
 // remembers the transaction; finishing one during a restore trades a family's
 // recovery path for tidiness. The server is idempotent by construction
 // (`entitlement_grant` upserts on (source, external_ref)), so restoring twenty
 // times grants exactly what restoring once granted.
-import type { IapApi, IapStore, RestoreOutcome } from "./types";
+import type { IapApi, IapStore, RestoreItem, RestoreOutcome } from "./types";
 import { displayableServerKey } from "./errorKeys";
 
 /** The server caps at 25 and ignores the rest; sending fewer just finishes
@@ -37,18 +42,30 @@ export async function runRestore(deps: RestoreFlowDeps): Promise<RestoreOutcome>
     // Intentionally ignored — see above.
   }
 
-  let ids: string[];
+  // Google's restore must name the product of every token, so a store that
+  // can list its purchases WITH their products does; Apple's needs ids only.
+  let items: RestoreItem[];
   try {
-    ids = await store.transactionIds();
+    items = store.restorableItems
+      ? await store.restorableItems()
+      : (await store.transactionIds()).map((transactionId) => ({
+          transactionId,
+          productId: null,
+        }));
   } catch {
     // StoreKit itself is unreachable (Expo Go, a simulator with no store, a
     // device with purchases restricted). Nothing to say beyond "not now".
     return { status: "failed", messageKey: "mob.iap.err.unavailable" };
   }
 
-  const unique = Array.from(
-    new Set(ids.filter((id) => typeof id === "string" && id.length > 0)),
-  ).slice(0, MAX_IDS);
+  const byId = new Map<string, RestoreItem>();
+  for (const item of items) {
+    const id = item?.transactionId;
+    if (typeof id !== "string" || id.length === 0 || byId.has(id)) continue;
+    byId.set(id, item);
+  }
+  const uniqueItems = Array.from(byId.values()).slice(0, MAX_IDS);
+  const unique = uniqueItems.map((i) => i.transactionId);
 
   // A device with no history is the COMMON case, not a failure. Answered
   // without a round trip so it is instant and cannot itself fail.
@@ -56,7 +73,7 @@ export async function runRestore(deps: RestoreFlowDeps): Promise<RestoreOutcome>
 
   let res: Awaited<ReturnType<IapApi["restore"]>>;
   try {
-    res = await api.restore(unique);
+    res = await api.restore(unique, uniqueItems);
   } catch {
     return { status: "failed", messageKey: "mob.iap.err.generic" };
   }

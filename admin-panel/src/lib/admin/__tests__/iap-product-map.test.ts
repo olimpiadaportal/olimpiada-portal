@@ -167,6 +167,38 @@ vi.mock("@/lib/admin/appStoreConnect", async (importOriginal) => {
   };
 });
 
+/**
+ * Google Play, the android twin of the Apple mock above. Same reasoning: the
+ * real module fails closed with no credentials, so default to "ACTIVE" and let
+ * a test make Play refuse.
+ */
+let playPreflight: { ok: boolean; problem?: string; state?: string } = {
+  ok: true,
+  state: "ACTIVE",
+};
+const playChecks: string[] = [];
+let playCatalogue:
+  | { ok: true; products: { productId: string; state: string; name: string | null }[]; fetchedAt: string }
+  | { ok: false; problem: string; fetchedAt: string } = {
+  ok: true,
+  products: [],
+  fetchedAt: STORE_FETCHED_AT,
+};
+
+vi.mock("@/lib/admin/googlePlay", async (importOriginal) => {
+  // Only the network reads are stubbed; the state → label/verdict tables run
+  // for real, exactly as for Apple.
+  const actual = await importOriginal<typeof import("@/lib/admin/googlePlay")>();
+  return {
+    ...actual,
+    preflightPlayProduct: async (productId: string) => {
+      playChecks.push(productId);
+      return playPreflight;
+    },
+    fetchPlayCatalogue: async () => playCatalogue,
+  };
+});
+
 /** FormData that records the order in which the action reads its fields. */
 class SpyFormData extends FormData {
   override get(name: string): FormDataEntryValue | null {
@@ -201,6 +233,9 @@ beforeEach(() => {
   ops.length = 0;
   storeChecks.length = 0;
   storePreflight = { ok: true, state: "APPROVED" };
+  playChecks.length = 0;
+  playPreflight = { ok: true, state: "ACTIVE" };
+  playCatalogue = { ok: true, products: [], fetchedAt: STORE_FETCHED_AT };
   storeCatalogue = { ok: true, products: [], fetchedAt: STORE_FETCHED_AT };
   productRow = { ...SUBJECT_PRODUCT };
   productReadError = null;
@@ -403,25 +438,147 @@ describe("activation also asks Apple, not just our own database", () => {
 });
 
 // ===========================================================================
-describe("Android purchase-silence is structural, not a UI convention", () => {
+describe("Android rows are offered only after Google Play confirms them", () => {
+  // Owner decision 2026-10-10: Android sells through Google Play. The old
+  // "refuse every non-ios row" rule is replaced by the real check — the Play
+  // product must exist and its buy option must be ACTIVE — and it fails
+  // closed exactly like the Apple preflight.
   const ACTION_SRC = readFileSync(
     resolve(process.cwd(), "src/lib/admin/iap.ts"),
     "utf8",
   );
+  const ANDROID_PRODUCT = { ...SUBJECT_PRODUCT, platform: "android" };
 
   it("never reads a platform out of the submitted form", () => {
     expect(ACTION_SRC).not.toMatch(/formData\.get\(\s*["'][^"']*platform/i);
     expect(ACTION_SRC).toContain('const IOS_PLATFORM = "ios"');
+    expect(ACTION_SRC).toContain('const ANDROID_PLATFORM = "android"');
+    expect(ACTION_SRC).not.toContain("iap.err.iosOnly");
   });
 
-  it("cannot offer a non-ios row even if one somehow exists", async () => {
-    productRow = { ...SUBJECT_PRODUCT, platform: "android" };
-    const res = await setIapProductActive(
-      null,
-      form({ __id: PRODUCT, __active: "true" }),
-    );
-    expect(res).toEqual({ error: "iap.err.iosOnly" });
+  it("activates an android row when Play reports an ACTIVE buy option — and asks Play, not Apple", async () => {
+    productRow = { ...ANDROID_PRODUCT };
+    const res = await setIapProductActive(null, form({ __id: PRODUCT, __active: "true" }));
+    expect(res).toEqual({ ok: true });
+    expect(playChecks).toEqual([ANDROID_PRODUCT.product_id]);
+    expect(storeChecks).toEqual([]);
+    expect(ops.find((o) => o.op === "update")?.payload).toEqual({ active: true });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      action: "admin.iap.product.activate",
+      metadata: { platform: "android", product_id: ANDROID_PRODUCT.product_id },
+    });
+  });
+
+  for (const problem of [
+    "playNotConfigured",
+    "playMissingProduct",
+    "playInactive",
+    "playNoPermission",
+    "playUnreachable",
+  ]) {
+    it(`refuses, writes nothing and audits nothing on ${problem}`, async () => {
+      productRow = { ...ANDROID_PRODUCT };
+      playPreflight = { ok: false, problem };
+      const res = await setIapProductActive(null, form({ __id: PRODUCT, __active: "true" }));
+      expect(res).toEqual({ error: `iap.err.${problem}` });
+      expect(ops.some((o) => o.op === "update")).toBe(false);
+      expect(audits).toHaveLength(0);
+      for (const locale of ["az", "en", "ru"] as const) {
+        expect(messages[locale][`iap.err.${problem}`]).toBeTruthy();
+      }
+    });
+  }
+
+  it("an ios row is still checked against Apple only", async () => {
+    await setIapProductActive(null, form({ __id: PRODUCT, __active: "true" }));
+    expect(storeChecks).toEqual([SUBJECT_PRODUCT.product_id]);
+    expect(playChecks).toEqual([]);
+  });
+
+  it("NEVER blocks deactivating an android row on Play", async () => {
+    productRow = { ...ANDROID_PRODUCT, active: true };
+    playPreflight = { ok: false, problem: "playUnreachable" };
+    const res = await setIapProductActive(null, form({ __id: PRODUCT, __active: "false" }));
+    expect(res).toEqual({ ok: true });
+    expect(playChecks).toEqual([]);
+    expect(audits.map((a) => a.action)).toEqual(["admin.iap.product.deactivate"]);
+  });
+
+  it("refuses a platform it has no store check for", async () => {
+    productRow = { ...SUBJECT_PRODUCT, platform: "web" };
+    const res = await setIapProductActive(null, form({ __id: PRODUCT, __active: "true" }));
+    expect(res).toEqual({ error: "iap.err.unknownPlatform" });
     expect(ops.some((o) => o.op === "update")).toBe(false);
+  });
+});
+
+// ===========================================================================
+describe("android rows are mirrored against Google Play", () => {
+  const ANDROID_ROW = { ...SUBJECT_PRODUCT, id: "dddddddd-1111-4222-8333-444455556666", platform: "android" };
+
+  beforeEach(() => {
+    listData.subjects = [
+      { id: SUBJECT, name: "Riyaziyyat", code: "math", status: "active", subject_translations: [] },
+    ];
+    listData.olympiad_packages = [];
+  });
+
+  it("shows Play's own state, never Apple's, on an android row", async () => {
+    listData.iap_products = [{ ...ANDROID_ROW }];
+    playCatalogue = {
+      ok: true,
+      products: [{ productId: ANDROID_ROW.product_id, state: "DRAFT", name: "Mathematics — 1 month access" }],
+      fetchedAt: STORE_FETCHED_AT,
+    };
+    // Apple knows the same id as APPROVED — it must not leak onto the android row.
+    storeCatalogue = {
+      ok: true,
+      products: [{ productId: ANDROID_ROW.product_id, state: "APPROVED", name: null }],
+      fetchedAt: STORE_FETCHED_AT,
+    };
+    const { rows, play } = await listIapCatalogue();
+    expect(play.ok).toBe(true);
+    expect(rows[0].store).toEqual({
+      labelKey: "iap.play.state.draft",
+      verdict: "blocked",
+      name: "Mathematics — 1 month access",
+    });
+  });
+
+  it("names an offered android product that Play does not have", async () => {
+    listData.iap_products = [{ ...ANDROID_ROW, active: true }];
+    const { rows } = await listIapCatalogue();
+    expect(rows[0].divergence).toBe("offeredMissing");
+  });
+
+  it("an unreachable Play yields no verdict for android rows", async () => {
+    listData.iap_products = [{ ...ANDROID_ROW, active: true }];
+    playCatalogue = { ok: false, problem: "storeUnreachable", fetchedAt: STORE_FETCHED_AT };
+    const { rows, play } = await listIapCatalogue();
+    expect(play).toEqual({ ok: false, problem: "storeUnreachable", fetchedAt: STORE_FETCHED_AT });
+    expect(rows[0].divergence).toBeNull();
+  });
+
+  it("lists Play products with no android row, per platform", async () => {
+    // The ios row exists; the same id on Play still has no ANDROID row, so a
+    // Play purchase of it would grant nothing.
+    listData.iap_products = [{ ...SUBJECT_PRODUCT }];
+    playCatalogue = {
+      ok: true,
+      products: [{ productId: SUBJECT_PRODUCT.product_id, state: "ACTIVE", name: null }],
+      fetchedAt: STORE_FETCHED_AT,
+    };
+    const { unmapped } = await listIapCatalogue();
+    expect(unmapped).toEqual([
+      {
+        platform: "android",
+        productId: SUBJECT_PRODUCT.product_id,
+        name: null,
+        labelKey: "iap.play.state.active",
+        verdict: "sellable",
+      },
+    ]);
   });
 });
 
@@ -613,6 +770,7 @@ describe("the mirror never invents agreement", () => {
     const { unmapped } = await listIapCatalogue();
     expect(unmapped).toEqual([
       {
+        platform: "ios",
         productId: "ai.olympiq.app.oly.citymath",
         name: "City Math",
         labelKey: "iap.store.state.approved",
@@ -774,6 +932,11 @@ describe("trilingual copy", () => {
       "storeRejected",
       "storeRemoved",
       "storeUnknownState",
+      "playNotConfigured",
+      "playNoPermission",
+      "playMissingProduct",
+      "playInactive",
+      "playUnreachable",
     ]) {
       returned.add(`iap.err.${p}`);
     }

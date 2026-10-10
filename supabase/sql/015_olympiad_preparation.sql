@@ -513,6 +513,15 @@ from (values
 join public.olympiad_packages p on p.code = v.code
 on conflict (platform, product_id) do nothing;
 
+-- Their ANDROID twins (migration 184): same product ids, same packages,
+-- inactive. Seeds nothing on a from-zero rebuild, for the same reason.
+insert into public.iap_products
+  (platform, product_id, scope, subject_id, package_id, grade_id, "interval", active)
+select 'android', p.product_id, p.scope, p.subject_id, p.package_id, p.grade_id, p."interval", false
+from public.iap_products p
+where p.platform = 'ios' and p.scope = 'olympiad_package'
+on conflict (platform, product_id) do nothing;
+
 -- -----------------------------------------------------------------------------
 -- updated_at + audit triggers
 -- -----------------------------------------------------------------------------

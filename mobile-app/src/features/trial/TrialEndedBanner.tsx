@@ -1,12 +1,14 @@
 // The parent home's "your child's free access has ended" banners (2026-10-10).
 // Web twin: web-app/src/components/TrialExpiredBanner.tsx.
 //
-// PER PLATFORM, AS A BUILD-TIME FACT. On iOS — which sells through StoreKit —
-// the banner carries one CTA to the child's subscription screen, where the
-// App Store rail lives. On Android — purchase-silent — it states the fact and
-// offers nothing: no price, no "subscribe", no link. The switch is
-// IAP_PLATFORM_SUPPORTED, the same constant that gates StoreKit itself, never a
-// server flag.
+// PER BUILD, AS A BUILD-TIME FACT. Where the binary carries a store rail — iOS
+// (StoreKit) and, since the owner decision of 2026-10-10, Android (Google Play
+// Billing) — the banner carries one CTA to the child's subscription screen,
+// where that rail lives. A build with no store rail states the fact and offers
+// nothing: no price, no "subscribe", no link. The switch is
+// IAP_PLATFORM_SUPPORTED, the same constant that gates the rail itself, never a
+// server flag. The CTA is activation language and leads to an in-app screen
+// only — never a URL, never a price of our own.
 //
 // DISMISSAL is per child and per window: the X stores the window's `endsAt`
 // under the child's id, so a dismissed banner stays dismissed, and a later
@@ -85,7 +87,7 @@ export function TrialEndedBanners({ items }: { items: EndedTrialItem[] }) {
         >
           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: spacing.sm }}>
             <AppText style={{ flex: 1, minWidth: 0, fontWeight: "600" }}>
-              {(IAP_PLATFORM_SUPPORTED ? t("mob.trial.banner.bodyIos") : t("mob.trial.banner.body")).replace(
+              {(IAP_PLATFORM_SUPPORTED ? t("mob.trial.banner.bodyStore") : t("mob.trial.banner.body")).replace(
                 "{name}",
                 item.name,
               )}

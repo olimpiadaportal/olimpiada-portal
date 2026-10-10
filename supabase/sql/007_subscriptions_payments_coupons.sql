@@ -786,8 +786,8 @@ $$;
 create table if not exists public.iap_products (
   id           uuid primary key default gen_random_uuid(),
 
-  -- THE ANDROID PURCHASE-SILENCE GUARD. See the column comment below before
-  -- adding a single 'android' row.
+  -- ios | android. Both sell since migration 184 (owner decision
+  -- 2026-10-10); see the column comment below.
   platform     text not null,
 
   -- The App Store Connect / Play Console identifier. Permanent and public.
@@ -881,14 +881,15 @@ comment on table public.iap_products is
   'which is the anti-steering rule we were rejected under on 2026-08-31.';
 
 comment on column public.iap_products.platform is
-  'ios | android. THIS COLUMN IS THE ANDROID PURCHASE-SILENCE GUARD. The Play '
-  'build is consumption-only on purpose (docs/STORE_PAYMENTS_COMPLIANCE.md): '
-  'with NO google_play rows here the purchase endpoint has literally nothing to '
-  'sell on Android, so the silence is structural instead of being a flag '
-  'somebody can flip. DO NOT SEED ANDROID ROWS to "prepare" for Play billing, '
-  'and do not add them because the check constraint allows the value — the '
-  'value exists so that the day Google forces IAP is a data change and not a '
-  'schema change. Until an owner decision says otherwise, every row is ios.';
+  'ios | android. Owner decision 2026-10-10: BOTH platforms sell. iOS through '
+  'StoreKit non-renewing subscriptions (approved 2026-09-09), Android through '
+  'Google Play Billing one-time CONSUMABLE products with the same product ids '
+  '(migration 184). Each android row is the twin of an ios row and is seeded '
+  'INACTIVE: a row is sellable only after its Play Console product exists and '
+  'an owner turns it on. The rail is still structural — no active row for a '
+  'platform means nothing to sell there — and the payment RAIL per platform is '
+  'a build-time fact of the binary, never a runtime flag '
+  '(docs/STORE_PAYMENTS_COMPLIANCE.md).';
 
 comment on column public.iap_products.product_id is
   'The permanent, public store identifier. ai.olympiq.app.sub.<slug>.<interval> '
@@ -1110,6 +1111,12 @@ create table if not exists public.iap_notifications (
   -- an acceptable price for adding a diagnostic value.
   outcome                 text,
 
+  -- Migration 184: which store sent it. android rows are Google Play real-time
+  -- developer notifications (Pub/Sub push); their notification_uuid is DERIVED
+  -- from the Pub/Sub messageId, which is kept verbatim in provider_message_id.
+  platform                text not null default 'ios',
+  provider_message_id     text,
+
   constraint pk_iap_notifications primary key (notification_uuid, environment),
 
   constraint ck_iap_notification_environment
@@ -1139,7 +1146,14 @@ create table if not exists public.iap_notifications (
   -- A settled row must say what it settled AS. "Processed, outcome unknown" is
   -- not a state anybody can act on six months later.
   constraint ck_iap_notification_settled
-    check (processed_at is null or outcome is not null)
+    check (processed_at is null or outcome is not null),
+
+  -- Migration 184.
+  constraint ck_iap_notification_platform check (platform in ('ios', 'android')),
+  constraint ck_iap_notification_message_id
+    check (provider_message_id is null or length(provider_message_id) between 1 and 200),
+  constraint ck_iap_notification_android_message
+    check (platform = 'ios' or provider_message_id is not null)
 );
 
 -- The 'Migration 165.' opening below is TRANSCRIBED VERBATIM from migration
@@ -1171,6 +1185,19 @@ comment on column public.iap_notifications.notification_type is
   'Apple''s notificationType, as free text. NOT an enum: a new member of Apple''s '
   'vocabulary must be recorded and ignored, never rejected — an enum would turn '
   '"Apple shipped a new notification type" into a 500 and an endless retry loop.';
+
+comment on column public.iap_notifications.platform is
+  'Migration 184. ios = an App Store Server Notification V2; android = a Google '
+  'Play real-time developer notification delivered by Pub/Sub push. Android rows '
+  'carry a notification_uuid DERIVED from the Pub/Sub messageId (deterministic, '
+  'so a redelivery maps to the same row) and the messageId itself in '
+  'provider_message_id. environment is always Production for android: Pub/Sub '
+  'has one topic, and a test purchase is identified per purchase, not per rail.';
+
+comment on column public.iap_notifications.provider_message_id is
+  'Migration 184. The provider''s own message id — the Pub/Sub messageId for '
+  'android, NULL for ios (whose notificationUUID is already the key). Unique per '
+  'platform (uq_iap_notifications_provider_message).';
 
 -- NO audit trigger here either, for the reason iap_purchase_intents has none:
 -- every row is written by service_role from one endpoint, one per message, and

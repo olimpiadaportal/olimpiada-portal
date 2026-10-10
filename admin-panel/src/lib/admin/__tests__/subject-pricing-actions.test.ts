@@ -683,7 +683,9 @@ describe("saveSubjectPrice — the ONE way a stored price changes", () => {
       null,
       form({ ...CELL, name: "Forged", status: "archived" }),
     );
-    expect(res).toEqual({ ok: true });
+    // toMatchObject: since 2026-10-10 a save also reports what each store did
+    // (`stores`); that report is pinned in store-price-sync.test.ts.
+    expect(res).toMatchObject({ ok: true });
     expect(ops).toHaveLength(0);
     expect(rpcCalls).toEqual([
       {

@@ -8,10 +8,13 @@
 // in src/i18n/messages.mobile.ts, which wins over the synced web catalogue at
 // runtime (src/i18n/index.ts, createT).
 //
-// On ANDROID it is also an anti-steering problem. That binary is purchase-silent
-// and there is no IAP on it, so a purchase imperative in child copy points at an
-// off-platform payment — and Azerbaijan gets no anti-steering relief
-// (docs/STORE_PAYMENTS_COMPLIANCE.md).
+// It is also an anti-steering problem on both stores. Since the owner decision
+// of 2026-10-10 Android sells through Google Play exactly like iOS through
+// StoreKit — but ONLY on parent screens: a CHILD has no purchase surface on
+// either platform. A purchase imperative in child copy therefore points away
+// from the store rail, at a purchase somewhere else, and Azerbaijan gets no
+// anti-steering relief (docs/STORE_PAYMENTS_COMPLIANCE.md). Android selling
+// changed nothing in this file.
 //
 // WHY IT IS NOT COVERED BY store-copy.test.ts. That sweep is catalogue-wide, so
 // it cannot ban the Azerbaijani buy verb: the imperative is the bare "al", and a

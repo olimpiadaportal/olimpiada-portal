@@ -15,7 +15,7 @@
 | | Status today |
 |---|---|
 | **iOS** | **SELLS through StoreKit.** 21 non-renewing subscriptions (7 subjects × week/month/year). Apple **approved 1.15.0 and all 21 products on 2026-09-09.** |
-| **Android** | **Purchase-silent, unchanged.** No price, no buy CTA, no `olympiq.ai` in a purchasing context. Everything below still applies in full. |
+| **Android** | **SELLS through Google Play Billing from 1.17.0 (owner decision 2026-10-10).** One-time consumable Play products mirroring the 21 iOS products, bound to one child (`obfuscatedAccountId` = server intent id), verified with the Play Developer API and consumed only after the grant. Prices are Play's own localized strings and follow the admin panel automatically. Still forbidden in the Android binary: any non-Play purchase path, `olympiq.ai` in a purchasing context, web-checkout wording (Azerbaijan has no anti-steering relief). Builds ≤1.16.x remain purchase-silent. |
 | **Web (ABB, AZN)** | Unchanged, and the only rail for olympiad packages. |
 
 **The sequence.** A purchase-silent iOS build was submitted and **rejected on 2026-08-31 under Guideline 3.1.1** — the app let a signed-in family use access provisioned outside it. That is §10's open decision 3 ("if Apple rejects the purchase-silent build, do we ship IAP on iOS only?") being answered by Apple rather than by us. IAP shipped on 2026-09-04 and was approved five days later.

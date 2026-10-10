@@ -42,14 +42,14 @@
 //     is the way OUT of a bad state, exactly as archiving an unpriced subject
 //     is (see subject-status.ts).
 //
-// ANDROID PURCHASE-SILENCE — READ BEFORE ADDING A PLATFORM CONTROL.
-// The Play build is consumption-only by store policy, not by preference
-// (docs/STORE_PAYMENTS_COMPLIANCE.md). With NO android/google_play rows in this
-// table the purchase endpoint has literally nothing to sell on Android, so the
-// silence is STRUCTURAL rather than a flag somebody can flip. Nothing in this
-// module can produce a row at all any more, and the one write it has refuses a
-// non-ios row outright. The day Google forces IAP is a deliberate migration
-// plus a build, not a dropdown on an admin screen.
+// ANDROID SELLS TOO (owner decision, 2026-10-10). This used to say the Play
+// build is purchase-silent and that this module refuses any non-ios row. That
+// is retired: Android sells through Google Play Billing with the SAME product
+// ids, and an android row is activated exactly like an ios one — by asking the
+// store first. iOS asks App Store Connect (preflightStoreProduct); Android asks
+// Google Play (preflightPlayProduct: the product must exist and its buy option
+// must be ACTIVE). Both fail closed. The platform is still never read from the
+// form: it comes from the row, and a platform outside ios/android is refused.
 //
 // WHY A ROW IS NEVER DELETED. A store product id is permanent and public — App
 // Store Connect never renames one and never lets the string be reused — and an
@@ -81,6 +81,12 @@ import {
   storeStateVerdict,
   type StoreStateVerdict,
 } from "@/lib/admin/appStoreConnect";
+import {
+  fetchPlayCatalogue,
+  playStateLabelKey,
+  playStateVerdict,
+  preflightPlayProduct,
+} from "@/lib/admin/googlePlay";
 import { getLocale } from "@/i18n/server";
 import {
   SUBJECT_DISPLAY_SELECT,
@@ -88,10 +94,11 @@ import {
   type SubjectTranslationRow,
 } from "@/lib/admin/subject-display";
 
-// The ONLY platform we offer. Never read from client input, and the one thing
-// the toggle checks that has nothing to do with the target being live.
-// See ANDROID PURCHASE-SILENCE above.
+// The platforms a row may be offered on, each with its own store preflight.
+// Never read from client input — the platform is the row's.
+// See ANDROID SELLS TOO above.
 const IOS_PLATFORM = "ios";
+const ANDROID_PLATFORM = "android";
 
 const UUID_SHAPE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -164,8 +171,10 @@ export type IapProductRow = {
   divergence: IapDivergence;
 };
 
-/** A product Apple holds that `iap_products` does not map to anything. */
+/** A store product that `iap_products` does not map to anything. */
 export type IapUnmappedProduct = {
+  /** Which store holds it: "ios" (App Store Connect) or "android" (Google Play). */
+  platform: string;
   productId: string;
   name: string | null;
   labelKey: string;
@@ -189,7 +198,10 @@ export type IapCatalogue = {
    * that maps to nothing, so the family is charged and granted nothing.
    */
   unmapped: IapUnmappedProduct[];
+  /** App Store Connect half. */
   store: IapStoreStatus;
+  /** Google Play half — the same contract, for android rows. */
+  play: IapStoreStatus;
   /** A load failure is reported, never rendered as an empty catalogue. */
   loadFailed: boolean;
 };
@@ -257,13 +269,14 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
 
   // Apple and Postgres have nothing to say to each other; waiting on them in
   // series would just make the refresh slower.
-  const [productsRes, storeRes] = await Promise.all([
+  const [productsRes, storeRes, playRes] = await Promise.all([
     supabase
       .from("iap_products")
       .select(PRODUCT_COLUMNS)
       .order("scope")
       .order("product_id"),
     fetchStoreCatalogue(),
+    fetchPlayCatalogue(),
   ]);
 
   const store: IapStoreStatus = {
@@ -271,15 +284,23 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
     problem: storeRes.ok ? null : storeRes.problem,
     fetchedAt: storeRes.fetchedAt,
   };
+  const play: IapStoreStatus = {
+    ok: playRes.ok,
+    problem: playRes.ok ? null : playRes.problem,
+    fetchedAt: playRes.fetchedAt,
+  };
   const storeByProductId = new Map(
     storeRes.ok ? storeRes.products.map((p) => [p.productId, p]) : [],
+  );
+  const playByProductId = new Map(
+    playRes.ok ? playRes.products.map((p) => [p.productId, p]) : [],
   );
 
   if (productsRes.error) {
     // Never surface a raw Postgres message; the detail goes to the server log
     // and the screen shows a load error instead of an empty, reassuring table.
     console.error("[admin] iap products load failed", productsRes.error.message);
-    return { rows: [], unmapped: [], store, loadFailed: true };
+    return { rows: [], unmapped: [], store, play, loadFailed: true };
   }
 
   const products = (productsRes.data ?? []) as ProductRecord[];
@@ -381,13 +402,24 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
     const targetStatus =
       p.scope === "subject" ? (subject?.status ?? null) : (pkg?.status ?? null);
 
-    const snapshot = storeByProductId.get(p.product_id);
+    // Each row is mirrored against ITS OWN store: an ios row against App Store
+    // Connect, an android row against Google Play.
+    const isAndroid = p.platform === ANDROID_PLATFORM;
+    const snapshot = isAndroid
+      ? playByProductId.get(p.product_id)
+      : storeByProductId.get(p.product_id);
     const storeState: IapStoreState | null = snapshot
-      ? {
-          labelKey: storeStateLabelKey(snapshot.state),
-          verdict: storeStateVerdict(snapshot.state),
-          name: snapshot.name,
-        }
+      ? isAndroid
+        ? {
+            labelKey: playStateLabelKey(snapshot.state),
+            verdict: playStateVerdict(snapshot.state),
+            name: snapshot.name,
+          }
+        : {
+            labelKey: storeStateLabelKey(snapshot.state),
+            verdict: storeStateVerdict(snapshot.state),
+            name: snapshot.name,
+          }
       : null;
 
     return {
@@ -402,7 +434,7 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
       gradeLabel: grade ? (grade.name ?? String(grade.level ?? "")) : null,
       problem: targetProblem(p, targetStatus, !p.grade_id || !!grade),
       store: storeState,
-      divergence: divergenceOf(store.ok, p.active, storeState),
+      divergence: divergenceOf(isAndroid ? play.ok : store.ok, p.active, storeState),
     };
   });
 
@@ -410,23 +442,45 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
   // when the store read SUCCEEDED — an unreachable Apple would otherwise
   // report an empty catalogue as "nothing unmapped", which is agreement we
   // never established.
-  const known = new Set(products.map((p) => p.product_id));
-  const unmapped: IapUnmappedProduct[] = storeRes.ok
-    ? storeRes.products
-        .filter((p) => !known.has(p.productId))
-        .map((p) => ({
-          productId: p.productId,
-          name: p.name,
-          labelKey: storeStateLabelKey(p.state),
-          verdict: storeStateVerdict(p.state),
-        }))
-        // Byte order, not collation: a store product id is a machine string
-        // (ASCII, no case, no diacritics) and every admin must see the same
-        // sequence regardless of their locale.
-        .sort((a, b) =>
-          a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0,
-        )
-    : [];
+  // Per platform: an id that has an ios row but no android row is still a
+  // Play product nobody can be granted for.
+  const knownIos = new Set(
+    products.filter((p) => p.platform === IOS_PLATFORM).map((p) => p.product_id),
+  );
+  const knownAndroid = new Set(
+    products.filter((p) => p.platform === ANDROID_PLATFORM).map((p) => p.product_id),
+  );
+  const byPlatformThenId = (a: IapUnmappedProduct, b: IapUnmappedProduct): number => {
+    // iOS first, then byte order: a store product id is a machine string
+    // (ASCII, no case, no diacritics) and every admin must see the same
+    // sequence regardless of their locale.
+    if (a.platform !== b.platform) return a.platform === IOS_PLATFORM ? -1 : 1;
+    return a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0;
+  };
+  const unmapped: IapUnmappedProduct[] = [
+    ...(storeRes.ok
+      ? storeRes.products
+          .filter((p) => !knownIos.has(p.productId))
+          .map((p) => ({
+            platform: IOS_PLATFORM,
+            productId: p.productId,
+            name: p.name,
+            labelKey: storeStateLabelKey(p.state),
+            verdict: storeStateVerdict(p.state),
+          }))
+      : []),
+    ...(playRes.ok
+      ? playRes.products
+          .filter((p) => !knownAndroid.has(p.productId))
+          .map((p) => ({
+            platform: ANDROID_PLATFORM,
+            productId: p.productId,
+            name: p.name,
+            labelKey: playStateLabelKey(p.state),
+            verdict: playStateVerdict(p.state),
+          }))
+      : []),
+  ].sort(byPlatformThenId);
 
   // Sort within scope: subject products by subject name then week/month/year
   // (the order a human reads a price list in), packages by title.
@@ -440,7 +494,7 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
     );
   });
 
-  return { rows, unmapped, store, loadFailed };
+  return { rows, unmapped, store, play, loadFailed };
 }
 
 /**
@@ -467,7 +521,10 @@ function divergenceOf(
   // covers the review pipeline too) is worth pointing at as "ready, and we are
   // not offering it". Flagging one that is still in review would put a notice
   // on every row during a submission.
-  return store.labelKey === "iap.store.state.approved" ? "approvedIdle" : null;
+  return store.labelKey === "iap.store.state.approved" ||
+    store.labelKey === "iap.play.state.active"
+    ? "approvedIdle"
+    : null;
 }
 
 /**
@@ -518,29 +575,42 @@ export async function setIapProductActive(
   if (row.active === next) return { ok: true };
 
   if (next) {
-    // ANDROID PURCHASE-SILENCE, enforced and not merely assumed. No screen can
-    // create a non-ios row, so this only fires on a row that arrived some other
-    // way — which is exactly when a silent activation would be worst.
-    if (row.platform !== IOS_PLATFORM) return { error: "iap.err.iosOnly" };
+    // A platform we have no store check for is refused outright: an
+    // unchecked activation is the event this action exists to prevent.
+    if (row.platform !== IOS_PLATFORM && row.platform !== ANDROID_PLATFORM) {
+      return { error: "iap.err.unknownPlatform" };
+    }
 
     const problem = await checkTargetLive(supabase, row);
     if (problem) return { error: `iap.err.${problem}` };
 
-    // ...and then ask APPLE, because everything above only proves OUR side is
-    // coherent. A product id App Store Connect has never heard of passes every
-    // check in this file and still gives every family a buy button that fails.
-    // Read-only; refuses on anything it cannot positively confirm, including a
-    // missing configuration — an unchecked activation is the event this guard
-    // exists to prevent.
-    const store = await preflightStoreProduct(row.product_id);
-    if (!store.ok) {
-      console.error(
-        "[admin] iap activation refused by store preflight",
-        row.product_id,
-        store.problem,
-        store.state ?? "-",
-      );
-      return { error: `iap.err.${store.problem}` };
+    // ...and then ask THE ROW'S STORE, because everything above only proves
+    // OUR side is coherent. A product id the store has never heard of passes
+    // every check in this file and still gives every family a buy button that
+    // fails. Read-only; refuses on anything it cannot positively confirm,
+    // including a missing configuration.
+    if (row.platform === ANDROID_PLATFORM) {
+      const playCheck = await preflightPlayProduct(row.product_id);
+      if (!playCheck.ok) {
+        console.error(
+          "[admin] iap activation refused by play preflight",
+          row.product_id,
+          playCheck.problem,
+          playCheck.state ?? "-",
+        );
+        return { error: `iap.err.${playCheck.problem}` };
+      }
+    } else {
+      const store = await preflightStoreProduct(row.product_id);
+      if (!store.ok) {
+        console.error(
+          "[admin] iap activation refused by store preflight",
+          row.product_id,
+          store.problem,
+          store.state ?? "-",
+        );
+        return { error: `iap.err.${store.problem}` };
+      }
     }
   }
 

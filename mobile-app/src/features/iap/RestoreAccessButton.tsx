@@ -1,6 +1,9 @@
 // RESTORE. Apple requires this control to exist and to be findable — its
 // absence is itself a rejection reason — so it is rendered on every parent money
-// surface, INDEPENDENTLY of whether anything is currently for sale. A family
+// surface, INDEPENDENTLY of whether anything is currently for sale. On Android
+// (owner decision 2026-10-10) it does the same job for Google Play: it sends
+// every purchase Play still holds unconsumed to the server, which grants and
+// consumes what it is owed. A family
 // that reinstalls, changes phone or signs in on a second device has to be able
 // to get back what they already paid for without paying again.
 //
@@ -17,9 +20,10 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useInvalidateParentData } from "@/features/parent/queries";
-import { bffIapApi } from "./api";
+import { IAP_STORE } from "./platform";
+import { rail } from "./rail";
 import { runRestore } from "./restoreFlow";
-import { appleStore } from "./store";
+import { storeCopyKey } from "./storeCopy";
 import type { RestoreOutcome } from "./types";
 
 export function RestoreAccessButton({ compact = false }: { compact?: boolean }) {
@@ -38,7 +42,7 @@ export function RestoreAccessButton({ compact = false }: { compact?: boolean }) 
     // instead of leaving a permanent spinner.
     let result: RestoreOutcome = { status: "failed", messageKey: "mob.iap.err.generic" };
     try {
-      result = await runRestore({ store: appleStore, api: bffIapApi });
+      result = await runRestore({ store: rail.store, api: rail.api });
     } catch {
       // Deliberately swallowed: `result` already holds the generic message.
     } finally {
@@ -57,8 +61,8 @@ export function RestoreAccessButton({ compact = false }: { compact?: boolean }) 
         ? { text: t("mob.iap.restoreDone"), color: tokens.ok }
         : outcome.status === "nothing"
           ? // NOT an error tone. Nothing went wrong.
-            { text: t("mob.iap.restoreNothing"), color: tokens.muted }
-          : { text: t(outcome.messageKey), color: tokens.danger };
+            { text: t(storeCopyKey("mob.iap.restoreNothing", IAP_STORE)), color: tokens.muted }
+          : { text: t(storeCopyKey(outcome.messageKey, IAP_STORE)), color: tokens.danger };
 
   return (
     <View style={{ gap: spacing.sm }}>

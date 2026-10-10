@@ -1,36 +1,33 @@
-// THE ANDROID BINARY MUST NOT DECLARE THE PLAY BILLING PERMISSION.
+// THE ANDROID BINARY DECLARES THE PLAY BILLING PERMISSION — ON PURPOSE.
 //
-// WHY THIS EXISTS. `expo-iap` ships its own library manifest
-// (node_modules/expo-iap/android/src/main/AndroidManifest.xml) whose single line
-// is `<uses-permission android:name="com.android.vending.BILLING"/>`. Android's
-// manifest merger folds every library manifest into the app's, so that
-// permission lands in the merged manifest of our Android build even though this
-// app never calls StoreKit's Android twin: `src/features/iap/platform.ts` pins
-// IAP_PLATFORM_SUPPORTED to `Platform.OS === "ios"` and every entry point in
-// `src/features/iap/store.ts` refuses to run without it.
+// HISTORY. Until 2026-10-10 this file was android-billing-permission-blocked
+// and asserted the OPPOSITE: `expo.android.blockedPermissions` listed
+// `com.android.vending.BILLING`, because Android was purchase-silent and the
+// reviewer note told Google "This Android app contains no purchase
+// functionality of any kind" — a manifest declaring Play Billing would have
+// contradicted that on a release already rejected once (Metadata policy,
+// 2026-09-22).
 //
-// `com.android.vending.BILLING` is the signal Google uses to treat an app as
-// billing-capable, and the reviewer note this repo tells the owner to paste says
-// "This Android app contains no purchase functionality of any kind."
-// A reviewer who opens the manifest sees those two statements contradict each
-// other — on a release that was ALREADY rejected once (Metadata policy,
-// 2026-09-22). Android is purchase-silent by architecture
-// (docs/STORE_PAYMENTS_COMPLIANCE.md), so the manifest has to say so too.
+// OWNER DECISION 2026-10-10: ANDROID SELLS through Google Play Billing, exactly
+// like the approved iOS StoreKit rail (src/features/iap; platform.ts makes the
+// rail a build-time constant on both stores). Play Billing REQUIRES this
+// permission in the merged manifest — without it BillingClient cannot connect
+// and every purchase fails with BILLING_UNAVAILABLE. expo-iap supplies it twice
+// over: its library manifest
+// (node_modules/expo-iap/android/src/main/AndroidManifest.xml) and its config
+// plugin (plugin/src/withIAP.ts adds it unless Fire OS is enabled). The block
+// in app.json would have stripped both (`tools:node="remove"`), so it is gone.
 //
-// HOW IT IS BLOCKED. `expo.android.blockedPermissions` in app.json. At prebuild,
-// @expo/prebuild-config runs AndroidConfig.Permissions.withInternalBlockedPermissions,
-// which adds `xmlns:tools` and rewrites the entry as
-// `<uses-permission android:name="com.android.vending.BILLING" tools:node="remove"/>`
-// so the merger drops it. The name is written FULLY QUALIFIED on purpose:
-// prefixAndroidPermissionsIfNecessary() only prepends `android.permission.` to
-// names that contain no dot, so a dotted name passes through verbatim. (The
-// uppercasing done by ensurePermissionNameFormat() is not on the blocked path.)
+// THIS IS NATIVE CONFIG: it ships only in a NEW BUILD (1.17.0), never over the
+// air — the runtimeVersion policy is appVersion, so the bump already forecloses
+// OTA. The reviewer note claiming "no purchase functionality" must be retired
+// in the same release, and Play's Data safety form must declare purchase
+// history BEFORE that build is submitted.
 //
-// THIS IS NATIVE CONFIG, so it needs a rebuild — it cannot ride an OTA update.
-//
-// IF THIS TEST FAILS: someone removed the entry from app.json. Do not delete the
-// test; put the entry back. Removing it silently re-declares Play Billing in a
-// binary that sells nothing.
+// IF THIS TEST FAILS because someone re-added the block: Android purchases will
+// all fail on device. Either remove the block, or — if the owner has reversed
+// the decision — remove the Android rail in features/iap/platform.ts in the
+// SAME change and rewrite this file again. Never one without the other.
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -39,6 +36,7 @@ const BILLING = "com.android.vending.BILLING";
 
 type AppConfig = {
   expo: {
+    version?: string;
     android?: { permissions?: string[]; blockedPermissions?: string[] };
     ios?: Record<string, unknown> & { bundleIdentifier?: string };
     plugins?: unknown[];
@@ -49,36 +47,31 @@ function readConfig(): AppConfig {
   return JSON.parse(readFileSync(APP_JSON, "utf8")) as AppConfig;
 }
 
-describe("app.json blocks the Play Billing permission on Android", () => {
-  it("lists com.android.vending.BILLING in android.blockedPermissions", () => {
+describe("app.json lets Play Billing into the Android manifest", () => {
+  it("does NOT block com.android.vending.BILLING any more", () => {
     const blocked = readConfig().expo.android?.blockedPermissions ?? [];
-    expect(blocked).toContain(BILLING);
+    expect(blocked).not.toContain(BILLING);
+    // Nor any spelling of it: a dotless "BILLING" would be rewritten to
+    // android.permission.BILLING and block nothing, but a variant of the real
+    // name would still strip it.
+    expect(blocked.some((n) => n.toLowerCase().includes("billing"))).toBe(false);
   });
 
-  it("spells it fully qualified, so the Expo plugin does not rewrite it", () => {
-    // prefixAndroidPermissionsIfNecessary() turns a dotless name like
-    // "USE_BIOMETRIC" into "android.permission.USE_BIOMETRIC". A name written
-    // as "BILLING" or "vending.BILLING" would therefore block a permission that
-    // does not exist, and the real one would still merge in.
-    const blocked = readConfig().expo.android?.blockedPermissions ?? [];
-    for (const name of blocked) {
-      expect(name.includes(".")).toBe(true);
-    }
-    expect(blocked.some((n) => n.toLowerCase().includes("billing") && n !== BILLING)).toBe(false);
+  it("keeps the expo-iap plugin, which adds the permission at prebuild", () => {
+    const plugins = readConfig().expo.plugins ?? [];
+    // A bare "expo-iap" entry: no { isFireOsEnabled: true } option, which is
+    // the one configuration in which withIAP.ts REMOVES the permission.
+    expect(plugins).toContain("expo-iap");
+    const configured = plugins.find(
+      (p) => Array.isArray(p) && p[0] === "expo-iap",
+    ) as [string, Record<string, unknown>] | undefined;
+    expect(configured?.[1]?.isFireOsEnabled).toBeUndefined();
   });
 
-  it("never REQUESTS the permission it blocks", () => {
-    // withBlockedPermissions() strips a blocked name out of android.permissions
-    // anyway, so having it in both places would not break the build — it would
-    // just be a contradictory statement of intent sitting in the config.
-    const requested = readConfig().expo.android?.permissions ?? [];
-    expect(requested).not.toContain(BILLING);
-  });
-
-  it("is justified: expo-iap really does declare the permission", () => {
-    // The whole point of the block. If expo-iap ever stops shipping this
-    // manifest, re-verify with `npx expo prebuild -p android` and check
-    // android/app/build/intermediates/merged_manifest/ before relaxing anything.
+  it("relies on expo-iap really declaring it", () => {
+    // If expo-iap ever stops shipping this manifest line, re-verify with
+    // `npx expo prebuild -p android` and check the merged manifest before
+    // trusting a build to sell.
     const libManifest = resolve(
       __dirname,
       "..",
@@ -93,16 +86,29 @@ describe("app.json blocks the Play Billing permission on Android", () => {
     expect(readFileSync(libManifest, "utf8")).toContain(BILLING);
   });
 
+  it("does not request it by hand either", () => {
+    // The library and the plugin own this permission. Listing it in
+    // android.permissions as well would be a second, redundant source that
+    // outlives the library if it is ever removed.
+    const requested = readConfig().expo.android?.permissions ?? [];
+    expect(requested).not.toContain(BILLING);
+  });
+
+  it("ships in a version newer than the purchase-silent 1.16.x line", () => {
+    // The unblock is native config. A build still on 1.16.x would be the same
+    // runtime version as the purchase-silent binaries, which invites an OTA
+    // update to carry Android purchase code onto a binary without the
+    // permission (and without the Data safety declaration).
+    const [major, minor] = (readConfig().expo.version ?? "0.0.0").split(".").map(Number);
+    expect(major > 1 || (major === 1 && minor >= 17)).toBe(true);
+  });
+
   it("leaves iOS completely alone", () => {
-    // blockedPermissions is an ANDROID-only Expo config field:
-    // withInternalBlockedPermissions() reads config.android.blockedPermissions
-    // and applies withAndroidManifest() only. iOS StoreKit is live and approved
-    // (1.15.0, 2026-09-09) and nothing here may touch it.
+    // iOS StoreKit is live and approved (1.15.0, 2026-09-09); nothing in this
+    // change touches its config.
     const expo = readConfig().expo;
     expect(expo.ios).toBeDefined();
     expect(expo.ios).not.toHaveProperty("blockedPermissions");
     expect(expo.ios?.bundleIdentifier).toBe("ai.olympiq.app");
-    // The IAP plugin itself stays installed — iOS needs it.
-    expect(expo.plugins).toContain("expo-iap");
   });
 });

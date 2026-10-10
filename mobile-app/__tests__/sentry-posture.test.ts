@@ -205,12 +205,17 @@ describe("the config plugin cannot break a build that has no Sentry credentials"
 });
 
 describe("adding Sentry does not release a new version", () => {
-  it("leaves expo.version where it was", () => {
-    // 1.16.0 is UNRELEASED and already carries a pre-submission blocker of its
-    // own (the child gender field). Bumping it here would foreclose the OTA path
-    // for that work under `runtimeVersion: appVersion` and start a second
-    // release conversation inside this one.
-    expect(APP_JSON.expo.version).toBe("1.16.0");
+  it("rode in 1.16.x or later, and package.json mirrors expo.version", () => {
+    // When Sentry landed, 1.16.0 was UNRELEASED and this pinned it to exactly
+    // "1.16.0" so the Sentry change could not bump the version and foreclose the
+    // OTA path for that work under `runtimeVersion: appVersion`. 1.16.0 has
+    // since shipped (Apple approved it 2026-09-15), and 1.17.0 is a separate,
+    // deliberate NATIVE release (Google Play Billing on Android, owner decision
+    // 2026-10-10) — so the exact pin became a pin on an old release. What is
+    // still worth holding: Sentry is in every version from 1.16.0 on, and the
+    // two version fields never drift apart.
+    const [major, minor] = String(APP_JSON.expo.version).split(".").map(Number);
+    expect(major > 1 || (major === 1 && minor >= 16)).toBe(true);
     expect(PKG.version).toBe(APP_JSON.expo.version);
   });
 });

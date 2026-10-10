@@ -2,26 +2,27 @@
 // parity). The id param is validated against the parent's own children (RLS
 // list) — a foreign/malformed id renders the not-your-child notice.
 //
-// PURCHASE-SILENT ON ANDROID (docs/STORE_PAYMENTS_COMPLIANCE.md): there is no
-// web subscribe wizard on mobile in ANY mode since the demo payment mode was
-// deleted (owner, 2026-08-18). Every shared branch below is read-only or
-// free-activation:
+// NO WEB CHECKOUT, ON EITHER PLATFORM (docs/STORE_PAYMENTS_COMPLIANCE.md):
+// there is no web subscribe wizard on mobile in ANY mode since the demo payment
+// mode was deleted (owner, 2026-08-18). Every shared branch below is read-only
+// or free-activation:
 //   free modes → free notice + bffActivateFree, and the price-free subjects
 //                editor when a plan is live
-//   real / off → the live plan if there is one, otherwise the platform's
-//                approved posture (StoreKit on iOS, status-only on Android)
+//   real / off → the live plan if there is one, plus the build's store rail
+//                (StoreKit on iOS, Google Play Billing on Android)
 // A live subscription is NEVER suppressed by the payment posture -- 'off' is
 // also the fail-closed default when the config RPC fails, and this screen used
 // to blank itself in exactly that case.
 //
-// ON iOS ONE THING IS ADDED AND NOTHING IS TAKEN AWAY: the Apple in-app
-// purchase panel (src/features/iap), plus the Restore control Apple requires to
-// exist and to be findable. Apple rejected the 2026-08-31 submission under
-// Guideline 3.1.1 — on that storefront the fix is not silence, it is IAP.
-// Everything is behind IAP_PLATFORM_SUPPORTED, a BUILD-TIME platform constant:
-// an Android build renders exactly what it rendered yesterday, down to the
-// mob.pay.notInApp sentence. The iOS StoreKit surface additionally follows the
-// admin availability state and disappears while access is free.
+// THE STORE RAIL IS ADDED AND NOTHING IS TAKEN AWAY: the in-app purchase panel
+// (src/features/iap), plus the Restore control Apple requires to exist and to
+// be findable. Apple rejected the 2026-08-31 submission under Guideline 3.1.1 —
+// on that storefront the fix is not silence, it is IAP — and the owner decided
+// on 2026-10-10 that Android sells the same way through Google Play Billing.
+// Everything is behind IAP_PLATFORM_SUPPORTED, a BUILD-TIME platform constant
+// (true on iOS and Android). The rail additionally follows the admin
+// availability state and disappears while access is free. mob.pay.notInApp
+// now renders only in a build with no store rail at all.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -146,10 +147,10 @@ export default function ChildSubscribeScreen() {
     // as the other two surfaces: one refetch answers for all three.
     queryKey: QK.entitled(id),
     queryFn: () => fetchEntitledSubjects(id),
-    // Only the iOS offer filter reads it, and never for another family's
-    // child. It stays out of `loading` for the same reason as in the twin: a
-    // disabled query is pending forever, and the skeleton would never end on
-    // Android.
+    // Only the store-rail offer filter reads it, and never for another
+    // family's child. It stays out of `loading` for the same reason as in the
+    // twin: a disabled query is pending forever, and the skeleton would never
+    // end in a build without a rail.
     enabled: IAP_PLATFORM_SUPPORTED && child !== null,
   });
 
@@ -160,10 +161,10 @@ export default function ChildSubscribeScreen() {
   const planSubjectIds = new Set((liveSub?.subjects ?? []).map((s) => s.subject_id));
   const entitledExtra = entitledSubjects.filter((s) => !planSubjectIds.has(s.id));
 
-  // iOS purchase surface. Called UNCONDITIONALLY and before every early return
-  // below — it owns react-query hooks, and a hook that disappears on the
-  // loading branch is a crash on the next render. Off iOS it fetches nothing
-  // and answers state "off".
+  // Store purchase surface (iOS + Android). Called UNCONDITIONALLY and before
+  // every early return below — it owns react-query hooks, and a hook that
+  // disappears on the loading branch is a crash on the next render. With the
+  // rail closed it fetches nothing and answers state "off".
   const iap = useIapOffers(
     [
       ...(liveSub ? liveSub.subjects.map((s) => s.subject_id) : []),
@@ -180,8 +181,8 @@ export default function ChildSubscribeScreen() {
     child?.grade_id ?? null,
     purchaseEnabled,
   );
-  // THE OFFERS WAIT FOR THE ENTITLEMENT READ — on iOS only. The two reads
-  // race: the StoreKit catalogue is cached for ten minutes while `entitled`
+  // THE OFFERS WAIT FOR THE ENTITLEMENT READ — wherever the rail exists. The
+  // two reads race: the store catalogue is cached for ten minutes while `entitled`
   // refetches after every purchase, so the offer list could paint first and
   // briefly show a price button for a subject this child already owns. One tap
   // on it opens the store sheet for a purchase the server then refuses, and the
@@ -190,8 +191,8 @@ export default function ChildSubscribeScreen() {
   // Folded into the PANEL's state, never into `loading` above: "loading" is a
   // state the panel already renders honestly (mob.iap.loading), while this
   // screen's skeleton must not hang on a query that is DISABLED — and so
-  // pending forever — on Android. Off iOS the constant is false at build time
-  // and this is just `iap.state`, which is "off".
+  // pending forever — in a build without a rail, where the constant is false
+  // at build time and this is just `iap.state`, which is "off".
   //
   // `isPending` COVERS THE COLD LOAD ONLY. After a purchase, `entitled`
   // refetches while already holding data, so it stays `success` and this guard
@@ -219,8 +220,8 @@ export default function ChildSubscribeScreen() {
     invalidate();
   }
 
-  // `entitled` is refreshed on iOS ONLY — refetch() ignores `enabled`, so an
-  // unguarded entry would fire the RPC from an Android pull.
+  // `entitled` is refreshed only where the rail exists — refetch() ignores
+  // `enabled`, so an unguarded entry would fire the RPC from a rail-less build.
   const { refreshing, onRefresh } = usePullRefresh([
     children,
     subs,
@@ -416,16 +417,18 @@ export default function ChildSubscribeScreen() {
             ) : null}
           </>
         ) : (
-          // 'real': read-only on Android. The plan itself is not started, changed
-          // or paid for anywhere in this app.
+          // 'real': the live plan is read-only here. A web plan is not started,
+          // changed or paid for anywhere in this app; the store rail below is
+          // the only way to activate access in the binary.
           <>
             {liveSubCard}
-            {/* ANDROID ONLY — see the same guard in (tabs)/subscription.tsx.
-                "Subscriptions are not managed in this app" is policy-safe on
-                Android and a written 3.1.1 confession on iOS, where it used to
-                appear whenever the catalogue was empty. iOS renders nothing
-                instead: an empty area claims nothing, while the obvious
-                alternative ("not available right now") is the 2.1.0 rejection. */}
+            {/* ONLY IN A BUILD WITH NO STORE RAIL — see the same guard in
+                (tabs)/subscription.tsx. Until 2026-10-10 that was Android; it
+                is now neither store build, because both sell. On a store build
+                "Subscriptions are not managed in this app" would be a written
+                3.1.1 confession (and false), so it renders nothing instead: an
+                empty area claims nothing, while the obvious alternative ("not
+                available right now") is the 2.1.0 rejection. */}
             {iapVisible || IAP_PLATFORM_SUPPORTED ? null : (
               <Card>
                 <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
@@ -439,8 +442,8 @@ export default function ChildSubscribeScreen() {
             activated during a free window is still theirs after it closes. */}
         {entitledCard}
 
-        {/* iOS ONLY, while paid access is available. Free mode keeps this shared
-            screen visually aligned with Android and exposes no StoreKit action. */}
+        {/* iOS AND ANDROID, while paid access is available. Free mode exposes no
+            store action on either platform. */}
         {IAP_PLATFORM_SUPPORTED && purchaseEnabled ? (
           <IapPanel
             studentProfileId={id}
@@ -452,7 +455,8 @@ export default function ChildSubscribeScreen() {
           />
         ) : null}
 
-        {/* RESTORE IS UNCONDITIONAL ON iOS — including when nothing is for sale.
+        {/* RESTORE IS UNCONDITIONAL WHEREVER THE RAIL EXISTS — including when
+            nothing is for sale.
             Apple requires the control to exist and to be findable; a family that
             reinstalls or switches device must get back what they paid for. */}
         {IAP_PLATFORM_SUPPORTED ? (

@@ -396,8 +396,8 @@ export type OlympiadPackageRow = {
    * Both default SAFELY against a database that predates 163: a missing
    * `is_on_sale` means the old function ran, and everything it returned WAS on
    * sale; a missing `is_owned` falls back to the purchases query the parent tab
-   * already runs. Neither flag ever produces a purchase affordance — this app
-   * is purchase-silent for both roles.
+   * already runs. Neither flag ever produces a purchase affordance — olympiad
+   * packages are not sold in the binary on either platform, for either role.
    */
   is_owned: boolean;
   is_on_sale: boolean;

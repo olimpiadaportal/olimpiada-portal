@@ -1,16 +1,21 @@
-// WHAT IS FOR SALE ON iOS, and at what price.
+// WHAT IS FOR SALE ON THIS PLATFORM, and at what price.
+//
+// iOS reads the `platform = 'ios'` rows; Android (owner decision 2026-10-10)
+// reads the `platform = 'android'` rows, which carry the SAME product ids
+// (`ai.olympiq.app.sub.<code>.<week|month|year>`) as the Play Console products.
 //
 // TWO SOURCES, AND NEITHER ONE IS ENOUGH ALONE:
-//   * `public.iap_products` says which App Store product ids THIS platform
-//     sells, which subject each one grants and for how long. Its `active` flag
-//     is the owner's switch: a row is false until the matching product exists in
-//     App Store Connect, is approved, and someone deliberately turns it on
-//     (migration 164, Decision 4). Read straight from the database under RLS —
+//   * `public.iap_products` says which store product ids THIS platform sells,
+//     which subject each one grants and for how long. Its `active` flag is the
+//     owner's switch: a row is false until the matching product exists in App
+//     Store Connect / Play Console, is approved, and someone deliberately turns
+//     it on (migration 164, Decision 4). Read straight from the database under RLS —
 //     the policy only lets an ordinary account see `active` rows, so the client
 //     cannot enumerate what is not yet sellable.
-//   * StoreKit says what it COSTS. That string is the only price this app may
-//     render: Apple owns the tier, the storefront, the currency and the tax, and
-//     any price we stored or formatted ourselves would be wrong for most of the
+//   * The STORE says what it COSTS (StoreKit's displayPrice, Play's
+//     formattedPrice). That string is the only price this app may render: the
+//     store owns the tier, the storefront, the currency and the tax, and any
+//     price we stored or formatted ourselves would be wrong for most of the
 //     world and wrong for everyone the day a tier changes.
 //
 // A product missing from EITHER source is not offered. Showing a row whose price
@@ -27,26 +32,26 @@ export type IapOffer = {
   subjectCode: string | null;
   subjectName: string | null;
   interval: "week" | "month" | "year";
-  /** StoreKit's own localised string. Rendered verbatim. */
+  /** The store's own localised string. Rendered verbatim. */
   displayPrice: string;
 };
 
 const INTERVAL_ORDER: Record<string, number> = { week: 0, month: 1, year: 2 };
 
 /**
- * Active iOS products, with the subject each one grants.
+ * Active products of ONE platform, with the subject each one grants.
  *
  * The `platform`/`active` filters are redundant against the RLS policy and are
  * written anyway: a reader of this file should not have to know the policy to
  * know what comes back, and a policy change must not silently widen the query.
  */
-export async function fetchIosIapCatalog(): Promise<IapCatalogRow[]> {
+export async function fetchIapCatalog(platform: "ios" | "android"): Promise<IapCatalogRow[]> {
   const { data, error } = await supabase
     .from("iap_products")
     .select(
       "product_id, scope, subject_id, package_id, interval, subject:subject_id(code, name, status)",
     )
-    .eq("platform", "ios")
+    .eq("platform", platform)
     .eq("active", true);
   if (error) throw error;
   return catalogRowsFromQuery((data ?? []) as unknown as IapProductQueryRow[]);
@@ -94,7 +99,7 @@ export function catalogRowsFromQuery(rows: readonly IapProductQueryRow[]): IapCa
     }));
 }
 
-/** The SKUs StoreKit has to be asked about. Subject products only — see below. */
+/** The SKUs the store has to be asked about. Subject products only — see below. */
 export function sellableProductIds(catalog: IapCatalogRow[]): string[] {
   return Array.from(
     new Set(
@@ -106,7 +111,7 @@ export function sellableProductIds(catalog: IapCatalogRow[]): string[] {
 }
 
 /**
- * Join the catalogue to StoreKit's answer and drop everything unsellable.
+ * Join the catalogue to the store's answer and drop everything unsellable.
  *
  * OLYMPIAD PACKAGE PRODUCTS ARE DELIBERATELY NOT OFFERED HERE. The olympiad tab
  * is browse-only by an owner decision that survived Apple's 3.1.1 rejection, and

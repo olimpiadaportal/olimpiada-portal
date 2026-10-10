@@ -1,18 +1,23 @@
-// THE BOUNDARIES AROUND THE APPLE RAIL, checked at source level.
+// THE BOUNDARIES AROUND THE STORE RAILS, checked at source level.
 //
-// Three of them, and each one is a rejection or a regression if it slips:
+// iOS sells through StoreKit (approved 2026-09-09) and — OWNER DECISION
+// 2026-10-10 — Android sells through Google Play Billing on the same terms.
+// That retired the old boundary 1 ("Android stays purchase-silent"). The
+// assertions that encoded it were MOVED, not dropped: every purchase
+// affordance still sits behind ONE build-time constant, which is now true on
+// both stores. What each boundary guards today, and each one is a rejection or
+// a regression if it slips:
 //
-//   1. ANDROID STAYS PURCHASE-SILENT. Google's consumption-only test is
-//      app-wide and this single binary serves the parent tabs and the child
-//      tabs alike, so every purchase affordance must sit behind the build-time
-//      platform constant. The iOS surface is additionally closed by the admin
-//      availability state during giveaway/free-access windows.
-//   2. ONE StoreKit SEAM. expo-iap may be imported in exactly one file, so
-//      Android has one thing to exclude and a future Google rail has one place
-//      to live.
-//   3. NO PRICE IN OUR SOURCE. Apple owns the amount. A number or a currency
-//      token in this module would be wrong in most storefronts the day it was
-//      typed and wrong everywhere the day a tier changes.
+//   1. THE RAIL IS A BUILD-TIME CONSTANT, and the admin availability state can
+//      only CLOSE it (giveaway / free access / payments off), never open a
+//      different one. No web checkout and no external link in the module.
+//   2. ONE BILLING SEAM. expo-iap may be imported in exactly one file
+//      (store.ts), which holds both the Apple and the Google implementation.
+//   3. NO PRICE IN OUR SOURCE. The store owns the amount — StoreKit's
+//      displayPrice, Play's formattedPrice. A number or a currency token in
+//      this module would be wrong in most storefronts the day it was typed.
+//   4. A CHILD HAS NO PURCHASE SURFACE. Nothing on the student side reaches
+//      the rail, on either platform.
 //
 // Source-level on purpose: these are properties of the DIFF, so a regression
 // shows up in review and in this failure rather than in a rejection weeks later.
@@ -25,6 +30,7 @@ import {
   type IapProductQueryRow,
 } from "../src/features/iap/catalog";
 import { mobileMessages } from "../src/i18n/messages.mobile";
+import { GOOGLE_COPY_KEYS, storeCopyKey } from "../src/features/iap/storeCopy";
 import type { IapCatalogRow, StoreProduct } from "../src/features/iap/types";
 
 // catalog.ts builds the Supabase client at module scope and the client refuses
@@ -68,18 +74,103 @@ describe("expo-iap lives behind exactly one seam", () => {
 
   it("is never driven from outside the module", () => {
     // Screens call the panel and the restore button; nothing else may reach for
-    // the flows or the store object directly.
+    // the flows, the store objects, the router or the BFF purchase calls
+    // directly. (lib/api.ts DECLARES the BFF calls; only features/iap uses them.)
     const offenders = ALL_FILES.filter((p) => !rel(p).startsWith("features/iap/"))
-      .filter((p) => /\b(runPurchase|runRestore|appleStore)\b/.test(readFileSync(p, "utf8")))
+      .filter((p) => rel(p) !== "lib/api.ts")
+      .filter((p) =>
+        /\b(runPurchase|runRestore|appleStore|googleStore|platformStore|appleIapApi|googleIapApi|bffIapIntent|bffIapRedeem|bffIapRestore|bffGoogleIapIntent|bffGoogleIapRedeem|bffGoogleIapRestore)\b/.test(
+          codeOnly(readFileSync(p, "utf8")),
+        ),
+      )
       .map(rel);
     expect(offenders).toEqual([]);
   });
 });
 
+describe("a child never reaches the rail, on either platform", () => {
+  // CLAUDE.md: "Children can never purchase" and "A CHILD has no purchase
+  // surface on either platform". Android selling (2026-10-10) changes nothing
+  // here — the rail is mounted on parent screens only.
+  const CHILD_FILES = ALL_FILES.filter((p) => rel(p).startsWith("app/(student)/"));
+
+  it("has student screens to check at all", () => {
+    expect(CHILD_FILES.length).toBeGreaterThan(5);
+  });
+
+  it("no student screen imports the purchase module or renders its surfaces", () => {
+    const offenders = CHILD_FILES.filter((p) => {
+      const code = codeOnly(readFileSync(p, "utf8"));
+      return (
+        /from\s+["']@\/features\/iap(\/[^"']*)?["']/.test(code) ||
+        /<IapPanel|<RestoreAccessButton|useIapOffers/.test(code)
+      );
+    }).map(rel);
+    expect(offenders).toEqual([]);
+  });
+
+  it("the purchase surfaces are mounted on parent screens only", () => {
+    const mounts = ALL_FILES.filter((p) => !rel(p).startsWith("features/iap/"))
+      .filter((p) => /<IapPanel\b/.test(codeOnly(readFileSync(p, "utf8"))))
+      .map(rel)
+      .sort();
+    expect(mounts).toEqual([
+      "app/(parent)/(tabs)/subscription.tsx",
+      "app/(parent)/children/[id]/subscribe.tsx",
+    ]);
+  });
+});
+
+describe("no web checkout and no external link in the purchase module", () => {
+  // The only way to pay inside the binary is the store's own sheet. A URL, a
+  // browser opener or a webview here would be a non-IAP purchase path —
+  // Apple 3.1.1 / 2.3.1(a), Google Payments policy.
+  for (const file of IAP_FILES) {
+    it(`${rel(file)} opens nothing outside the store sheet`, () => {
+      const code = codeOnly(readFileSync(file, "utf8"));
+      expect(/https?:\/\/|olympiq\.ai/i.test(code)).toBe(false);
+      expect(/\bLinking\b|openURL|openBrowserAsync|expo-web-browser|WebView/.test(code)).toBe(false);
+    });
+  }
+});
+
 describe("the platform gate is a build-time constant", () => {
-  it("is defined once, as Platform.OS", () => {
-    const platform = readFileSync(join(IAP_DIR, "platform.ts"), "utf8");
-    expect(codeOnly(platform).includes('Platform.OS === "ios"')).toBe(true);
+  it("is defined once, as Platform.OS, for both stores", () => {
+    // Owner decision 2026-10-10: the rail exists on iOS AND Android. Both
+    // answers come from Platform.OS, fixed when the binary is built.
+    const platform = codeOnly(readFileSync(join(IAP_DIR, "platform.ts"), "utf8"));
+    expect(platform.includes('Platform.OS === "ios"')).toBe(true);
+    expect(platform.includes('Platform.OS === "android"')).toBe(true);
+    expect(/IAP_PLATFORM_SUPPORTED\s*=\s*IAP_STORE\s*!==\s*null/.test(platform)).toBe(true);
+  });
+
+  it("routes each build to its own store and its own BFF routes", () => {
+    const rail = codeOnly(readFileSync(join(IAP_DIR, "rail.ts"), "utf8"));
+    expect(/IAP_STORE\s*===\s*"google"\s*\?\s*googleIapApi\s*:\s*appleIapApi/.test(rail)).toBe(true);
+    const store = codeOnly(readFileSync(join(IAP_DIR, "store.ts"), "utf8"));
+    expect(/platformStore[^=]*=\s*IS_GOOGLE\s*\?\s*googleStore\s*:\s*appleStore/.test(store)).toBe(true);
+    const lib = readFileSync(join(SRC, "lib", "api.ts"), "utf8");
+    expect(lib).toContain('"/api/mobile/v1/iap/google/intent"');
+    expect(lib).toContain('"/api/mobile/v1/iap/google/redeem"');
+    expect(lib).toContain('"/api/mobile/v1/iap/google/restore"');
+  });
+
+  it("binds a Google purchase to the child through obfuscatedAccountId", () => {
+    // Play's twin of appAccountToken. Without it the server cannot tell which
+    // CHILD a purchase was for.
+    const store = codeOnly(readFileSync(join(IAP_DIR, "store.ts"), "utf8"));
+    expect(/obfuscatedAccountId:\s*appAccountToken/.test(store)).toBe(true);
+  });
+
+  it("consumes on Google, finishes plainly on Apple", () => {
+    // Our Play products are one-time and re-bought each period and per
+    // sibling, so a granted purchase must be CONSUMED (acknowledge-only would
+    // leave the SKU owned and Play would refuse the next purchase). Apple's
+    // finish is a plain Transaction.finish().
+    const store = codeOnly(readFileSync(join(IAP_DIR, "store.ts"), "utf8"));
+    expect((store.match(/isConsumable:\s*true/g) ?? []).length).toBe(1);
+    expect((store.match(/isConsumable:\s*false/g) ?? []).length).toBe(1);
+    expect(/finishOnlyWhenGranted:\s*true/.test(store)).toBe(true);
   });
 
   it("is never derived from a server value", () => {
@@ -104,7 +195,12 @@ describe("the platform gate is a build-time constant", () => {
   });
 });
 
-describe("Android shows no purchase affordance at all", () => {
+// WAS "Android shows no purchase affordance at all" (until 2026-10-10). The
+// guard it pinned is unchanged — one build-time constant in front of every
+// purchase element — but that constant is now TRUE on Android too (owner
+// decision 2026-10-10), so the same assertions now prove "the rail appears
+// only where the build has one, and only while the admin state allows it".
+describe("every purchase element sits behind the build-time rail constant", () => {
   const SCREENS = [
     join(SRC, "app", "(parent)", "(tabs)", "subscription.tsx"),
     join(SRC, "app", "(parent)", "children", "[id]", "subscribe.tsx"),
@@ -121,16 +217,14 @@ describe("Android shows no purchase affordance at all", () => {
       expect(code).toMatch(/\{IAP_PLATFORM_SUPPORTED\s*\?\s*\([\s\S]{0,180}<RestoreAccessButton/);
     });
 
-    it(`${name}: the "not managed in this app" sentence is ANDROID-ONLY`, () => {
-      // On Android the sentence is true and policy-safe: the build is
-      // consumption-only by Google's rules and it points nowhere.
-      //
-      // On iOS the same sentence is a written 3.1.1 CONFESSION shown to the
-      // reviewer, and it used to render there whenever the catalogue came back
-      // empty — which is exactly the state a forgotten activation leaves us in,
-      // with no other visible symptom. iOS now renders nothing instead; the
-      // obvious alternative ("not available right now") is the 2.1.0 App
-      // Completeness rejection this app already took in August.
+    it(`${name}: the "not managed in this app" sentence renders only without a rail`, () => {
+      // It used to be the ANDROID sentence, true and policy-safe while Android
+      // was consumption-only. Both store builds sell now, so on either it would
+      // be false — and on a store build it is a written 3.1.1 CONFESSION shown
+      // to the reviewer. It survives only for a build with no store rail at
+      // all, behind the same constant; a store build renders nothing there
+      // (the obvious alternative, "not available right now", is the 2.1.0 App
+      // Completeness rejection this app already took in August).
       const line = code
         .split("\n")
         .find((l) => /t\(\s*["']mob\.pay\.notInApp["']/.test(l));
@@ -143,7 +237,7 @@ describe("Android shows no purchase affordance at all", () => {
       expect(gate).toContain("IAP_PLATFORM_SUPPORTED");
     });
 
-    it(`${name}: actually renders the purchase surface on iOS`, () => {
+    it(`${name}: actually renders the purchase surface`, () => {
       // The other half of the same guarantee — a screen that guards nothing
       // because it renders nothing would pass the check above.
       expect(uses(code)).toBeGreaterThan(0);
@@ -155,7 +249,7 @@ describe("Android shows no purchase affordance at all", () => {
       expect(code).toContain("purchaseEnabled={purchaseEnabled}");
     });
 
-    it(`${name}: still carries the unchanging Android sentence`, () => {
+    it(`${name}: keeps the rail-less sentence for a build without a store`, () => {
       expect(/t\(\s*["']mob\.pay\.notInApp["']/.test(code)).toBe(true);
     });
   }
@@ -164,7 +258,7 @@ describe("Android shows no purchase affordance at all", () => {
     return (code.match(/<IapPanel|<RestoreAccessButton/g) ?? []).length;
   }
 
-  it("the restore control exists at all — Apple requires it", () => {
+  it("the restore control exists at all — Apple requires it, Play needs it", () => {
     // Its ABSENCE is itself a rejection reason, so its presence is pinned here
     // rather than left to whoever next tidies a screen.
     const usedIn = ALL_FILES.filter((p) => /<RestoreAccessButton/.test(readFileSync(p, "utf8"))).map(
@@ -175,8 +269,8 @@ describe("Android shows no purchase affordance at all", () => {
 });
 
 describe("no price is written anywhere in this module", () => {
-  // Apple owns the amount. `displayPrice` arrives from StoreKit already
-  // localised and is rendered verbatim; the app must hold no number it could
+  // The store owns the amount. `displayPrice` arrives from StoreKit or Play
+  // Billing already localised and is rendered verbatim; the app must hold no number it could
   // format, and no formatter it could reach for.
   const BANNED: [RegExp, string][] = [
     [/₼|€|£|₽|¥|₺/u, "a currency symbol"],
@@ -446,5 +540,53 @@ describe("every new string ships in all three languages", () => {
       (l) => (mobileMessages[l]["mob.iap.noRenew"] ?? "").length === 0,
     );
     expect(missing).toEqual([]);
+  });
+});
+
+describe("each store's copy names its own store (2026-10-10)", () => {
+  // The rail's copy was written for iOS and some sentences name the App Store
+  // or an Apple ID. On Android they must name Google Play: storeCopy.ts swaps
+  // those keys for `mob.iap.play.*` twins. These pin both directions.
+  const LOCALES = ["az", "en", "ru"] as const;
+  const APPLE_WORDS = /App Store|Apple/u;
+
+  it("every Google twin exists in all three languages and never names Apple", () => {
+    const bad: string[] = [];
+    for (const l of LOCALES) {
+      for (const key of GOOGLE_COPY_KEYS) {
+        const v = mobileMessages[l][key] ?? "";
+        if (v.length === 0) bad.push(`${l} ${key} missing`);
+        else if (APPLE_WORDS.test(v)) bad.push(`${l} ${key} names Apple`);
+        else if (!/Google Play/u.test(v)) bad.push(`${l} ${key} does not name Google Play`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("on Android, no rail key the panel renders still names Apple", () => {
+    // Every mob.iap.* key, resolved the way an Android build resolves it.
+    const KEYS = Object.keys(mobileMessages.az).filter(
+      (k) => k.startsWith("mob.iap.") && !k.startsWith("mob.iap.play."),
+    );
+    const bad: string[] = [];
+    for (const l of LOCALES) {
+      for (const key of KEYS) {
+        const v = mobileMessages[l][storeCopyKey(key, "google")] ?? "";
+        if (APPLE_WORDS.test(v)) bad.push(`${l} ${key}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("on iOS every key is itself — the approved copy is untouched", () => {
+    for (const key of ["mob.iap.title", "mob.iap.deferred", "iap.err.notVerified"]) {
+      expect(storeCopyKey(key, "apple")).toBe(key);
+    }
+  });
+
+  it("the Play-only refusal has its own calm sentence", () => {
+    for (const l of LOCALES) {
+      expect((mobileMessages[l]["mob.iap.err.alreadyOwned"] ?? "").length).toBeGreaterThan(0);
+    }
   });
 });

@@ -1,5 +1,11 @@
 // THE PURCHASE SEQUENCE. Pure: no react, no react-native, no expo-iap.
 //
+// ONE SEQUENCE, TWO STORES. Apple StoreKit on iOS and — owner decision
+// 2026-10-10 — Google Play Billing on Android run through this same function;
+// the store object and the BFF adapter are injected (see rail.ts). Where this
+// header says "StoreKit" and "appAccountToken", read "Play Billing" and
+// "obfuscatedAccountId" for Android: the guarantees are identical.
+//
 // THE ORDER IS THE PRODUCT. Every step exists because doing it later loses
 // something that cannot be recovered:
 //
@@ -41,6 +47,12 @@ export function storeErrorKey(kind: ReturnType<typeof storeFailureKind>): string
       return "mob.iap.err.notAllowed";
     case "unavailable":
       return "mob.iap.err.unavailable";
+    case "alreadyOwned":
+      // Play refused because an EARLIER purchase of this SKU is still
+      // unconsumed on this Google account. Nothing was charged now; Restore
+      // sends that earlier purchase to the server, which grants and consumes
+      // it, and the next attempt goes through.
+      return "mob.iap.err.alreadyOwned";
     default:
       // Deliberately generic. The specific StoreKit code is a developer fact and
       // means nothing to a parent; the house rule is one translated sentence.
@@ -125,7 +137,10 @@ export async function runPurchase(deps: PurchaseFlowDeps): Promise<PurchaseOutco
   onStep?.("redeem");
   let redeemed: Awaited<ReturnType<IapApi["redeem"]>>;
   try {
-    redeemed = await api.redeem(intentId, purchase.transactionId);
+    redeemed = await api.redeem(intentId, purchase.transactionId, {
+      productId,
+      orderId: purchase.orderId ?? null,
+    });
   } catch {
     return { status: "pending", detailKey: null };
   }
@@ -143,6 +158,25 @@ export async function runPurchase(deps: PurchaseFlowDeps): Promise<PurchaseOutco
   }
 
   // ---- 4. FINISH -----------------------------------------------------------
+  //
+  // GOOGLE FINISHES ONLY A GRANT. On Play, finish() CONSUMES, and a consumed
+  // purchase vanishes from getAvailablePurchases() — the list Restore reads.
+  // A purchase the server acknowledged WITHOUT granting (a license-tester or
+  // otherwise ungrantable purchase) therefore stays unconsumed on the device,
+  // where Restore and the server's own sweep can still settle it. Apple's rule
+  // below is unchanged: StoreKit's finish only stops a replay.
+  const data = redeemed.data;
+  const granted = data !== null && data.granted === true;
+  if (store.finishOnlyWhenGranted === true && !granted) {
+    return {
+      status: "recorded",
+      messageKey:
+        data && typeof data.message === "string" && data.message.length > 0
+          ? data.message
+          : "iap.msg.recorded",
+    };
+  }
+
   // The server acknowledged this transaction, whether or not it produced
   // access. `granted: false` is a SANDBOX purchase the server declined to turn
   // into access — and that is NOT what App Review gets. The reviewer buys in
@@ -156,11 +190,12 @@ export async function runPurchase(deps: PurchaseFlowDeps): Promise<PurchaseOutco
   } catch {
     // Finishing failed AFTER a successful grant. Harmless: the entitlement
     // exists, and StoreKit will simply offer the transaction again. Never
-    // downgrade a granted purchase to an error because of this.
+    // downgrade a granted purchase to an error because of this. On Play this
+    // branch is the EXPECTED one: the server consumed the token before it
+    // answered, so the device's second consume is refused (ITEM_NOT_OWNED).
   }
 
-  const data = redeemed.data;
-  if (data && data.granted === true) {
+  if (granted && data) {
     return {
       status: "granted",
       already: data.already === true,

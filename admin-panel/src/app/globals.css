@@ -4920,3 +4920,49 @@ a.qpage-link:hover {
   opacity: 0.85;
 }
 .user-you { font-size: 12px; opacity: 0.75; }
+
+/* Store prices (App Store / Google Play) beside the AZN source of truth —
+   Subjects list + edit, and the per-cell outcome under a saved price. */
+.store-line {
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+.store-azn {
+  font-weight: 600;
+}
+.store-name {
+  color: var(--muted);
+}
+.store-price {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.store-expected {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.store-pill-unknown {
+  border: 1px dashed var(--border);
+}
+.store-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.store-sync-compact {
+  flex-direction: column;
+  align-items: flex-end;
+}
+.store-sync-failures,
+.price-cell-stores {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  white-space: normal;
+}
+.store-sync-failures li {
+  color: var(--danger-fg);
+}

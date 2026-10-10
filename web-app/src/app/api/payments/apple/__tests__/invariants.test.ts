@@ -173,10 +173,10 @@ describe("the write path is imported, never reimplemented", () => {
   });
 });
 
-describe("Android stays purchase-silent", () => {
+describe("the Apple rail never reaches into the Android one", () => {
   it("has no platform fallback anywhere in the rail", () => {
-    // iap_products.platform is the structural guard — no google_play rows exist,
-    // so there is nothing to sell on Android. Never invent one.
+    // Android sells through its own rail (app/api/payments/google, migration
+    // 184). This one stays pinned to ios rows and never names the other.
     for (const file of ALL_FILES) {
       const src = code(read(file));
       expect(src).not.toContain("android");

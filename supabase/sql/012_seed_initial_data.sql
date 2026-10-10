@@ -940,10 +940,16 @@ join public.subjects s on s.code = m.code and s.status = 'active'
 cross join (values ('week'), ('month'), ('year')) as i(iv)
 on conflict (platform, product_id) do nothing;
 
--- NO ANDROID ROWS, EVER, until an owner decision says otherwise. The Play build
--- is consumption-only (docs/STORE_PAYMENTS_COMPLIANCE.md) and the emptiness of
--- `platform = 'android'` in iap_products is what makes that structural rather
--- than a flag somebody can flip.
+-- THE ANDROID TWINS (migration 184, owner decision 2026-10-10: Android sells
+-- through Google Play Billing). One android row per ios row, same product id,
+-- same target, INACTIVE until the Play Console product exists and an owner
+-- turns it on. The olympiad twins are seeded in 015, beside their ios rows.
+insert into public.iap_products
+  (platform, product_id, scope, subject_id, package_id, grade_id, "interval", active)
+select 'android', p.product_id, p.scope, p.subject_id, p.package_id, p.grade_id, p."interval", false
+from public.iap_products p
+where p.platform = 'ios' and p.scope = 'subject'
+on conflict (platform, product_id) do nothing;
 
 -- =============================================================================
 -- End of 012_seed_initial_data.sql
@@ -1043,4 +1049,10 @@ insert into public.system_settings (key, value_json) values
   ('trial.max_per_email', '3'::jsonb),
   ('trial.max_extensions', '1'::jsonb),
   ('trial.extension_hours', '24'::jsonb)
+on conflict (key) do nothing;
+
+-- Migration 184: the AZN-per-USD rate the admin panel uses to pick the nearest
+-- Apple (USD) price point for an AZN subject price. Google takes AZN directly.
+insert into public.system_settings (key, value_json) values
+  ('store.fx.azn_per_usd', '1.70'::jsonb)
 on conflict (key) do nothing;

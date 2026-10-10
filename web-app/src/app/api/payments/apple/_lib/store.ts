@@ -28,10 +28,11 @@ export const APPLE_ENTITLEMENT_SOURCE = "apple_iap" as const;
 /**
  * The only platform this rail sells on.
  *
- * ANDROID STAYS PURCHASE-SILENT, and `iap_products.platform` is the structural
- * guard: migration 164 asserts that no `android` row exists, so there is nothing
- * to sell there. This constant is a literal and not a parameter precisely so
- * that no caller can pass 'android' and invent one.
+ * Android sells too since 2026-10-10, through its OWN rail (Google Play,
+ * app/api/payments/google/ and lib/payments/google/) with its own
+ * `platform = 'android'` catalogue rows. This rail never touches them: the
+ * constant is a literal and not a parameter precisely so that no caller can
+ * point the Apple rail at another platform's rows.
  */
 export const IOS_PLATFORM = "ios" as const;
 

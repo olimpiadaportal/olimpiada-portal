@@ -29,6 +29,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { spacing } from "@/theme/tokens";
+import { HANDLE_STRIP } from "@/components/swipeDismiss";
 
 const SRC = resolve(__dirname, "..", "src");
 
@@ -165,10 +166,11 @@ describe("geometry on a 320x568 phone with a three-button navigation bar", () =>
   /** One option row: paddingVertical spacing.md top and bottom + one line. */
   const ROW = 2 * spacing.md + LINE;
   /** Everything above the list inside the sheet, in real tokens. */
+  // The card's top padding is now the SwipeDownSheet handle strip (it replaces
+  // paddingTop), so the chrome starts with the strip, not padding + a 4pt bar.
   const CHROME =
-    spacing.lg + // paddingTop
-    4 +
-    spacing.md + // drag handle + gap
+    HANDLE_STRIP +
+    spacing.md + // swipe-to-dismiss handle strip + gap
     LINE +
     spacing.md + // title + gap
     48 +

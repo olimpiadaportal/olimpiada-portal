@@ -17,6 +17,10 @@ import { splitRemaining } from "@/lib/freeTrialShared";
 type Props = {
   /** ISO timestamp from the server. */
   endsAt: string;
+  /** The server's now() read alongside endsAt. When given, the countdown runs
+   *  on SERVER time: a device clock that is off by minutes (or set by hand)
+   *  cannot shorten or extend what the child sees. */
+  serverNow?: string;
   /** Already-translated unit suffixes — this component holds no i18n. */
   units: { h: string; m: string; s: string };
   /** Rendered in place of the clock once the trial has elapsed on screen. */
@@ -28,8 +32,14 @@ type Props = {
 // 9 -> 10 -> 9.
 const pad2 = (n: number): string => String(n).padStart(2, "0");
 
-export function FreeTrialCountdown({ endsAt, units, endedLabel, className }: Props) {
+export function FreeTrialCountdown({ endsAt, serverNow, units, endedLabel, className }: Props) {
   const endsAtMs = new Date(endsAt).getTime();
+  // Device-clock skew, measured once when this mounts: server now minus device
+  // now. Added to every tick, so remaining = endsAt - (device now + skew).
+  const [skew] = useState<number>(() => {
+    const server = serverNow ? new Date(serverNow).getTime() : NaN;
+    return Number.isFinite(server) ? server - Date.now() : 0;
+  });
 
   // Seeded from the same derivation the interval uses, so the first paint after
   // hydration is already correct rather than flashing a placeholder.
@@ -43,7 +53,7 @@ export function FreeTrialCountdown({ endsAt, units, endedLabel, className }: Pro
 
   if (!Number.isFinite(endsAtMs)) return null;
 
-  const { h, m, s, done } = splitRemaining(endsAtMs - now);
+  const { h, m, s, done } = splitRemaining(endsAtMs - (now + skew));
   if (done) {
     return <span className={className ?? "ftrial-countdown is-over"}>{endedLabel}</span>;
   }

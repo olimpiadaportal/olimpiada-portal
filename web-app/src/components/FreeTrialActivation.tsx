@@ -8,7 +8,7 @@
 // (`ck_free_trial_subjects` plus a guard inside `activate_free_trial`). A
 // hand-crafted POST that skips this component still cannot produce a third
 // subject or a second trial.
-import { useActionState, useId, useMemo, useState } from "react";
+import { useActionState, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/Modal";
 import { FreeTrialCountdown } from "@/components/FreeTrialCountdown";
 import { FreeTrialSubjectCard } from "@/components/FreeTrialSubjectCard";
@@ -26,6 +26,14 @@ type Props = {
   /** Pre-formatted "ends at" preview for the summary, computed server-side. */
   endsAtPreview: string;
   d: Dict;
+  /** Subjects to start with ticked (e.g. a /services hand-off). UX only. */
+  initialSelected?: string[];
+  /**
+   * When given, success is handed back to the caller instead of rendering this
+   * component's own success screen — the Add-Child wizard advances to its DONE
+   * step, which also reveals the 8-digit ID.
+   */
+  onActivated?: (endsAt: string, subjectIds: string[]) => void;
 };
 
 function fill(template: string, vars: Record<string, string>): string {
@@ -41,8 +49,12 @@ export function FreeTrialActivation({
   subjects,
   endsAtPreview,
   d,
+  initialSelected = [],
+  onActivated,
 }: Props) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(() =>
+    initialSelected.filter((id) => subjects.some((s) => s.id === id)).slice(0, TRIAL_MAX_SUBJECTS),
+  );
   const [confirming, setConfirming] = useState(false);
   // THE BUG THIS ID FIXES (2026-10-09). The confirm dialog is a <Modal>, and
   // Modal renders through createPortal into <body>. React nests it inside this
@@ -57,6 +69,21 @@ export function FreeTrialActivation({
   );
 
   const atCap = selected.length >= TRIAL_MAX_SUBJECTS;
+  // EXACTLY two (owner, 2026-10-10: "Choose 2 subjects"). Fewer only when the
+  // child's grade studies fewer than two — then every one of them. The database
+  // accepts one or two, so an older client that sends one is not broken; the
+  // rule a parent meets is this one.
+  const required = Math.min(TRIAL_MAX_SUBJECTS, subjects.length);
+  const ready = required > 0 && selected.length === required;
+
+  // Hand success back once, when the caller asked for it.
+  const reported = useRef(false);
+  useEffect(() => {
+    if (state.ok && onActivated && !reported.current) {
+      reported.current = true;
+      onActivated(state.endsAt, selected);
+    }
+  }, [state, onActivated, selected]);
   const chosen = useMemo(
     () => subjects.filter((s) => selected.includes(s.id)),
     [subjects, selected],
@@ -73,6 +100,7 @@ export function FreeTrialActivation({
   }
 
   // ---- SUCCESS ------------------------------------------------------------
+  if (state.ok && onActivated) return null;
   if (state.ok) {
     return (
       <section className="ftrial-done" aria-live="polite">
@@ -135,7 +163,7 @@ export function FreeTrialActivation({
           // bypass it.
           if (!confirming) {
             e.preventDefault();
-            if (selected.length > 0) setConfirming(true);
+            if (ready) setConfirming(true);
           }
         }}
       >
@@ -191,7 +219,7 @@ export function FreeTrialActivation({
         <button
           type="submit"
           className="btn btn-primary ftrial-submit"
-          disabled={selected.length === 0 || pending}
+          disabled={!ready || pending}
         >
           {pending ? d["trial.cta.pending"] : d["trial.cta.activate"]}
         </button>

@@ -1,9 +1,12 @@
 // Add-Child WIZARD (web AddChildWizard parity, redesigned: StepDots progress +
-// one clean section per step + a summary card before submit). Since the demo
-// payment mode was deleted (owner, 2026-08-18) the wizard is always TWO steps —
-// the app has no purchase flow in any mode (docs/STORE_PAYMENTS_COMPLIANCE.md):
+// one clean section per step + a summary card before submit). TRIAL-FIRST since
+// 2026-10-10, the same flow as the web wizard:
 //   giveaway / free acc → Info → (bffAddChild + bffActivateFree) → Done
-//   real / off          → Info → Done
+//   real                → Info → Free access (2 subjects, 24 h) → Done
+//   off                 → Info → Done
+// The free-access step is NOT a purchase on either platform: no price, no store
+// sheet, no external link — the BFF grants a server-side window. It can be
+// skipped; nothing in this wizard sells anything.
 // ONE Done screen in every posture, and it always shows the 8-digit login ID:
 // migration 146 allocates it inside create_child_account, so there is no such
 // thing as a created child without one. Only the headline differs (free access
@@ -33,6 +36,9 @@ import { formatGradeLabel } from "@/lib/gradeLabel";
 import { goToTab } from "@/lib/navigation";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { bffActivateFree, bffAddChild } from "@/lib/api";
+import { formatRemaining } from "@/lib/trialClock";
+import { TrialPicker, type StartedTrial } from "@/features/trial/TrialPicker";
+import { useTrialCountdown } from "@/features/trial/useTrialCountdown";
 import {
   ChildInfoForm,
   EMPTY_CHILD_INFO,
@@ -69,14 +75,25 @@ import {
 } from "@/features/parent/queries";
 import { KeyRow, ScreenScroll, childDisplayName } from "@/features/parent/ui";
 
-type Phase = "info" | "done";
-
-const STEPS = ["info", "done"] as const;
+type Phase = "info" | "trial" | "done";
 
 const STEP_KEYS: Record<string, string> = {
   info: "addchild.step.info",
+  trial: "mob.trial.step",
   done: "addchild.step.done",
 };
+
+/** The done screen's live line: "Ends in: 23h 59m 41s". */
+function TrialEndsLine({ trial }: { trial: StartedTrial }) {
+  const { t } = useT();
+  const r = useTrialCountdown(trial.endsAt, trial.serverNow, trial.receivedAt);
+  return (
+    <AppText variant="mono" style={{ textAlign: "center", fontWeight: "700" }}>
+      {t("mob.trial.endsIn")}{" "}
+      {formatRemaining(r, { h: t("trial.time.h"), m: t("trial.time.m"), s: t("trial.time.s") })}
+    </AppText>
+  );
+}
 
 /** StepDots + "2/5 · Fənlər" eyebrow — the wizard's progress header. */
 function StepProgress({ steps, activeIdx }: { steps: string[]; activeIdx: number }) {
@@ -109,6 +126,8 @@ export default function AddChildScreen() {
   const [studentProfileId, setStudentProfileId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("info");
   const [doneId, setDoneId] = useState<string | null>(null);
+  // The free access started on the trial step, if it was.
+  const [trial, setTrial] = useState<StartedTrial | null>(null);
   const [pending, setPending] = useState(false);
   const [entryChoice, setEntryChoice] = useState<"choose" | "create">("choose");
 
@@ -232,7 +251,11 @@ export default function AddChildScreen() {
   const cityRayons = rayonsOfCity(districts.data, info.cityId);
   const hasDistricts = cityRayons.length > 0;
 
-  const activeIdx = phase === "info" ? 0 : 1;
+  // The free-access step exists only when payments are live and no free window
+  // already covers the child (the same rule as the web wizard).
+  const steps: Phase[] =
+    posture.freeFlow || posture.mode === "off" ? ["info", "done"] : ["info", "trial", "done"];
+  const activeIdx = Math.max(0, steps.indexOf(phase));
 
   // ---- summary card inputs (resolved display names) ------------------------
   const cityName = ((cities.data ?? []) as { id: string; name: string }[]).find(
@@ -318,9 +341,9 @@ export default function AddChildScreen() {
         return;
       }
 
-      // 'real' and 'off': the child exists AND can sign in. Nothing is
-      // pending -- subject access is inactive, which the screen says.
-      setPhase("done");
+      // 'real': offer the 24 hours of free access next. 'off': the child
+      // exists AND can sign in; subject access is inactive, which Done says.
+      setPhase(steps.includes("trial") ? "trial" : "done");
     } finally {
       setPending(false);
     }
@@ -334,6 +357,7 @@ export default function AddChildScreen() {
     setServerError(null);
     setStudentProfileId(null);
     setDoneId(null);
+    setTrial(null);
     setPhase("info");
     // Re-arm the prefill. "Add another child" is precisely the case Item 7
     // exists for, and the child just created — already in the refreshed list —
@@ -370,7 +394,7 @@ export default function AddChildScreen() {
         </View>
       ) : (
         <>
-          <StepProgress steps={[...STEPS]} activeIdx={activeIdx} />
+          <StepProgress steps={steps} activeIdx={activeIdx} />
 
           {/* NO "SAVED LESS THAN IT WAS ASKED" NOTICE ANY MORE, and the reason
               is the migration rather than a change of mind about telling the
@@ -488,6 +512,19 @@ export default function AddChildScreen() {
             </>
           ) : null}
 
+          {phase === "trial" && studentProfileId ? (
+            <TrialPicker
+              childId={studentProfileId}
+              gradeId={info.gradeId || null}
+              onStarted={(started) => {
+                setTrial(started);
+                void invalidate();
+                setPhase("done");
+              }}
+              onSkip={() => setPhase("done")}
+            />
+          ) : null}
+
           {phase === "done" ? (
             <Card variant="hero" style={{ gap: spacing.md, alignItems: "center" }}>
               <View
@@ -517,14 +554,24 @@ export default function AddChildScreen() {
                   by this screen. So the ID is shown the same way every time and
                   only the headline differs. */}
               <AppText variant="title" style={{ textAlign: "center" }}>
-                {!posture.freeFlow
+                {trial
+                  ? t("mob.trial.started")
+                  : !posture.freeFlow
                   ? t("parent.child.created")
                   : posture.mode === "giveaway"
                     ? t("addchild.giveawayGranted")
                     : t("addchild.freeAccessGranted")}
               </AppText>
+              {trial ? (
+                <>
+                  <AppText variant="muted" style={{ textAlign: "center" }}>
+                    {t("mob.trial.subjects").replace("{subjects}", trial.subjectNames.join(", "))}
+                  </AppText>
+                  <TrialEndsLine trial={trial} />
+                </>
+              ) : null}
               <AppText variant="muted" style={{ textAlign: "center" }}>
-                {posture.freeFlow ? t("pay.idRevealed") : t("mob.addchild.idReady")}
+                {posture.freeFlow || trial ? t("pay.idRevealed") : t("mob.addchild.idReady")}
               </AppText>
               {doneId ? (
                 <View

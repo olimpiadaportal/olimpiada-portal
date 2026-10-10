@@ -1,55 +1,42 @@
 "use client";
 
-// D2/R11 — Add-Child WIZARD (new-child flow). A single client wizard that
-// drives the whole "create child → pick subjects → pick plan → payment →
-// reveal 8-digit ID" journey WITHOUT navigating away between steps.
+// D2/R11 — Add-Child WIZARD (new-child flow). One client wizard that drives
+// "create child → start the free trial → reveal the 8-digit ID" without
+// navigating away between steps.
 //
-// R11: the wizard is PAYMENT-MODE aware. The server page resolves the mode
-// (getPaymentModeInfo, server-only) and passes it down; the wizard only picks
-// which steps exist — every price/discount/grant stays server-authoritative.
+// TRIAL-FIRST ONBOARDING (owner, 2026-10-10). The subscription and payment
+// steps are OUT of onboarding. Until now the wizard ended at the bank: the
+// 24-hour trial lived on a page the wizard never led to, and production had
+// recorded zero trials. Now:
 //
-//   mode 'real' — the full 5-step flow:
-//     1. INFO     — name, city, school (filtered to city), grade, password.
-//                   "Next" calls the addChild server action (creates the child,
-//                   NO login ID yet) and stores the returned studentProfileId.
-//     2. SUBJECTS — pick the subjects AND give each one its own billing cycle
-//                   (≥1 required). Migration 109 moved the cycle here, per
-//                   subject; there is no global cycle control any more.
-//     3. PLAN     — REVIEW: the grouped per-cycle breakdown + a LIVE server
-//                   quote (sibling discount).
-//     4. CONFIRM  — the authoritative DUE-TODAY total and one honest button.
-//                   Migration 126 inverted this step the way 125 inverted
-//                   Manage-Subjects: it used to say "İndi ödə" / "Pay now",
-//                   charge nothing, apply the plan, and only THEN reveal the
-//                   real departure button underneath — so the parent was asked
-//                   to pay twice for one plan and the first ask was a lie. The
-//                   button now says what happens: "continue to payment" when
-//                   something is due (subscribeChild opens the intent and hands
-//                   back a SIGNED redirect; nothing is applied until the bank
-//                   confirms it), and "confirm" when the plan rides a trial and
-//                   nothing is charged. The amount printed here is the server's
-//                   `due_now` — the same number the gateway is asked for (audit
-//                   invariant H7) — never the plan total, which is a DIFFERENT
-//                   number whenever a trial applies. There are NO card fields:
-//                   the cardholder types the PAN on the acquirer's own page.
-//     5. DONE     — success + the allocated login ID + a link to /dashboard.
+//   mode 'real' — THREE steps:
+//     1. INFO  — name, city, school (filtered to city), grade, gender, password.
+//                "Next" calls addChild (creates the child AND its 8-digit login
+//                ID — migration 146) and keeps the returned ids.
+//     2. TRIAL — "Choose 2 subjects and enjoy 24 hours of FREE access": the ONE
+//                trial picker (FreeTrialActivation) inline, offering only the
+//                subjects the chosen grade studies. No card, no price, nothing
+//                charged; the database decides eligibility (one trial per child,
+//                a per-email cap that survives account deletion — migration 183).
+//                "Skip" moves on without a trial — the path a parent whose email
+//                has used its trials takes.
+//     3. DONE  — the trial's subjects and countdown (or, when skipped, the way
+//                to Manage Subscription) + the 8-digit ID.
 //
 //   mode 'giveaway' — TWO steps (Info → Done): after addChild succeeds the
 //     same transition calls activateChildGiveaway (grants free access and
-//     allocates/reveals the 8-digit ID immediately). No subjects/plan/payment.
-//     H8: an ACTIVE parent free-access window (freeAccessActive prop, server-
-//     resolved) takes the SAME two-step free path — the server action re-checks
-//     that a free window really covers the child before allocating the ID.
+//     reveals the 8-digit ID). H8: an ACTIVE parent free-access window
+//     (freeAccessActive prop, server-resolved) takes the SAME two-step path —
+//     the server action re-checks that a free window really covers the child.
 //
-//   mode 'off' — TWO steps (Info → Done): the child is still created (ID stays
-//     pending), then a notice step shows gate.paymentsOff + a dashboard link
-//     (the dashboard already renders "ID pending — choose a plan").
+//   mode 'off' — TWO steps (Info → Done): the child is still created, then a
+//     notice step shows gate.paymentsOff + a dashboard link.
 //
-// All amounts/discounts are computed server-side (quoteSubscription /
-// subscribeChild); this component never computes or sends a price.
+// Subscribing happens AFTER onboarding, from Manage Subscription
+// (children/[id]/subscribe), which prices everything server-side.
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { PasswordInput } from "@/components/PasswordInput";
 import {
   ChildAvatarPicker,
@@ -64,34 +51,11 @@ import { formatGradeLabel } from "@/lib/gradeLabel";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { addChild } from "@/lib/auth/parentService";
 import { saveChildAvatar } from "@/lib/auth/childAvatarActions";
-import {
-  subscribeChild,
-  quoteSubscription,
-  activateChildGiveaway,
-  type PlanCheckout,
-  type QuoteResult,
-} from "@/lib/auth/subscriptionService";
-import { CheckoutRedirect } from "@/components/CheckoutRedirect";
+import { activateChildGiveaway } from "@/lib/auth/subscriptionService";
 import { CopyableId } from "@/components/CopyableId";
-import { PlanSummary } from "@/components/PlanSummary";
-import { SubjectPlanCard } from "@/components/SubjectPlanCard";
-import {
-  addPlanSubject,
-  availableSubjects,
-  computePlanQuote,
-  DEFAULT_PLAN_INTERVAL,
-  formatAzn,
-  INTERVAL_LABEL_KEY,
-  isPlanInterval,
-  normalizePlan,
-  PLAN_INTERVALS,
-  removePlanSubject,
-  setPlanInterval,
-  subjectPrice,
-  type ConfiguratorSubject,
-  type PlanInterval,
-  type PlanItem,
-} from "@/lib/pricingConfigurator";
+import { FreeTrialActivation } from "@/components/FreeTrialActivation";
+import { FreeTrialCountdown } from "@/components/FreeTrialCountdown";
+import { formatShortDate } from "@/lib/formatDate";
 
 type City = { id: string; name: string };
 // NAMING (Round 21): `districts` is the CITIES table (historic naming) —
@@ -108,22 +72,20 @@ type School = {
   school_number?: number | null;
 };
 type Grade = { id: string; level: number; name: string };
-type Subj = { id: string; code: string | null; name: string; prices: Record<string, number> };
+type Subj = { id: string; code: string | null; name: string };
 
-type StepId = "info" | "subjects" | "plan" | "payment" | "done";
+type StepId = "info" | "trial" | "done";
 
 const STEP_KEY: Record<StepId, string> = {
   info: "addchild.step.info",
-  subjects: "addchild.step.subjects",
-  plan: "addchild.step.plan",
-  payment: "addchild.step.payment",
+  trial: "addchild.step.trial",
   done: "addchild.step.done",
 };
 
-// Ordered steps per payment mode. Unknown/missing mode falls back to the full
-// flow ('real') — the server actions still gate every mutation authoritatively.
+// Ordered steps per payment mode. Unknown/missing mode falls back to 'real' —
+// the server actions still gate every mutation authoritatively.
 const FLOWS: Record<string, StepId[]> = {
-  real: ["info", "subjects", "plan", "payment", "done"],
+  real: ["info", "trial", "done"],
   giveaway: ["info", "done"],
   off: ["info", "done"],
 };
@@ -134,36 +96,37 @@ export function AddChildWizard({
   schools,
   grades,
   subjects,
+  taughtByGrade = {},
   dict,
+  trialDict,
   paymentMode,
   freeAccessActive = false,
-  initialPlan,
-  initialSubjectIds = [],
-  initialInterval = "month",
+  initialTrialSubjectIds = [],
 }: {
   cities: City[];
   cityDistricts: CityDistrict[];
   schools: School[];
   grades: Grade[];
   subjects: Subj[];
+  /**
+   * Grade id → the subject ids that grade studies (subjects_taught_to_grade,
+   * migration 155), resolved server-side. `null` for a grade means "unknown,
+   * do not filter" — the same rule keepTaughtSubjects applies everywhere.
+   */
+  taughtByGrade?: Record<string, string[] | null>;
   dict: Record<string, string>;
+  /** Translated strings for the inline trial picker (FreeTrialActivation). */
+  trialDict: Record<string, string>;
   /** Server-resolved payment mode: 'real' | 'giveaway' | 'off'. */
   paymentMode: string;
   /** H8: server-resolved active free-access window for this parent. */
   freeAccessActive?: boolean;
   /**
-   * PRESELECTION handed off from the public /services configurator
-   * (`?plan=<uuid>:<cycle>,…`), already validated server-side against this same
-   * `subjects` catalog. Purely a UX convenience: the parent can still change
-   * everything, and subscribeChild re-validates and re-prices authoritatively.
+   * PRESELECTION handed off from the public /services configurator, already
+   * validated server-side. Pure UX: only the first two that this grade studies
+   * are preselected, and the parent can change them.
    */
-  initialPlan?: PlanItem[];
-  /**
-   * Legacy `?subjects=…&interval=…` hand-off, still accepted so a stale
-   * bookmarked link keeps preselecting. Ignored when `initialPlan` is given.
-   */
-  initialSubjectIds?: string[];
-  initialInterval?: string;
+  initialTrialSubjectIds?: string[];
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const locale = useLocale();
@@ -207,7 +170,7 @@ export function AddChildWizard({
   // the app already carry it end to end.
   const [infoWarnings, setInfoWarnings] = useState<string[]>([]);
   // The created child's profile id (returned by addChild; used by
-  // subscribeChild / activateChildGiveaway).
+  // the trial step / activateChildGiveaway).
   const [studentProfileId, setStudentProfileId] = useState<string | null>(null);
   // Avatar (preset boy/girl or an uploaded photo; "default" = initials bubble).
   // Applied AFTER the child row exists (the photo path needs the profile id);
@@ -216,40 +179,12 @@ export function AddChildWizard({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarDone, setAvatarDone] = useState(false);
 
-  // Step 2 — subjects AND their cycles. Seeded from the (server-validated)
-  // /services hand-off; the legacy subjects+interval pair still preselects.
-  const catalog = useMemo<ConfiguratorSubject[]>(
-    () => subjects.map((s) => ({ ...s, prices: s.prices as ConfiguratorSubject["prices"] })),
-    [subjects],
-  );
-  const [plan, setPlan] = useState<PlanItem[]>(() =>
-    normalizePlan(
-      initialPlan && initialPlan.length > 0
-        ? initialPlan
-        : initialSubjectIds.map((subjectId) => ({
-            subjectId,
-            interval: isPlanInterval(initialInterval)
-              ? initialInterval
-              : DEFAULT_PLAN_INTERVAL,
-          })),
-      catalog,
-    ),
-  );
-
-  // Step 3 — review + live quote.
-  const [quote, setQuote] = useState<QuoteResult | null>(null);
-
-  // Step 4 — payment confirmation + the result.
-  const [payError, setPayError] = useState<string | null>(null);
+  // The created child's 8-digit login ID (issued with the child, migration 146).
   const [childUniqueId, setChildUniqueId] = useState<string | null>(null);
-  // Migration 125 — the signed departure for the bank, when this plan is
-  // PAYABLE. A brand-new child normally rides the free trial and never gets one
-  // (`due_now` is 0, so subscribeChild applies the plan and returns `result`);
-  // with `launch_promo_config.trial_days = 0` the very first plan is charged,
-  // and then the money has to move BEFORE anything is granted. Holding it here
-  // keeps the wizard on this step instead of announcing a success that neither
-  // took a payment nor allocated an 8-digit ID.
-  const [checkout, setCheckout] = useState<PlanCheckout | null>(null);
+
+  // Step 2 — the free trial. Set once the database has granted it.
+  const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
+  const [trialSubjectIds, setTrialSubjectIds] = useState<string[]>([]);
 
   // Rayons of the chosen city. A city with NO active rayons skips the district
   // field entirely (its schools attach directly to the city).
@@ -273,41 +208,26 @@ export function AddChildWizard({
         ]
       : citySchoolsAll;
 
-  // The basket serialized as subject+cycle pairs: the quote effect keys on THIS
-  // so a cycle change on one card refetches, and an unrelated re-render does not.
-  const planKey = useMemo(
-    () => plan.map((p) => `${p.subjectId}:${p.interval}`).join(","),
-    [plan],
+  // What the trial step offers: the subjects the chosen grade studies, under the
+  // labels the parent reads. Same rule as every other subject list.
+  const trialSubjects = useMemo(() => {
+    const taught = gradeId ? taughtByGrade[gradeId] : null;
+    const allow = taught ? new Set(taught) : null;
+    return subjects
+      .filter((s) => !allow || allow.has(s.id))
+      .map((s) => ({ id: s.id, name: subjectLabel(t, s.code, s.name) }));
+  }, [subjects, taughtByGrade, gradeId, t]);
+  const trialPreselect = useMemo(() => {
+    const offered = new Set(trialSubjects.map((s) => s.id));
+    return initialTrialSubjectIds.filter((id) => offered.has(id)).slice(0, 2);
+  }, [initialTrialSubjectIds, trialSubjects]);
+  // Preview only — the RPC computes the real window from its own clock. Read
+  // when the trial step is reached (never during the server render).
+  const trialEndsPreview = useMemo(
+    () =>
+      cur === "trial" ? formatShortDate(new Date(Date.now() + 24 * 3600 * 1000), locale) : "",
+    [cur, locale],
   );
-  const byId = useMemo(() => new Map(catalog.map((s) => [s.id, s])), [catalog]);
-  const available = useMemo(
-    () => availableSubjects(catalog, plan.map((p) => p.subjectId)),
-    [catalog, plan],
-  );
-  const localQuote = useMemo(() => computePlanQuote(catalog, plan), [catalog, plan]);
-
-  // Live, AUTHORITATIVE quote whenever the review step's inputs change.
-  useEffect(() => {
-    if (cur !== "plan" || !studentProfileId) return;
-    if (!planKey) {
-      setQuote(null);
-      return;
-    }
-    let cancelled = false;
-    // Drop a stale quote (fetched for another basket) so the summary falls back
-    // to the honest client estimate while refetching.
-    setQuote(null);
-    const items = planKey.split(",").map((raw) => {
-      const [subjectId, interval] = raw.split(":");
-      return { subjectId, interval };
-    });
-    quoteSubscription({ studentId: studentProfileId, items }).then((q) => {
-      if (!cancelled) setQuote(q);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [cur, studentProfileId, planKey]);
 
   // STEP "info" → create the child (no login ID yet) and advance. In giveaway
   // mode the SAME transition then grants free access + reveals the 8-digit ID.
@@ -366,6 +286,9 @@ export function AddChildWizard({
         }
         sid = res.studentProfileId;
         setStudentProfileId(sid);
+        // Issued with the child (migration 146); a free path below may
+        // re-report the same id.
+        setChildUniqueId(res.childUniqueId ?? null);
         // A success that saved less than it was given says so.
         setInfoWarnings(res.warnings ?? []);
       }
@@ -405,61 +328,9 @@ export function AddChildWizard({
         setChildUniqueId(grant.childUniqueId ?? null);
       }
 
-      setStepIdx(1); // → subjects (real) or done (giveaway/off).
+      setStepIdx(1); // → trial (real) or done (giveaway/off).
     });
   }
-
-  // STEP "payment" → confirm the plan: create the subscription, allocate the
-  // 8-digit ID, then reveal it. (A real provider replaces the server seam
-  // inside subscribeChild — webhook-verified activation — not this UI step.)
-  function confirmPayment() {
-    if (!studentProfileId) return;
-    setPayError(null);
-    const fd = new FormData();
-    fd.set("student_id", studentProfileId);
-    // One entry per subject, carrying ITS cycle. No global `interval` field.
-    for (const p of plan) fd.append("plan", `${p.subjectId}:${p.interval}`);
-
-    startTransition(async () => {
-      const res = await subscribeChild(null, fd);
-      if (!res?.ok) {
-        setPayError(res?.error ?? tt("sub.err.invalid"));
-        return;
-      }
-      // PAYABLE: nothing was applied and nothing was charged yet. Show the
-      // departure form and stay here — advancing would claim a success that has
-      // not happened. The parent returns from the bank on /checkout/result.
-      if (res.checkout) {
-        setCheckout(res.checkout);
-        return;
-      }
-      // FREE (the trial): the plan exists, so the 8-digit ID exists too.
-      if (!res.result) {
-        setPayError(tt("sub.err.invalid"));
-        return;
-      }
-      setChildUniqueId(res.result.childUniqueId ?? null);
-      setStepIdx(flow.length - 1);
-    });
-  }
-
-  // Client-side ESTIMATE — each subject at its own cycle's price, shown until
-  // the authoritative server quote arrives. Never a "per period" figure: the
-  // basket may span several cycles.
-  const subtotal = localQuote.dueToday;
-
-  // MIGRATION 126 — IS A PAYMENT ABOUT TO HAPPEN? The label on the one button of
-  // the payment step, taken from the SERVER quote's `due_now` and nothing else:
-  // a trial (or a giveaway-priced basket) charges nothing and gets "confirm",
-  // anything else gets "continue to payment" and gets exactly that. `total` is
-  // NOT usable here — it is a different number whenever a trial applies, and
-  // reading it is what let the old button promise a payment it never made.
-  //
-  // While the quote is still loading the button is DISABLED rather than
-  // guessing. A quote that FAILED defaults to the payment wording: a button that
-  // promises a payment step and then turns out not to need one is a far smaller
-  // lie than one that promises no charge and then asks for money.
-  const payableNow = !quote || !quote.ok || quote.dueNow > 0;
 
   return (
     <div className="wizard">
@@ -703,203 +574,25 @@ export function AddChildWizard({
           </div>
         )}
 
-        {/* ========================= STEP — SUBJECTS ========================= */}
-        {cur === "subjects" && (
-          <div className="form">
-            <span className="field-label">{tt("sub.subjects")}</span>
-            <p className="hint">{tt("plan.perSubjectHint")}</p>
-            {subjects.length === 0 ? (
-              <p className="muted">{tt("sub.noSubjectsAvailable")}</p>
-            ) : (
-              <>
-                {plan.length > 0 && (
-                  <div className="splan-list">
-                    {plan.map((item) => {
-                      const s = byId.get(item.subjectId);
-                      if (!s) return null;
-                      return (
-                        <SubjectPlanCard
-                          key={s.id}
-                          id={s.id}
-                          code={s.code}
-                          name={s.name}
-                          interval={item.interval}
-                          prices={s.prices}
-                          onIntervalChange={(id, iv) =>
-                            setPlan((prev) => setPlanInterval(prev, id, iv))
-                          }
-                          onRemove={(id) => setPlan((prev) => removePlanSubject(prev, id))}
-                          disabled={pending}
-                          locale={locale}
-                          t={t}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-                {available.length === 0 ? (
-                  <p className="muted">{tt("cfg.allAdded")}</p>
-                ) : (
-                  <ul className="pcfg-list" style={{ marginTop: 10 }}>
-                    {available.map((s) => {
-                      // No global cycle exists any more, so the picker shows the
-                      // cheapest cycle the subject is actually sold on.
-                      let from: { price: number; iv: PlanInterval } | null = null;
-                      for (const iv of PLAN_INTERVALS) {
-                        const p = subjectPrice(s, iv);
-                        if (p === null) continue;
-                        if (!from || p < from.price) from = { price: p, iv };
-                      }
-                      return (
-                        <li key={s.id} className="pcfg-row">
-                          <span className="pcfg-row-main">
-                            <span className="pcfg-row-name">
-                              {subjectLabel(t, s.code, s.name)}
-                            </span>
-                            <span className="pcfg-row-price">
-                              {from === null
-                                ? tt("cfg.unpriced")
-                                : tt("plan.fromPrice")
-                                    .replace("{price}", formatAzn(from.price, locale))
-                                    .replace("{cycle}", tt(INTERVAL_LABEL_KEY[from.iv]))}
-                            </span>
-                          </span>
-                          <button
-                            type="button"
-                            className="pcfg-add"
-                            onClick={() =>
-                              setPlan((prev) => addPlanSubject(prev, s.id, catalog))
-                            }
-                            disabled={pending}
-                            aria-label={tt("cfg.addAria").replace(
-                              "{subject}",
-                              subjectLabel(t, s.code, s.name),
-                            )}
-                          >
-                            <span aria-hidden="true" className="pcfg-add-glyph">
-                              +
-                            </span>
-                            {tt("cfg.add")}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* =========================== STEP — PLAN =========================== */}
-        {/* Migration 109: this step is the REVIEW. The three global plan cards
-            are gone — the cycle is chosen per subject on the previous step —
-            and the breakdown is grouped by cycle, because a single "/ ay" total
-            under a mixed basket would be a false price. */}
-        {cur === "plan" && (
-          <div className="wiz-plan-step">
-            <span className="field-label">{tt("plan.cycle")}</span>
-            <div className="wizard-summary">
-              <div className="quote-row">
-                <span className="q-label">{tt("pay.subtotal")}</span>
-                <span>
-                  {quote && quote.ok ? quote.base : subtotal}{" "}
-                  {quote && quote.ok ? quote.currency : "AZN"}
-                </span>
-              </div>
-              <PlanSummary
-                quote={localQuote}
-                server={
-                  quote && quote.ok
-                    ? {
-                        discountPercent: quote.discount_percent,
-                        discount: quote.discount,
-                        // Migration 127: the sibling TIER, so the wizard names
-                        // the saving the same way the subscribe screen does.
-                        rank: quote.rank,
-                        // `due_now`, NOT `total` (migration 126, audit
-                        // invariant H7). They are different numbers whenever a
-                        // trial applies, and this row is captioned "due today".
-                        dueToday: quote.dueNow,
-                        trialDays: quote.trial_days,
-                        currency: quote.currency,
-                        // The per-cycle groups carry the sibling discount already
-                        // applied. Omitting them made PlanSummary fall back to its
-                        // client list-price sum, so a 2nd/3rd child saw
-                        // UNDISCOUNTED per-cycle subtotals and renewal sentences
-                        // under a correctly discounted total.
-                        groups: quote.groups ?? null,
-                      }
-                    : null
-                }
-                loading={!quote}
-                locale={locale}
-                t={t}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* ========================= STEP — PAYMENT ========================= */}
-        {/* CONFIRMATION, not a card form. The demo payment mode was deleted on
-            2026-08-18: there is no cosmetic card entry left anywhere, and the
-            provider's own hosted page will collect the card when it lands. */}
-        {cur === "payment" && (
-          <div className="pay-card">
-            <h2 style={{ margin: "0 0 4px" }}>{tt("pay.title")}</h2>
-            <p className="muted">{tt("pay.note")}</p>
-            {/* THE FREE TRIAL, offered where the money is asked for (owner,
-                2026-10-09). Until now this step led ONLY to the bank: the
-                24-hour trial lived on the child's subscription page, which the
-                wizard never pointed at, and production had never recorded one.
-                Shown whenever something is due — a new child has, by
-                definition, never used their one trial. */}
-            {payableNow && !checkout && (
-              <p className="wiz-trial-note" role="note">
-                {tt("addchild.trialNote")}
-              </p>
-            )}
-
-            <div className="wizard-summary" style={{ marginTop: 18 }}>
-              {/* No period suffix: with per-subject cycles the only honest
-                  single figure is what is charged now. */}
-              <div className="quote-total">
-                <span>{tt("plan.dueToday")}</span>
-                <span>
-                  {quote && quote.ok ? quote.dueNow : subtotal}{" "}
-                  {quote && quote.ok ? quote.currency : "AZN"}
-                </span>
-              </div>
-            </div>
-
-            {/* Says WHY a zero is zero, so it cannot read as "free forever".
-                Same sentence and same source as the subscribe page. */}
-            {quote && quote.ok && quote.trial_days > 0 && quote.dueNow === 0 && (
-              <p className="muted">
-                {tt("sub.trialNoChargeToday").replace(
-                  "{days}",
-                  String(quote.trial_days),
-                )}
-              </p>
-            )}
-
-            {payError && <p className="form-error">{payError}</p>}
-
-            {/* The full-page redirect to the acquirer, once the server has
-                opened and signed the intent. Rendered here rather than on a
-                step of its own: the parent authorises the charge in the same
-                place they were shown what it costs. */}
-            {checkout && (
-              <CheckoutRedirect
-                order={checkout.order}
-                amount={checkout.amount}
-                signed={{
-                  action: checkout.action,
-                  fields: checkout.fields,
-                  amount: checkout.amount,
-                }}
-              />
-            )}
+        {/* ========================== STEP — TRIAL ========================== */}
+        {/* The ONE trial picker, inline. Eligibility, the two-subject rule, the
+            24 hours and the per-email cap are all the database's; this step
+            only collects the choice. Nothing here mentions a price. */}
+        {cur === "trial" && studentProfileId && (
+          <div className="wiz-trial-step">
+            <FreeTrialActivation
+              studentId={studentProfileId}
+              childName={`${firstName.trim()} ${lastName.trim()}`.trim()}
+              subjects={trialSubjects}
+              endsAtPreview={trialEndsPreview}
+              initialSelected={trialPreselect}
+              d={trialDict}
+              onActivated={(endsAt, ids) => {
+                setTrialEndsAt(endsAt);
+                setTrialSubjectIds(ids);
+                setStepIdx(flow.length - 1);
+              }}
+            />
           </div>
         )}
 
@@ -927,9 +620,32 @@ export function AddChildWizard({
                       ? tt("addchild.giveawayGranted")
                       : freeFlow
                         ? tt("addchild.freeAccessGranted")
-                        : tt("pay.success")}
+                        : trialEndsAt
+                          ? tt("addchild.trial.started")
+                          : tt("addchild.created")}
                   </strong>
                 </p>
+                {trialEndsAt && (
+                  <>
+                    <p className="muted">
+                      {tt("addchild.trial.subjects").replace(
+                        "{subjects}",
+                        trialSubjects
+                          .filter((s) => trialSubjectIds.includes(s.id))
+                          .map((s) => s.name)
+                          .join(", "),
+                      )}
+                    </p>
+                    <p className="ftrial-status-endsin">
+                      <span>{tt("trial.status.endsIn")}</span>{" "}
+                      <FreeTrialCountdown
+                        endsAt={trialEndsAt}
+                        units={{ h: tt("trial.time.h"), m: tt("trial.time.m"), s: tt("trial.time.s") }}
+                        endedLabel={tt("trial.expired.title")}
+                      />
+                    </p>
+                  </>
+                )}
                 <p className="muted">{tt("pay.idRevealed")}</p>
                 {childUniqueId && <CopyableId id={childUniqueId} size="lg" />}
                 <p className="muted">{tt("parent.child.idNote")}</p>
@@ -937,6 +653,12 @@ export function AddChildWizard({
                   <Link className="btn" href="/dashboard">
                     {tt("parent.dash.title")}
                   </Link>
+                  {/* Subscribing lives HERE now, after onboarding — never inside it. */}
+                  {!freeFlow && studentProfileId && (
+                    <Link className="btn-ghost" href={`/children/${studentProfileId}/subscribe`}>
+                      {tt("addchild.manageSubscription")}
+                    </Link>
+                  )}
                 </div>
               </>
             )}
@@ -947,14 +669,17 @@ export function AddChildWizard({
       {/* Actions (hidden on the final DONE step). */}
       {cur !== "done" && (
         <div className="wizard-actions">
-          {stepIdx > 0 ? (
+          {/* No Back from the trial step: the child already exists, and the
+              info form would no longer be what was saved. The way out of the
+              trial step is to skip it. */}
+          {cur === "trial" ? (
             <button
               type="button"
               className="btn-ghost"
-              onClick={() => setStepIdx((s) => Math.max(0, s - 1))}
+              onClick={() => setStepIdx(flow.length - 1)}
               disabled={pending}
             >
-              {tt("addchild.back")}
+              {tt("addchild.trial.skip")}
             </button>
           ) : (
             <span />
@@ -967,51 +692,6 @@ export function AddChildWizard({
                 : flow.length === 2
                   ? tt("addchild.createChild")
                   : tt("addchild.next")}
-            </button>
-          )}
-          {cur === "subjects" && (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setStepIdx(2)}
-              disabled={pending || plan.length === 0}
-            >
-              {tt("addchild.next")}
-            </button>
-          )}
-          {cur === "plan" && (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setStepIdx(3)}
-              disabled={pending || plan.length === 0}
-            >
-              {tt("addchild.next")}
-            </button>
-          )}
-          {/* The trial first: it needs no card and no payment. It hands over to
-              the ONE trial picker (children/[id]/subscribe → FreeTrialActivation)
-              rather than duplicating it, so eligibility, the two-subject cap and
-              the 24 hours stay enforced in a single place — the database. The
-              child already has their 8-digit login ID: create_child_account
-              issues it when the child is created. */}
-          {cur === "payment" && !checkout && payableNow && studentProfileId && (
-            <Link className="btn" href={`/children/${studentProfileId}/subscribe`}>
-              {tt("addchild.startTrial")}
-            </Link>
-          )}
-          {cur === "payment" && !checkout && (
-            <button
-              type="button"
-              className={payableNow && studentProfileId ? "btn-ghost" : "btn"}
-              onClick={confirmPayment}
-              disabled={pending || plan.length === 0 || !quote}
-            >
-              {pending
-                ? tt("pay.processing")
-                : payableNow
-                  ? tt("pay.continue")
-                  : tt("pay.confirmNoCharge")}
             </button>
           )}
         </div>

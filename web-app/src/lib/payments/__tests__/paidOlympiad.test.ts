@@ -998,7 +998,8 @@ describe("the copy this change adds", () => {
     // A page-scoped dictionary is a KEYS array, and a key missing from it
     // renders as the key itself — in front of a parent, at the payment step.
     const pages = [
-      join(SRC, "app", "(parent)", "children", "new", "page.tsx"),
+      // Not children/new: onboarding is trial-first since 2026-10-10 and
+      // prices nothing; the subscription page is where the discount is named.
       join(SRC, "app", "(parent)", "children", "[id]", "subscribe", "page.tsx"),
     ];
     for (const page of pages) {

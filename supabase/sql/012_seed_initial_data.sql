@@ -1037,3 +1037,10 @@ on conflict (platform, product_id) do nothing;
 -- then 158, 159, 160 in that order. All are idempotent. 159 needs 158's
 -- districts to resolve; 160 needs the Bakı rows seeded above.
 -- =============================================================================
+
+-- Migration 183: free-trial cap per parent email, and extension size/limit.
+insert into public.system_settings (key, value_json) values
+  ('trial.max_per_email', '3'::jsonb),
+  ('trial.max_extensions', '1'::jsonb),
+  ('trial.extension_hours', '24'::jsonb)
+on conflict (key) do nothing;

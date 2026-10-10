@@ -4,10 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
-import { isChildFreeAccessActive } from "@/lib/freeAccess";
-import { getChildFreeTrial } from "@/lib/freeTrial";
-import { isChildEntitled } from "@/lib/childEntitlement";
-import { accessPillKey } from "@/lib/accessPill";
+import { getChildPlanStatus, type ChildPlanStatus } from "@/lib/childPlanStatus";
 import { formatPercent } from "@/lib/formatPercent";
 import { resolveChildAvatarUrl } from "@/lib/childAvatar";
 import { ChildAvatar } from "@/components/ChildAvatar";
@@ -15,6 +12,7 @@ import { ChildCardActions } from "@/components/ChildCardActions";
 import { CopyableId } from "@/components/CopyableId";
 import { InfoCarousel, type InfoSlide } from "@/components/InfoCarousel";
 import { ParentNewsPanel } from "@/components/ParentNewsPanel";
+import { TrialExpiredBanner, type ExpiredTrialItem } from "@/components/TrialExpiredBanner";
 
 const CHILD_KEYS = [
   "child.resetPw", "child.newPassword", "child.resetPwSubmit",
@@ -23,6 +21,7 @@ const CHILD_KEYS = [
 ];
 
 const NEWS_KEYS = ["news.latest", "news.viewAll", "news.none"];
+const BANNER_KEYS = ["parent.trialBanner.body", "parent.trialBanner.cta", "parent.trialBanner.dismiss"];
 
 // get_child_leaderboard_summary payload (all fields optional-defensive: any RPC
 // error/null is treated as "no leaderboard data" for that child). Round 36:
@@ -39,6 +38,13 @@ type LbSummary = {
   total_month?: number | null;
   rank_all_time?: number | null;
 };
+
+/** Colour hint for the status pill; the words carry the meaning. */
+function pillTone(key: string | undefined): string {
+  if (key === "access.subscriptionActive" || key === "access.trialActive") return "pill-ok";
+  if (key === "access.trialExpired") return "pill-warn";
+  return "";
+}
 
 export default async function ParentDashboard() {
   const parent = await requireParent();
@@ -74,42 +80,32 @@ export default async function ParentDashboard() {
     ),
   );
 
-  // M10: a per-child FREE-ACCESS interval shows the same "free" pill the
-  // giveaway uses instead of the raw access_status. Per-child check (small N)
-  // so a window for one child never re-labels an uncovered sibling.
-  const freeAccessByChild = new Map<string, boolean>(
+  // Each child's plan status — Subscription Active / Trial Active / Trial
+  // Expired, or the campaign's own word — from every rail that can grant
+  // access (lib/childPlanStatus; the label rule is lib/accessPill). Per child
+  // (small N) so one child's window never re-labels an uncovered sibling.
+  const statusByChild = new Map<string, ChildPlanStatus>(
     await Promise.all(
       list.map(
         async (c) =>
-          [c.profile_id as string, await isChildFreeAccessActive(c.profile_id)] as const,
+          [
+            c.profile_id as string,
+            await getChildPlanStatus(c.profile_id, c.access_status, giveawayActive),
+          ] as const,
       ),
     ),
   );
 
-  // The access pill is decided from every rail that can grant access, not from
-  // `students.access_status` alone — see lib/accessPill for the two grants that
-  // column never records (an entitlement-only purchase/comp, and the free
-  // trial, which THIS site is where a parent activates).
-  //
-  // Only for the children whose card actually SHOWS that pill: the giveaway and
-  // a per-child free-access window replace it with their own word, and two RPCs
-  // per child feeding a label nothing renders is a round trip a dashboard does
-  // not need. Both reads fail closed to false, so the pill falls back to the
-  // status column exactly as it did before.
-  const pillChildren = giveawayActive
-    ? []
-    : list.filter((c) => !freeAccessByChild.get(c.profile_id));
-  const grantsByChild = new Map<string, { entitled: boolean; onTrial: boolean }>(
-    await Promise.all(
-      pillChildren.map(async (c) => {
-        const [entitled, trial] = await Promise.all([
-          isChildEntitled(c.profile_id),
-          getChildFreeTrial(c.profile_id),
-        ]);
-        return [c.profile_id as string, { entitled, onTrial: trial.active }] as const;
-      }),
-    ),
-  );
+  // The expired-trial banners: only for children this parent created (the one
+  // who can subscribe for them), whose trial is over with nothing else open.
+  const expiredTrials: ExpiredTrialItem[] = list
+    .filter((c) => c.created_by_parent_profile_id === parent.profileId)
+    .flatMap((c) => {
+      const st = statusByChild.get(c.profile_id);
+      if (!st?.trialExpiredNoAccess || !st.trial.endsAt) return [];
+      const name = [c.first_name, c.last_name].filter(Boolean).join(" ") || "—";
+      return [{ childId: c.profile_id as string, name, endsAt: st.trial.endsAt }];
+    });
 
   // L-quick: each child's leaderboard summary (rank/points/streak) via the
   // parent-scoped RPC — RLS inside the RPC verifies the parent↔child link, so
@@ -135,6 +131,8 @@ export default async function ParentDashboard() {
 
   const childDict: Record<string, string> = {};
   for (const k of CHILD_KEYS) childDict[k] = t(k);
+  const bannerDict: Record<string, string> = {};
+  for (const k of BANNER_KEYS) bannerDict[k] = t(k);
   const newsDict: Record<string, string> = {};
   for (const k of NEWS_KEYS) newsDict[k] = t(k);
 
@@ -145,6 +143,13 @@ export default async function ParentDashboard() {
 
   return (
     <section className="parent-home">
+      {/* 0) "Your child's free trial has expired" — dismissible, per child. */}
+      {expiredTrials.length > 0 && (
+        <div className="home-block">
+          <TrialExpiredBanner items={expiredTrials} d={bannerDict} />
+        </div>
+      )}
+
       {/* 1) Information carousel */}
       <div className="home-block">
         <InfoCarousel title={t("carousel.title")} slides={carouselSlides} />
@@ -171,7 +176,7 @@ export default async function ParentDashboard() {
               const lbRanked = !!lb && lb.rank_month != null;
               const lbProvisional = !!lb && !lbRanked && !!lb.provisional_month;
               const childName = [c.first_name, c.last_name].filter(Boolean).join(" ");
-              const grants = grantsByChild.get(c.profile_id);
+              const status = statusByChild.get(c.profile_id);
               const isCreator = c.created_by_parent_profile_id === parent.profileId;
               return (
               <div className="card" key={c.profile_id}>
@@ -192,22 +197,11 @@ export default async function ParentDashboard() {
                   )}
                 </p>
                 <p>
-                  {giveawayActive ? (
-                    <span className="pill gvw-access">{t("access.giveaway")}</span>
-                  ) : freeAccessByChild.get(c.profile_id) ? (
-                    // M10: active free-access interval for THIS child.
-                    <span className="pill gvw-access">{t("access.freeAccess")}</span>
-                  ) : (
-                    <span className="pill">
-                      {t(
-                        accessPillKey(
-                          c.access_status,
-                          grants?.entitled ?? false,
-                          grants?.onTrial ?? false,
-                        ),
-                      )}
-                    </span>
-                  )}
+                  {/* Status only — the trial's countdown belongs to the child's
+                      own dashboard, never to this one (owner, 2026-10-10). */}
+                  <span className={status?.free ? "pill gvw-access" : `pill ${pillTone(status?.pillKey)}`}>
+                    {t(status?.pillKey ?? "access.inactive")}
+                  </span>
                 </p>
                 {/* L-quick: compact leaderboard chip (rank / percent / streak). */}
                 {leaderboardOn && (

@@ -155,7 +155,17 @@ const PRICING_KEYS_MOBILE_RENDERS = new Set([
 // and "coming soon to Google Play". It names both stores and the iPhone, and
 // no mobile screen renders it. An Android binary carrying an App Store
 // download line is exactly the string a Play reviewer greps for.
-const WEB_ONLY_PREFIXES = ["terms.", "checkout.", "payres.", "appHero."];
+// "addchild.trial." and "parent.trialBanner." (2026-10-10): the web onboarding
+// and dashboard speak of a "free trial" and say "Subscribe now". The apps render
+// their own store-safe wording (mob.trial.*), so none of this ships in a binary.
+const WEB_ONLY_PREFIXES = [
+  "terms.",
+  "checkout.",
+  "payres.",
+  "appHero.",
+  "addchild.trial.",
+  "parent.trialBanner.",
+];
 
 // ---------------------------------------------------------------------------
 // DEAD COMMERCE STRINGS — shipped in the bundle, rendered by nothing.
@@ -184,11 +194,19 @@ const WEB_ONLY_PREFIXES = ["terms.", "checkout.", "payres.", "appHero."];
 // still has every one of them, which is correct — olympiq.ai is where
 // purchasing legitimately happens.
 const DEAD_COMMERCE_KEYS = new Set([
-  // 2026-10-09: the add-child free-trial note says payment "must be completed
-  // through the Parent Profile" — on Android, a purchase-silent binary, that is
-  // a steering sentence. The wizard that renders it is web-only.
-  "addchild.trialNote",
-  "addchild.startTrial",
+  // 2026-10-10: the web Add-Child wizard's link to the subscription page. A
+  // purchase destination by name; the apps carry their own wording per platform.
+  "addchild.manageSubscription",
+  // The same wizard's step label ("Free trial") and the web child-edit
+  // page's subscription card. Unrendered on mobile.
+  "addchild.step.trial",
+  "childedit.planTitle",
+  "childedit.planHint",
+  // The web parent status words for the trial. Their ru wording uses the
+  // trial vocabulary the store sweep bans; the app says the same state with
+  // its own mob.access.trialActive / mob.access.trialExpired.
+  "access.trialActive",
+  "access.trialExpired",
   // Added 2026-09-22 after the Play rejection. All three ship a purchase verb
   // and are verified UNRENDERED on mobile (no literal reference under
   // mobile-app/src, and the only oly* template-literal family is

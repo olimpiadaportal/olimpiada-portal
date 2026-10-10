@@ -9,6 +9,7 @@ import React, { useMemo, useState } from "react";
 import { FlatList, Keyboard, KeyboardAvoidingView, Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
+import { SwipeDownSheet } from "@/components/SwipeDownSheet";
 import { TextField } from "@/components/TextField";
 import { useT } from "@/i18n/useT";
 import { azFilter, SEARCH_MIN_ITEMS } from "@/lib/azFold";
@@ -150,7 +151,10 @@ export function SelectField({
                 88% (was 70%) is SheetShell's number too: the handle, the title
                 and the search box spend ~120pt before a single option renders,
                 so on a 568pt-tall phone a 70% sheet showed barely five rows. */}
-            <View
+            <SwipeDownSheet
+              visible={open}
+              onDismiss={close}
+              closeLabel={t("drawer.close")}
               style={{
                 backgroundColor: tokens.surface,
                 borderTopLeftRadius: radius.xl,
@@ -162,15 +166,6 @@ export function SelectField({
                 gap: spacing.md,
               }}
             >
-              <View
-                style={{
-                  alignSelf: "center",
-                  width: 44,
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: tokens.border,
-                }}
-              />
               <AppText variant="title" style={{ fontSize: 16 }}>
                 {label}
               </AppText>
@@ -256,7 +251,7 @@ export function SelectField({
                   );
                 }}
               />
-            </View>
+            </SwipeDownSheet>
           </KeyboardAvoidingView>
         </KeyboardFocusBoundary>
       </Modal>

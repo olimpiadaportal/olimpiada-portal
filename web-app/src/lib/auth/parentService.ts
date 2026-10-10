@@ -595,15 +595,22 @@ export async function deleteParentAccount(
 }
 
 export type AddChildState =
-  // Batch H: the child is created WITHOUT a login ID (allocated on subscribe). On
-  // success we return the new studentProfileId so the UI sends the parent to the
-  // subscribe/plan step (where the 8-digit ID is revealed).
+  // On success we return the new studentProfileId (the wizard's trial step needs
+  // it) and the 8-digit login ID, which create_child_account has issued with the
+  // child since migration 146 — the wizard reveals it on its DONE step.
   //
   // `warnings` ride along with a SUCCESS: i18n keys for what did not get saved
   // even though the child did. They are not errors — nothing is retried and
   // nothing is rolled back — but the wizard must show them, or the parent is
   // told everything worked when it did not.
-  | { ok: boolean; studentProfileId?: string; errors?: string[]; warnings?: string[] }
+  | {
+      ok: boolean;
+      studentProfileId?: string;
+      /** The 8-digit login ID, issued with the child since migration 146. */
+      childUniqueId?: string | null;
+      errors?: string[];
+      warnings?: string[];
+    }
   | null;
 
 export async function addChild(
@@ -657,7 +664,12 @@ export async function addChild(
   // registration. Anything the core could not store travels back as a warning
   // the wizard renders; dropping it here would restore the silence this
   // returns.
-  return { ok: true, studentProfileId: result.studentProfileId, warnings: result.warnings };
+  return {
+    ok: true,
+    studentProfileId: result.studentProfileId,
+    childUniqueId: result.childUniqueId,
+    warnings: result.warnings,
+  };
 }
 
 // ---- Child management by the parent (reset password / delete) ---------------

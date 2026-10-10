@@ -13,6 +13,7 @@ import {
   parseAccessibleSubjectIds,
 } from "@/lib/coverage";
 import { fetchTaughtSubjectIds, keepTaughtSubjects } from "@/lib/data";
+import { NO_TRIAL, parseTrialState, type TrialState } from "@/lib/trialClock";
 import { ARENA_PALETTES, type ArenaPalette } from "@/theme/tokens";
 import { accountScoped } from "@/features/auth/accountScope";
 
@@ -123,11 +124,13 @@ async function fetchMyFreeAccessActive(): Promise<boolean> {
  * here without this. Safe fallback = no trial, so a hiccup locks rather than
  * unlocks.
  */
-async function fetchMyFreeTrial(): Promise<{ active: boolean; endsAt: string | null }> {
+async function fetchMyFreeTrial(): Promise<TrialState> {
   const { data, error } = await supabase.rpc("my_free_trial");
-  if (error || !data || typeof data !== "object") return { active: false, endsAt: null };
-  const d = data as { active?: boolean; ends_at?: string | null };
-  return { active: d.active === true, endsAt: d.ends_at ?? null };
+  // receivedAt is stamped HERE, with the answer, so the countdown's skew is
+  // measured against the moment the server spoke — not against a later mount
+  // that read the same answer out of the cache.
+  if (error) return { ...NO_TRIAL, receivedAt: Date.now() };
+  return parseTrialState(data, Date.now());
 }
 
 /**
@@ -172,6 +175,9 @@ export type ArenaAccess = {
   trialNow: boolean;
   /** Expiry of that access, for the countdown. Null when there is none. */
   trialEndsAt: string | null;
+  /** The whole trial state — subjects, server clock, used/extended — for the
+   *  child dashboard's trial card (2026-10-10). */
+  trial: TrialState;
   /**
    * The server reports at least one playable subject for this child.
    *
@@ -260,6 +266,7 @@ export function useArenaAccess(): ArenaAccess {
     freeNow,
     trialNow,
     trialEndsAt: trial.data?.endsAt ?? null,
+    trial: trial.data ?? NO_TRIAL,
     entitledNow,
     accessibleSubjectIds,
     accessStatus,

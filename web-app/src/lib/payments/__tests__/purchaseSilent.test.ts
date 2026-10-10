@@ -379,42 +379,28 @@ describe("genuinely free changes still apply with no payment", () => {
 // =============================================================================
 
 describe("the add-child wizard", () => {
-  const wizard = read(WIZARD);
-  const wizardCode = code(wizard);
+  // TRIAL-FIRST (owner, 2026-10-10): onboarding no longer contains a payment
+  // step at all, so the one it had can no longer promise a payment it does not
+  // make. Subscribing happens afterwards on the subscription page, which the
+  // sweeps above already pin (SubscribeForm / ManageSubjects).
+  const wizardCode = code(read(WIZARD));
 
-  it("prints the amount the gateway is asked for, never the plan total", () => {
-    // Audit invariant H7. `total` and `due_now` are DIFFERENT numbers whenever a
-    // trial applies, and the row is captioned "due today".
-    expect(wizardCode).not.toContain("quote.total");
-    expect(wizardCode).toContain("quote.dueNow");
-    expect(wizardCode).toContain("dueToday: quote.dueNow");
-  });
-
-  it("no longer renders a button that promises a payment it does not make", () => {
-    // "İndi ödə" charged nothing: confirming applied the plan and the REAL
-    // departure button appeared underneath, so a parent was asked to pay twice
-    // and the first ask was a lie.
-    expect(wizardCode).not.toContain("pay.payNow");
-    expect(wizardCode).toContain("pay.continue");
-    expect(wizardCode).toContain("pay.confirmNoCharge");
-  });
-
-  it("takes the label from the server quote and disables it until one arrives", () => {
-    expect(wizardCode).toContain("const payableNow = !quote || !quote.ok || quote.dueNow > 0");
-    expect(wizardCode).toContain("disabled={pending || plan.length === 0 || !quote}");
-  });
-
-  it("explains a zero rather than letting it read as free forever", () => {
-    expect(wizardCode).toContain("sub.trialNoChargeToday");
+  it("opens no checkout, asks for no quote and prints no amount", () => {
+    for (const gone of [
+      "subscribeChild", "quoteSubscription", "CheckoutRedirect", "quote.",
+      "pay.continue", "pay.payNow", "pay.confirmNoCharge", "formatAzn",
+    ]) {
+      expect(wizardCode, gone).not.toContain(gone);
+    }
   });
 
   it("has every key it renders in the page's dictionary", () => {
     // A page-scoped dictionary is a KEYS array, and a key missing from it
-    // renders as the key itself — in front of a parent, at the payment step.
-    const keys = read(WIZARD_PAGE);
-    for (const key of ["pay.continue", "pay.confirmNoCharge", "sub.trialNoChargeToday"]) {
-      expect(keys, key).toContain(`"${key}"`);
-    }
+    // renders as the key itself — in front of a parent.
+    const page = read(WIZARD_PAGE);
+    const keys = new Set([...wizardCode.matchAll(/tt\("([^"]+)"\)/g)].map((m) => m[1]));
+    expect(keys.size).toBeGreaterThan(10);
+    for (const key of keys) expect(page, key).toContain(`"${key}"`);
   });
 });
 

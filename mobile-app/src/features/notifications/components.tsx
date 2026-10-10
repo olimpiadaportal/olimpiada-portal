@@ -28,6 +28,7 @@ import {
 } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
+import { SwipeDownSheet } from "@/components/SwipeDownSheet";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, shadow, spacing, tint } from "@/theme/tokens";
 import { RichBody } from "@/lib/notifMarkdown";
@@ -404,7 +405,9 @@ export function NotificationDetailSheet({
         onPress={onClose}
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
       />
-      <View
+      <SwipeDownSheet
+        onDismiss={onClose}
+        closeLabel={t("notif.close")}
         style={[
           {
             backgroundColor: tokens.surface,
@@ -420,15 +423,6 @@ export function NotificationDetailSheet({
           shadow("float", tokens.shadow),
         ]}
       >
-        <View
-          style={{
-            alignSelf: "center",
-            width: 44,
-            height: 4,
-            borderRadius: 2,
-            backgroundColor: tokens.border,
-          }}
-        />
         <ScrollView contentContainerStyle={{ gap: spacing.lg }}>
           {/* Header: icon squircle + category eyebrow + title + timestamp. */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
@@ -501,7 +495,7 @@ export function NotificationDetailSheet({
             <Button title={t("notif.close")} variant="ghost" style={{ flex: 1 }} onPress={onClose} />
           </View>
         </ScrollView>
-      </View>
+      </SwipeDownSheet>
     </Modal>
   );
 }

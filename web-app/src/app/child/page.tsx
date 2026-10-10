@@ -5,6 +5,8 @@ import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
+import { getMyFreeTrial } from "@/lib/freeTrial";
+import { ChildTrialCard } from "@/components/ChildTrialCard";
 import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
 import {
@@ -88,9 +90,14 @@ export default async function ChildDashboard() {
       supabase.rpc("get_streak_status"),
     ]);
   const freeNow = giveawayActive || freeAccessActive;
+  // The 24-hour free trial (migration 140/183). It grants access through
+  // 'trial' entitlements and writes no access_status, so this page used to
+  // show a trialling child the LOCKED screen and none of their two subjects,
+  // while the database let them play. An active trial is access.
+  const trial = await getMyFreeTrial();
 
   const access = (student as any)?.access_status ?? "inactive";
-  const hasAccess = access === "trialing" || access === "active" || freeNow;
+  const hasAccess = access === "trialing" || access === "active" || freeNow || trial.active;
 
   // id → locale-aware display label (subj.<code> via subjectLabel; DB name as
   // the fallback). Only labels change — ids stay the stored values.
@@ -106,6 +113,10 @@ export default async function ChildDashboard() {
   // is_giveaway_active() — so an unpriced subject was accessible in fact and
   // invisible on screen. `subjects` is the admin's own list and its select
   // policy is USING (true), so the child's request-scoped client can read it.
+  // The trial's subjects are practicable for its whole window.
+  if (trial.active) {
+    for (const s of trial.subjects) subjMap.set(s.id, subjectLabel(t, s.code, s.name));
+  }
   if (freeNow) {
     const { data: all } = await supabase
       .from("subjects")
@@ -249,8 +260,27 @@ export default async function ChildDashboard() {
     </div>
   );
 
+  // The trial card shows while the trial runs AND once it has ended without
+  // any other access — never for a child who is subscribed or on a free window.
+  const showTrialCard = trial.used && trial.endsAt !== null && (trial.active || !hasAccess);
+  const trialDict: Record<string, string> = {};
+  for (const k of [
+    "trial.child.title", "trial.child.remaining", "trial.child.subjects", "trial.child.ended",
+    "trial.child.endedNote", "trial.child.extended", "trial.time.h", "trial.time.m", "trial.time.s",
+  ]) trialDict[k] = t(k);
+
   return (
     <>
+      {showTrialCard && (
+        <ChildTrialCard
+          endsAt={trial.endsAt as string}
+          serverNow={trial.serverNow}
+          active={trial.active}
+          extended={trial.extended}
+          subjects={trial.subjects.map((s) => subjectLabel(t, s.code, s.name))}
+          d={trialDict}
+        />
+      )}
       {/* ---- Hero ---- */}
       <section className="arena-hero">
         <div className="arena-hero-left">

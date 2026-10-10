@@ -20,6 +20,7 @@ import { Card } from "@/components/Card";
 import { ChildAvatar } from "@/components/ChildAvatar";
 import { ActionAreaShell } from "@/components/ActionArea";
 import { StarField } from "@/components/StarField";
+import { SwipeDownSheet } from "@/components/SwipeDownSheet";
 import { scrollBodyBottomInset } from "@/components/actionAreaLayout";
 import { scrollPaddingBottom } from "@/components/keyboardLayout";
 import { KeyboardFocusProvider, useKeyboardAwareScroll } from "@/lib/useKeyboardAware";
@@ -349,7 +350,10 @@ export function SheetShell({
         onPress={onClose}
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
       />
-      <View
+      <SwipeDownSheet
+        visible={visible}
+        onDismiss={onClose}
+        closeLabel={closeLabel}
         style={[
           {
             backgroundColor: tokens.surface,
@@ -363,17 +367,8 @@ export function SheetShell({
           shadow("float", tokens.shadow),
         ]}
       >
-        <View
-          style={{
-            alignSelf: "center",
-            width: 44,
-            height: 4,
-            borderRadius: 2,
-            backgroundColor: tokens.border,
-          }}
-        />
         {children}
-      </View>
+      </SwipeDownSheet>
     </Modal>
   );
 }

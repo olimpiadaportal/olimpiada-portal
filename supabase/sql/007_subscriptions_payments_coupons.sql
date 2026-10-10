@@ -1178,3 +1178,34 @@ comment on column public.iap_notifications.notification_type is
 -- better than pretending — rows accumulate at the rate of purchases and refunds,
 -- and they are the evidence a chargeback is answered with. If a prune is ever
 -- wanted it belongs in 016 with a horizon measured in years.
+-- =============================================================================
+-- Migration 183 (2026-10-10): the free-trial email ledger and trial extensions.
+-- The ledger is keyed on a hash of the normalised parent email and is NOT
+-- cascaded, so a deleted-and-re-registered account cannot reset its trials.
+-- Extensions are separate windows granted by an administrator after a trial
+-- has ended. Logic in 011; settings in 012.
+-- =============================================================================
+create table if not exists public.trial_email_ledger (
+  id                 uuid primary key default gen_random_uuid(),
+  email_key          text not null,
+  student_profile_id uuid references public.students(profile_id) on delete set null,
+  granted_at         timestamptz not null default now()
+);
+create index if not exists ix_trial_email_ledger_key on public.trial_email_ledger (email_key);
+alter table public.trial_email_ledger enable row level security;
+-- No policies: written and read only inside security-definer functions.
+
+create table if not exists public.free_trial_extensions (
+  id                 uuid primary key default gen_random_uuid(),
+  student_profile_id uuid not null references public.students(profile_id) on delete cascade,
+  granted_by         uuid references public.profiles(id) on delete set null,
+  hours              int not null check (hours between 1 and 168),
+  starts_at          timestamptz not null default now(),
+  ends_at            timestamptz not null,
+  note               text check (note is null or char_length(note) <= 300),
+  created_at         timestamptz not null default now(),
+  check (ends_at > starts_at)
+);
+create index if not exists ix_free_trial_extensions_student on public.free_trial_extensions (student_profile_id);
+alter table public.free_trial_extensions enable row level security;
+

@@ -30,6 +30,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
 import { ActionArea } from "@/components/ActionArea";
 import { dialogEdgePadding } from "@/components/actionAreaLayout";
+import { SwipeDownSheet } from "@/components/SwipeDownSheet";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, shadow, spacing } from "@/theme/tokens";
 
@@ -77,7 +78,12 @@ export function SheetDialog({
         onPress={onDismiss}
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
       />
-      <View
+      {/* Swipe-down from the handle closes it too — and only when onDismiss
+          exists: a strictly-modal sheet gets a decorative handle, no gesture. */}
+      <SwipeDownSheet
+        visible={visible}
+        onDismiss={onDismiss}
+        closeLabel={dismissLabel}
         style={[
           {
             backgroundColor: tokens.surface,
@@ -99,15 +105,6 @@ export function SheetDialog({
           shadow("float", tokens.shadow),
         ]}
       >
-        <View
-          style={{
-            alignSelf: "center",
-            width: 44,
-            height: 4,
-            borderRadius: 2,
-            backgroundColor: tokens.border,
-          }}
-        />
         <AppText variant="title" color={titleColor}>
           {title}
         </AppText>
@@ -125,7 +122,7 @@ export function SheetDialog({
             bars; adding them again would park the buttons a navigation bar's
             height up inside the card. */}
         <ActionArea edge={false}>{actions}</ActionArea>
-      </View>
+      </SwipeDownSheet>
     </Modal>
   );
 }

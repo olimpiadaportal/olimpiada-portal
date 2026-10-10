@@ -821,6 +821,21 @@ export default function EditChildScreen() {
         />
       ) : child ? (
         <View style={{ paddingTop: spacing.md, paddingBottom: spacing.xl }}>
+          {/* Children → Child → Edit → manage the child's subjects and access
+              (owner, 2026-10-10; web: "Manage Subscription"). The screen it
+              opens is per-platform already: the App Store rail on iOS, status
+              only on the purchase-silent Android binary. */}
+          <Button
+            title={t("mob.child.manageAccess")}
+            variant="ghost"
+            style={{ marginBottom: spacing.lg }}
+            onPress={() =>
+              router.push({
+                pathname: "/(parent)/children/[id]/subscribe",
+                params: { id: child.profile_id },
+              })
+            }
+          />
           <EditForm
             key={child.profile_id}
             child={child}

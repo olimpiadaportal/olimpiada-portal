@@ -142,7 +142,8 @@ describe("subject plan card: remove action", () => {
   it("is opted into the KEYS dict of every page that renders the card", () => {
     const hosts = [
       "../(parent)/children/[id]/subscribe/page.tsx",
-      "../(parent)/children/new/page.tsx",
+      // children/new no longer hosts the card: onboarding is trial-first
+      // since 2026-10-10 and subscribing happens on the page above.
     ];
     for (const rel of hosts) {
       const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");

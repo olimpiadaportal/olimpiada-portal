@@ -5186,3 +5186,21 @@ select '136_super_admin_guard' as check_name,
    and not has_function_privilege('authenticated', 'public.fn_guard_super_admin_profile()', 'EXECUTE')
    and not has_function_privilege('authenticated', 'public.fn_guard_super_admin_roles()', 'EXECUTE')
  then 'PASS' else 'FAIL' end as status;
+
+-- 137. Free-trial abuse protection and extensions (migration 183): the email
+--      ledger exists and is NOT cascaded from the account (ON DELETE SET NULL),
+--      activate_free_trial records it and enforces the cap, child_free_trial
+--      returns the server clock, extensions are admin-gated, and none of these
+--      helpers is callable by a client.
+select '137_free_trial_ledger_extensions' as check_name,
+ case when
+   to_regclass('public.trial_email_ledger') is not null
+   and to_regclass('public.free_trial_extensions') is not null
+   and exists (select 1 from pg_constraint c where c.conrelid='public.trial_email_ledger'::regclass and c.contype='f' and c.confdeltype='n')
+   and position('trial_email_ledger' in (select prosrc from pg_proc where oid=to_regprocedure('public.activate_free_trial(uuid,uuid,uuid[],text)')))>0
+   and position('email_cap' in (select prosrc from pg_proc where oid=to_regprocedure('public.activate_free_trial(uuid,uuid,uuid[],text)')))>0
+   and position('server_now' in (select prosrc from pg_proc where oid=to_regprocedure('public.child_free_trial(uuid)')))>0
+   and position('is_admin()' in (select prosrc from pg_proc where oid=to_regprocedure('public.grant_free_trial_extension(uuid,text)')))>0
+   and not has_function_privilege('authenticated', to_regprocedure('public.trial_email_key(text)'), 'EXECUTE')
+   and not has_function_privilege('anon', to_regprocedure('public.grant_free_trial_extension(uuid,text)'), 'EXECUTE')
+ then 'PASS' else 'FAIL' end as status;

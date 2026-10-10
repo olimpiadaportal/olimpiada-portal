@@ -50,6 +50,7 @@ import {
   useStreakStatus,
   type ArenaAttempt,
 } from "@/features/arena/queries";
+import { ChildTrialCard } from "@/features/trial/ChildTrialCard";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
@@ -319,7 +320,12 @@ export default function StudentArena() {
     : access.entitledNow
       ? (pricedQ.data ?? []).filter((s) => access.accessibleSubjectIds.includes(s.id))
       : undefined;
-  const subjects = mergeSubjects(subjectsQ.data, unlocked);
+  // THE FREE TRIAL'S SUBJECTS (migration 140). Its entitlement rows are kept
+  // out of my_accessible_subjects on purpose, so without this arm a trialling
+  // child read an unlocked hero with no subject in it. The RPC names them with
+  // code + name already — no catalogue round trip.
+  const trialSubjects = access.trial.active ? access.trial.subjects : undefined;
+  const subjects = mergeSubjects(mergeSubjects(subjectsQ.data, unlocked), trialSubjects);
   const graded: ArenaAttempt[] = attemptsQ.data ?? [];
 
   let totalScore = 0;
@@ -371,8 +377,16 @@ export default function StudentArena() {
   const goTests = () => goToTab(router, "/(student)/(tabs)/tests");
   const goRanking = () => goToTab(router, "/(student)/(tabs)/ranking");
 
+  // The trial card: while the window runs, and once it has ended without any
+  // other access. Never for a child who is subscribed or on a free window.
+  const showTrialCard =
+    access.trial.used && !!access.trial.endsAt && (access.trial.active || !access.hasAccess);
+
   return (
     <ArenaScroll refreshing={refreshing} onRefresh={onRefresh}>
+      {showTrialCard ? (
+        <ChildTrialCard trial={access.trial} onExpired={() => void refreshArena()} />
+      ) : null}
       {/* ---- Hero (web .arena-hero-left): welcome + today CTA → Tests tab ---- */}
       <View
         style={{

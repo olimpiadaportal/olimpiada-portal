@@ -24,8 +24,8 @@
 // whose `active` is DERIVED from ends_at inside the database, so no job has to
 // run for the pill and the child's arena to agree.
 //
-// The trial reuses `access.trialing`, the word the subscription rail already
-// uses for exactly this state. Deliberately NOT `access.freeTrial`, whose az/ru
+// The trial has its own two words since 2026-10-10 — `access.trialActive` and
+// `access.trialExpired`. Deliberately NOT `access.freeTrial`, whose az/ru
 // wording is identical to `access.freeAccess` — a trial and an admin
 // free-access window would then read the same on the same dashboard.
 //
@@ -56,20 +56,27 @@ function statusGrantsAccess(status: string | null | undefined): boolean {
 /**
  * The pill's i18n key. `entitled` = at least one LIVE subject entitlement
  * (child_entitled_subjects, migration 168); `onTrial` = inside the one-time
- * free trial (child_free_trial, migration 140).
+ * free trial or an extension of it (child_free_trial, migrations 140/183);
+ * `trialEnded` = that trial was used and is over.
  *
- * The mobile twin answers "access is active" here with its own `mob.sub.*`
- * string; the web says it with `access.active`, the word already on this
- * dashboard. Same state, each platform's existing vocabulary.
+ * THE THREE STATES A PARENT ASKED FOR (owner, 2026-10-10): Subscription Active,
+ * Trial Active, Trial Expired. Paid access outranks the trial — a family that
+ * holds both bought something, and that is the truer thing to say. A legacy
+ * subscription-rail trial (`trialing`, retired by migration 142) keeps its own
+ * word. Anything else falls through to the raw status word.
+ *
+ * The mobile twin answers "subscription active" with its own `mob.sub.*`
+ * string; the web says it with `access.subscriptionActive`.
  */
 export function accessPillKey(
   status: string | null | undefined,
   entitled: boolean,
   onTrial = false,
+  trialEnded = false,
 ): string {
-  if (!statusGrantsAccess(status)) {
-    if (entitled) return "access.active";
-    if (onTrial) return "access.trialing";
-  }
+  if (status === "active" || entitled) return "access.subscriptionActive";
+  if (status === "trialing") return "access.trialing";
+  if (onTrial) return "access.trialActive";
+  if (trialEnded) return "access.trialExpired";
   return accessStatusKey(status);
 }

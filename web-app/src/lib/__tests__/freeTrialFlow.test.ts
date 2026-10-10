@@ -42,21 +42,42 @@ describe("the trial confirm button", () => {
   });
 });
 
-describe("Add Child offers the trial before any payment", () => {
+describe("Add Child is trial-first (owner, 2026-10-10)", () => {
   const wizard = read("src/components/AddChildWizard.tsx");
   const page = read("src/app/(parent)/children/new/page.tsx");
+  const picker = read("src/components/FreeTrialActivation.tsx");
 
-  it("shows the owner's note in the payment section", () => {
-    expect(wizard).toContain('{tt("addchild.trialNote")}');
-    expect(page).toContain('"addchild.trialNote"');
+  it("runs info → trial → done, with no subscription or payment step", () => {
+    expect(wizard).toContain('real: ["info", "trial", "done"]');
+    for (const gone of ["subscribeChild", "quoteSubscription", "CheckoutRedirect", '"payment"', '"plan"']) {
+      expect(wizard, gone).not.toContain(gone);
+    }
   });
-  it("links to the one trial picker instead of duplicating it", () => {
+  it("renders the ONE trial picker inline and advances on success", () => {
+    expect(wizard).toContain("<FreeTrialActivation");
+    expect(wizard).toMatch(/onActivated=\{\(endsAt, ids\) => \{/);
+    expect(picker).toContain("if (state.ok && onActivated) return null;");
+  });
+  it("offers only the subjects the chosen grade studies", () => {
+    expect(page).toContain("TAUGHT_SUBJECTS_RPC");
+    expect(wizard).toContain("taughtByGrade[gradeId]");
+  });
+  it("asks for exactly two subjects", () => {
+    expect(picker).toContain("const required = Math.min(TRIAL_MAX_SUBJECTS, subjects.length);");
+    expect(picker).toContain("disabled={!ready || pending}");
+  });
+  it("can be skipped, and the done step then leads to Manage Subscription", () => {
+    expect(wizard).toContain('{tt("addchild.trial.skip")}');
     expect(wizard).toMatch(/href=\{`\/children\/\$\{studentProfileId\}\/subscribe`\}/);
-    expect(wizard).toContain('{tt("addchild.startTrial")}');
+    expect(wizard).toContain('{tt("addchild.manageSubscription")}');
   });
-  it("keeps paying now available, as the secondary action", () => {
-    expect(wizard).toContain("onClick={confirmPayment}");
-    expect(wizard).toContain('className={payableNow && studentProfileId ? "btn-ghost" : "btn"}');
+  it("reveals the 8-digit ID that was issued with the child", () => {
+    expect(wizard).toContain("setChildUniqueId(res.childUniqueId ?? null);");
+    expect(wizard).toContain("<CopyableId id={childUniqueId}");
+  });
+  it("has every key it renders in the page's dictionary", () => {
+    const keys = new Set([...wizard.matchAll(/tt\("([^"]+)"\)/g)].map((m) => m[1]));
+    for (const k of keys) expect(page, k).toContain(`"${k}"`);
   });
 });
 
@@ -70,16 +91,27 @@ describe("after the trial, payment happens in the parent's area", () => {
 });
 
 describe("copy", () => {
-  it("exists in all three languages, and the note names 24 hours and 2 subjects", () => {
+  it("the onboarding offer exists in all three languages and names 24 hours and 2 subjects", () => {
     for (const loc of locales) {
-      const note = messages[loc]["addchild.trialNote"];
-      expect(note?.trim(), `${loc} note`).toBeTruthy();
-      expect(note, `${loc} note`).toMatch(/24/);
-      expect(note, `${loc} note`).toMatch(/2/);
-      expect(messages[loc]["addchild.startTrial"]?.trim(), `${loc} cta`).toBeTruthy();
+      const title = messages[loc]["addchild.trial.title"];
+      expect(title?.trim(), `${loc} title`).toBeTruthy();
+      expect(title, `${loc} title`).toMatch(/24/);
+      expect(title, `${loc} title`).toMatch(/2/);
+      for (const k of [
+        "addchild.step.trial", "addchild.trial.body", "addchild.trial.skip",
+        "addchild.trial.started", "addchild.trial.subjects", "addchild.created",
+        "addchild.manageSubscription",
+      ]) {
+        expect(messages[loc][k]?.trim(), `${loc} ${k}`).toBeTruthy();
+      }
     }
-    expect(messages.en["addchild.trialNote"]).toBe(
-      "Note: You will receive a free 24-hour trial for 2 subjects of your choice. After the trial expires, payment must be completed through the Parent Profile to continue using the platform.",
+    expect(messages.en["addchild.trial.title"]).toBe(
+      "Choose 2 subjects and enjoy 24 hours of FREE access!",
     );
+  });
+  it("never asks for a card or a price in the offer", () => {
+    for (const loc of locales) {
+      expect(messages[loc]["addchild.trial.title"]).not.toMatch(/AZN|₼|\d+[.,]\d{2}/);
+    }
   });
 });

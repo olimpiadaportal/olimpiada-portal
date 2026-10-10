@@ -12,6 +12,7 @@ import { Keyboard, Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Check, ChevronDown, Globe } from "lucide-react-native";
 import { AppText } from "./AppText";
+import { SwipeDownSheet } from "./SwipeDownSheet";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, shadow, spacing, tint } from "@/theme/tokens";
 // LOCALE_NAMES lives in @/i18n: the first-launch picker names the same three
@@ -97,7 +98,10 @@ export function LocaleSwitcher({
           onPress={() => setOpen(false)}
           style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
         />
-        <View
+        <SwipeDownSheet
+          visible={open}
+          onDismiss={() => setOpen(false)}
+          closeLabel={t("drawer.close")}
           style={[
             {
               backgroundColor: tokens.surface,
@@ -110,16 +114,6 @@ export function LocaleSwitcher({
             shadow("float", tokens.shadow),
           ]}
         >
-          <View
-            style={{
-              alignSelf: "center",
-              width: 44,
-              height: 4,
-              borderRadius: 2,
-              backgroundColor: tokens.border,
-              marginBottom: spacing.sm,
-            }}
-          />
           <AppText variant="eyebrow">{t("lang.select")}</AppText>
           <View accessibilityRole="radiogroup" style={{ gap: spacing.xs }}>
             {options.map((l) => {
@@ -164,7 +158,7 @@ export function LocaleSwitcher({
               );
             })}
           </View>
-        </View>
+        </SwipeDownSheet>
       </Modal>
     </>
   );

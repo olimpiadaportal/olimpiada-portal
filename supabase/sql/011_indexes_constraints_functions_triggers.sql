@@ -5103,17 +5103,12 @@ comment on function public.subject_access_is_trial_only(uuid, uuid) is
 
 revoke all on function public.subject_access_is_trial_only(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.subject_access_is_trial_only(uuid, uuid) to service_role;
-create or replace function public.activate_free_trial(
-  p_parent      uuid,
-  p_student     uuid,
-  p_subject_ids uuid[],
-  p_locale      text default 'az'
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
+CREATE OR REPLACE FUNCTION public.activate_free_trial(p_parent uuid, p_student uuid, p_subject_ids uuid[], p_locale text DEFAULT 'az'::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
 declare
   c_hours  constant int := 24;
   c_max    constant int := 2;
@@ -5121,6 +5116,8 @@ declare
   v_locale text := case when p_locale in ('az','en','ru') then p_locale else 'az' end;
   v_subj   uuid;
   v_n      int;
+  v_email_key text;
+  v_cap       int;
 begin
   if p_parent is null or p_student is null then
     raise exception 'trial: missing ids' using errcode = 'check_violation';
@@ -5183,6 +5180,25 @@ begin
       using errcode = 'check_violation', hint = 'already_covered';
   end if;
 
+  -- MIGRATION 183 — ONE LEDGER PER PARENT EMAIL, SURVIVING ACCOUNT DELETION.
+  -- free_trials is once per CHILD and cascades away with the account, so
+  -- "delete the account, register again with the same email, add the child
+  -- again" used to mint a fresh trial. The ledger is keyed on a HASH of the
+  -- normalised email (no readable address is kept), is not cascaded, and caps
+  -- how many child trials one email can ever receive (system setting
+  -- trial.max_per_email, default 3). The advisory lock serialises two
+  -- simultaneous activations for the same email so both cannot pass the cap.
+  select public.trial_email_key(p.email::text) into v_email_key
+    from public.profiles p where p.id = p_parent;
+  if v_email_key is not null then
+    perform pg_advisory_xact_lock(hashtext('trial_email:' || v_email_key));
+    v_cap := public.trial_setting_int('trial.max_per_email', 3, 0, 50);
+    if (select count(*) from public.trial_email_ledger l where l.email_key = v_email_key) >= v_cap then
+      raise exception 'trial: limit reached for this account' using errcode = 'check_violation',
+        hint = 'email_cap';
+    end if;
+  end if;
+
   v_ends := now() + make_interval(hours => c_hours);
 
   -- The unique constraint is the once-only enforcement, not this insert's
@@ -5195,6 +5211,11 @@ begin
     raise exception 'trial: already used' using errcode = 'unique_violation',
       hint = 'trial_already_used';
   end;
+
+  if v_email_key is not null then
+    insert into public.trial_email_ledger (email_key, student_profile_id)
+    values (v_email_key, p_student);
+  end if;
 
   -- NOTE the deliberate omissions: no child_subscription_id and no
   -- olympiad_purchase_id, which is what makes these rows invisible to
@@ -5222,7 +5243,7 @@ begin
 
   return jsonb_build_object('ends_at', v_ends, 'subject_ids', p_subject_ids);
 end;
-$$;
+$function$;
 
 comment on function public.activate_free_trial(uuid, uuid, uuid[], text) is
   'Migration 140: activate the one-time 1-day Free Trial for a child. Ownership '
@@ -5240,15 +5261,17 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_me  uuid := public.current_profile_id();
-  v_row public.free_trials;
+  v_me   uuid := public.current_profile_id();
+  v_row  public.free_trials;
+  v_ext  public.free_trial_extensions;
+  v_ends timestamptz;
 begin
   if v_me is null or p_student is null then
-    return jsonb_build_object('active', false);
+    return jsonb_build_object('active', false, 'server_now', now());
   end if;
 
-  -- Same reader set as the free_trials RLS policy, restated because this is a
-  -- definer function and RLS does not apply to it.
+  -- Unchanged access rule: the child, a linked parent, the creating parent,
+  -- or staff.
   if not (
     p_student = v_me
     or public.is_parent_linked_to_student(p_student)
@@ -5258,21 +5281,32 @@ begin
     or public.is_admin()
     or public.has_permission('subscriptions.manage')
   ) then
-    return jsonb_build_object('active', false);
+    return jsonb_build_object('active', false, 'server_now', now());
   end if;
 
   select * into v_row from public.free_trials
    where student_profile_id = p_student and cancelled_at is null;
   if not found then
-    return jsonb_build_object('active', false, 'used', false);
+    return jsonb_build_object('active', false, 'used', false, 'server_now', now());
   end if;
 
-  -- EXPIRY IS DERIVED. Nothing flips a status when the clock passes ends_at, so
-  -- there is no window in which a job has not yet run and access is wrong.
+  select * into v_ext from public.free_trial_extensions e
+   where e.student_profile_id = p_student
+   order by e.ends_at desc limit 1;
+
+  -- The window the child actually has: the later of the trial and the latest
+  -- extension. "ends_at" keeps its meaning for every existing reader.
+  v_ends := greatest(v_row.ends_at, coalesce(v_ext.ends_at, v_row.ends_at));
+
   return jsonb_build_object(
-    'active',   v_row.ends_at > now(),
-    'used',     true,
-    'ends_at',  v_row.ends_at,
+    'active',           v_ends > now(),
+    'used',             true,
+    'ends_at',          v_ends,
+    'trial_ends_at',    v_row.ends_at,
+    'activated_at',     v_row.activated_at,
+    'extended',         v_ext.id is not null,
+    'extension_active', coalesce(v_ext.ends_at > now(), false),
+    'server_now',       now(),
     'subjects', coalesce((
       select jsonb_agg(jsonb_build_object('id', s.id, 'code', s.code, 'name', s.name)
                        order by s.name)
@@ -14833,3 +14867,125 @@ create trigger trg_guard_super_admin_roles
 revoke all on function public.fn_guard_super_admin_profile() from public, anon, authenticated;
 revoke all on function public.fn_guard_super_admin_roles() from public, anon, authenticated;
 
+-- =============================================================================
+-- Migration 183 (2026-10-10): free-trial helpers and extensions. The rebuilt
+-- activate_free_trial (email ledger + cap) and child_free_trial (server clock,
+-- extension state) replace their earlier definitions in place above.
+-- =============================================================================
+-- A bounded integer setting, with a fallback when the row is missing or bad.
+create or replace function public.trial_setting_int(p_key text, p_default int, p_min int, p_max int)
+returns int
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v int;
+begin
+  begin
+    select nullif(s.value_json #>> '{}', '')::int into v from public.system_settings s where s.key = p_key;
+  exception when others then
+    v := null;
+  end;
+  return least(p_max, greatest(p_min, coalesce(v, p_default)));
+end;
+$$;
+
+-- ---------------------------------------------------------------- ledger
+
+create or replace function public.trial_email_key(p_email text)
+returns text
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select case
+    when p_email is null or position('@' in p_email) = 0 then null
+    else encode(sha256(convert_to(
+      case when x.dom in ('gmail.com', 'googlemail.com')
+           then replace(split_part(x.loc, '+', 1), '.', '') || '@gmail.com'
+           else split_part(x.loc, '+', 1) || '@' || x.dom
+      end, 'UTF8')), 'hex')
+  end
+  from (select lower(trim(split_part(p_email, '@', 1))) as loc,
+               lower(trim(split_part(p_email, '@', 2))) as dom) x;
+$$;
+
+create or replace function public.grant_free_trial_extension(p_student uuid, p_note text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_me    uuid := public.current_profile_id();
+  v_trial public.free_trials;
+  v_hours int;
+  v_max   int;
+  v_used  int;
+  v_ends  timestamptz;
+  v_ext   uuid;
+  v_subj  uuid;
+begin
+  -- Administrators only. An extension is a decision someone takes, not a
+  -- button a parent can press.
+  if v_me is null or not public.is_admin() then
+    raise exception 'trial extension: not allowed' using errcode = 'insufficient_privilege', hint = 'not_admin';
+  end if;
+
+  select * into v_trial from public.free_trials
+   where student_profile_id = p_student and cancelled_at is null;
+  if not found then
+    raise exception 'trial extension: no trial' using errcode = 'check_violation', hint = 'no_trial';
+  end if;
+
+  -- Only AFTER every trial window has ended: an extension extends nothing that
+  -- is still running.
+  if v_trial.ends_at > now()
+     or exists (select 1 from public.free_trial_extensions e
+                 where e.student_profile_id = p_student and e.ends_at > now()) then
+    raise exception 'trial extension: trial still active' using errcode = 'check_violation', hint = 'still_active';
+  end if;
+
+  v_max  := public.trial_setting_int('trial.max_extensions', 1, 0, 10);
+  select count(*) into v_used from public.free_trial_extensions where student_profile_id = p_student;
+  if v_used >= v_max then
+    raise exception 'trial extension: limit reached' using errcode = 'check_violation', hint = 'extension_limit';
+  end if;
+
+  v_hours := public.trial_setting_int('trial.extension_hours', 24, 1, 168);
+  v_ends  := now() + make_interval(hours => v_hours);
+
+  insert into public.free_trial_extensions (student_profile_id, granted_by, hours, ends_at, note)
+  values (p_student, v_me, v_hours, v_ends, nullif(left(coalesce(p_note, ''), 300), ''))
+  returning id into v_ext;
+
+  -- The SAME subjects, through new trial entitlements. No subscription, no
+  -- payment, no checkout: nothing here can lead to a charge.
+  foreach v_subj in array v_trial.subject_ids loop
+    perform public.entitlement_grant(
+      p_student, 'subject', 'trial',
+      'trial-ext:' || v_ext::text || ':' || v_subj::text,
+      p_subject_id => v_subj,
+      p_starts_at  => now(),
+      p_ends_at    => v_ends,
+      p_granted_by => v_me,
+      p_note       => 'free_trial_extension');
+  end loop;
+
+  insert into public.audit_logs
+    (actor_profile_id, action, target_table, target_id, metadata_json, severity, success)
+  values
+    (v_me, 'free_trial.extend', 'free_trial_extensions', p_student,
+     jsonb_build_object('hours', v_hours, 'ends_at', v_ends), 'warning', true);
+
+  return jsonb_build_object('ends_at', v_ends, 'hours', v_hours);
+end;
+$$;
+
+revoke all on function public.trial_email_key(text) from public, anon, authenticated;
+revoke all on function public.trial_setting_int(text, int, int, int) from public, anon, authenticated;
+revoke all on function public.grant_free_trial_extension(uuid, text) from public, anon;
+grant execute on function public.grant_free_trial_extension(uuid, text) to authenticated, service_role;
+revoke all on table public.trial_email_ledger from anon, authenticated;
+revoke all on table public.free_trial_extensions from anon, authenticated;

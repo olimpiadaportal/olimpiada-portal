@@ -7,6 +7,22 @@ import { getParentFreeAccess } from "@/lib/freeAccess";
 import { parsePlanParams } from "@/lib/pricingConfigurator";
 import { sortSubjectsByLabel } from "@/lib/subjectLabel";
 import { AddChildWizard } from "@/components/AddChildWizard";
+import { TAUGHT_SUBJECTS_RPC, taughtSubjectSet } from "@/lib/gradeSubjects";
+
+// The inline trial picker's strings (FreeTrialActivation). The hero speaks the
+// onboarding offer itself — "Choose 2 subjects and enjoy 24 hours of FREE
+// access!" — rather than the subscribe page's wording.
+const TRIAL_KEYS = [
+  "trial.hero.duration", "trial.hero.p1", "trial.hero.p2", "trial.hero.p3", "trial.hero.p4",
+  "trial.cta.activate", "trial.cta.pending",
+  "trial.pick.title", "trial.pick.hint", "trial.pick.cap", "trial.pick.selected",
+  "trial.pick.locked", "trial.pick.aria.select", "trial.pick.aria.selected", "trial.pick.done",
+  "trial.summary.title", "trial.summary.count", "trial.summary.endsAt",
+  "trial.confirm.title", "trial.confirm.body", "trial.confirm.ok", "trial.confirm.cancel",
+  "trial.done.title", "trial.done.body", "trial.done.next",
+  "trial.status.endsIn", "trial.time.h", "trial.time.m", "trial.time.s",
+  "trial.expired.title", "trial.note.unrated",
+];
 
 // All i18n keys the (client) wizard needs, resolved server-side into a dict.
 const KEYS = [
@@ -22,48 +38,16 @@ const KEYS = [
   "addchild.field.noDistricts",
   "auth.showPassword", "auth.hidePassword",
   // step nav + steps
-  "addchild.step.info", "addchild.step.subjects", "addchild.step.plan",
-  "addchild.step.payment", "addchild.step.done",
+  "addchild.step.info", "addchild.step.trial", "addchild.step.done",
   "addchild.next", "addchild.back", "addchild.createChild",
-  // subjects + plan (reused subscribe keys)
-  "sub.subjects", "sub.noSubjectsAvailable", "sub.interval",
-  "pricing.weekly", "pricing.monthly", "pricing.yearly",
-  // R11 plan cards — subscription-page parity copy. The popular-badge chain
-  // mirrors the Subscription page; missing keys resolve to themselves and the
-  // wizard's pick() skips them.
-  "pricing2.badge.popular", "pricing2.popular", "pricing2.mostPopular",
-  "billing.popular",
-  "billing.perWeek", "billing.perMonth", "billing.perYear",
-  // Migration 109 — per-subject cycle cards + the grouped summary.
-  "plan.cycle", "plan.cycleAria", "plan.cycleChangedAria",
-  "plan.removeSubject",
-  "plan.group.weekly", "plan.group.monthly", "plan.group.yearly",
-  "plan.group.subtotal", "plan.dueToday", "plan.dueTodayNote",
-  "plan.renewals", "plan.renewalLine.weekly", "plan.renewalLine.monthly",
-  "plan.renewalLine.yearly", "plan.mixedNote", "plan.fromPrice",
-  "plan.removeAria", "plan.perSubjectHint",
-  "cfg.add", "cfg.addAria", "cfg.allAdded", "cfg.unpriced", "cfg.emptySelection",
-  "cfg.warnAllUnpriced", "cfg.warnSomeUnpriced", "sub.trial", "sub.days",
-  "sub.discount",
-  // Migration 127 — the sibling discount is NAMED where the parent chooses:
-  // which child earned it, what it saves, and — when none applies yet — that
-  // a second child is cheaper. A silent smaller number is not a discount a
-  // parent can see.
-  "sub.discount.rank2", "sub.discount.rank3", "sub.discount.saved",
-  "sub.discount.hint",
-  "pricing.plan.weekly.note", "pricing.plan.monthly.note",
-  "pricing.plan.yearly.note",
-  // payment confirmation (step 4) + the result
-  // Migration 126: `pay.continue` / `pay.confirmNoCharge` are the honest
-  // labels — the button says "continue to payment" only when the server quote
-  // says something is due — and `sub.trialNoChargeToday` explains a zero.
-  // `pay.payNow` stays listed: the wizard no longer renders it, but a dictionary
-  // that drops a key a cached bundle still asks for renders the key itself.
-  "pay.title", "pay.note", "pay.payNow", "pay.continue", "pay.confirmNoCharge",
-  "addchild.trialNote", "addchild.startTrial",
-  "sub.trialNoChargeToday",
-  "pay.processing", "pay.success",
-  "pay.idRevealed", "pay.subtotal", "pay.discount", "pay.total",
+  // TRIAL-FIRST onboarding (owner, 2026-10-10): the trial step, its skip, and
+  // the done step's two outcomes. Subscribing is not part of onboarding any
+  // more; the done step links to Manage Subscription instead.
+  "addchild.trial.skip", "addchild.trial.started", "addchild.trial.subjects",
+  "addchild.created", "addchild.manageSubscription",
+  "trial.status.endsIn", "trial.time.h", "trial.time.m", "trial.time.s",
+  "trial.expired.title",
+  "pay.idRevealed",
   // done
   "parent.child.idNote", "parent.dash.title",
   // R11 payment modes (giveaway / payments-off) + R-audit H8 free-access window
@@ -252,6 +236,23 @@ export default async function NewChildPage({
   // re-prices server-side, so a forged link can never buy anything.
   const { plan: initialPlan } = parsePlanParams(search, subjects);
 
+  // Which subjects each grade studies (migration 155) — the trial step offers
+  // only those for the grade the parent picks on the info step. One read per
+  // grade, in parallel; a failed read is `null` = "do not filter".
+  const taughtEntries = await Promise.all(
+    grades.map(async (g) => {
+      const { data, error } = await supabase.rpc(TAUGHT_SUBJECTS_RPC, { p_grade: g.id });
+      const set = taughtSubjectSet(data, error);
+      return [g.id, set ? [...set] : null] as const;
+    }),
+  );
+  const taughtByGrade = Object.fromEntries(taughtEntries);
+
+  const trialDict: Record<string, string> = {};
+  for (const k of TRIAL_KEYS) trialDict[k] = t(k);
+  trialDict["trial.hero.title"] = t("addchild.trial.title");
+  trialDict["trial.hero.body"] = t("addchild.trial.body");
+
   const dict: Record<string, string> = {};
   for (const k of KEYS) dict[k] = t(k);
 
@@ -271,11 +272,13 @@ export default async function NewChildPage({
         cityDistricts={cityDistricts}
         schools={schools}
         grades={grades}
-        subjects={subjects}
+        subjects={subjects.map(({ id, code, name }) => ({ id, code, name }))}
+        taughtByGrade={taughtByGrade}
         dict={dict}
+        trialDict={trialDict}
         paymentMode={paymentMode}
         freeAccessActive={freeAccessActive}
-        initialPlan={initialPlan}
+        initialTrialSubjectIds={initialPlan.map((p) => p.subjectId)}
       />
     </section>
   );

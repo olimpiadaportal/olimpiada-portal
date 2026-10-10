@@ -80,7 +80,7 @@ describe("accessPill", () => {
   // "Giriş yoxdur" on the screen their parent lands on first.
   it("reports access for a live trial neither other rail can see", () => {
     expect(accessPill("inactive", false, true)).toEqual({
-      key: "access.trialing",
+      key: "mob.access.trialActive",
       tone: "ok",
     });
   });
@@ -102,6 +102,18 @@ describe("accessPill", () => {
 
   // An entitlement outranks a trial: a family holding both bought something,
   // and that is the truer thing to say about what they hold.
+  // 2026-10-10: once the trial is over and nothing else is open, the parent
+  // reads "Trial Expired" — a status, never an offer.
+  it("reports an ended trial when no other rail gives access", () => {
+    expect(accessPill("inactive", false, false, true)).toEqual({
+      key: "mob.access.trialExpired",
+      tone: "bad",
+    });
+    expect(accessPill("inactive", true, false, true).key).toBe("mob.sub.accessActive");
+    expect(accessPill("active", false, false, true).key).toBe("access.active");
+    expect(accessPill("inactive", false, true, true).key).toBe("mob.access.trialActive");
+  });
+
   it("prefers the entitlement wording over the trial wording", () => {
     expect(accessPill("inactive", true, true)).toEqual({
       key: "mob.sub.accessActive",
@@ -118,6 +130,7 @@ describe("accessPill", () => {
         accessPill(s, true).key,
         accessPill(s, false, true).key,
         accessPill(s, true, true).key,
+        accessPill(s, false, false, true).key,
       ]),
     );
     const web = readFileSync(resolve(__dirname, "..", "src", "i18n", "messages.generated.ts"), "utf8");

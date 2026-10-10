@@ -29,6 +29,11 @@ export type FreeTrialState = {
   used: boolean;
   endsAt: string | null;
   subjects: TrialSubject[];
+  /** The database's now() from the SAME read as endsAt (migration 183). Every
+   *  countdown measures against this, never against the device clock alone. */
+  serverNow: string | null;
+  /** An administrator granted an additional window after the first one ended. */
+  extended: boolean;
 };
 
 export const NO_TRIAL: FreeTrialState = {
@@ -36,6 +41,8 @@ export const NO_TRIAL: FreeTrialState = {
   used: false,
   endsAt: null,
   subjects: [],
+  serverNow: null,
+  extended: false,
 };
 
 /**
@@ -76,5 +83,9 @@ export function parseFreeTrial(data: unknown): FreeTrialState {
     used: d.used === true,
     endsAt: typeof d.ends_at === "string" ? d.ends_at : null,
     subjects,
+    serverNow: typeof (d as { server_now?: unknown }).server_now === "string"
+      ? ((d as { server_now?: string }).server_now as string)
+      : null,
+    extended: (d as { extended?: unknown }).extended === true,
   };
 }

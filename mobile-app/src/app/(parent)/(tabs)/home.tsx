@@ -15,6 +15,7 @@ import { Button } from "@/components/Button";
 import { ChildAvatar } from "@/components/ChildAvatar";
 import { Card } from "@/components/Card";
 import { CountdownBanner } from "@/components/CountdownBanner";
+import { TrialEndedBanners, type EndedTrialItem } from "@/features/trial/TrialEndedBanner";
 import { HeaderAvatarButton } from "@/components/HeaderAvatarButton";
 import { HeaderBell } from "@/components/HeaderBell";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -77,6 +78,7 @@ function ChildCard({
   child,
   entitled,
   onTrial,
+  trialEnded,
   giveawayActive,
   freeAccessActive,
   leaderboardOn,
@@ -91,6 +93,10 @@ function ChildCard({
    *  `entitled` deliberately cannot see and `access_status` never records.
    *  False is likewise the safe fallback — see accessPill. */
   onTrial: boolean;
+  /** The one-time trial was used and is over (2026-10-10) — the pill then
+   *  reads "Trial Expired" when nothing else gives access. Status only: the
+   *  countdown belongs to the child's own dashboard. */
+  trialEnded: boolean;
   giveawayActive: boolean;
   freeAccessActive: boolean;
   leaderboardOn: boolean;
@@ -107,7 +113,7 @@ function ChildCard({
   // pill reports what the child actually holds, across all three rails that can
   // grant it — see accessPill for why `students.access_status` alone was not
   // enough, and why a trial needs a read of its own.
-  const pill = accessPill(child.access_status, entitled, onTrial);
+  const pill = accessPill(child.access_status, entitled, onTrial, trialEnded);
   const gradeText = child.grade
     ? formatGradeLabel(child.grade.level, locale, child.grade.name)
     : null;
@@ -390,9 +396,31 @@ export default function ParentHome() {
   // labelled "No access" here while playing rated rounds.
   const trialQueries = useFreeTrialsByChild(children.data, pillReadsOn);
   const trialByChild = new Map<string, boolean>();
+  const trialEndedByChild = new Map<string, boolean>();
   (children.data ?? []).forEach((c, i) => {
-    trialByChild.set(c.profile_id, trialQueries[i]?.data === true);
+    const tr = trialQueries[i]?.data;
+    trialByChild.set(c.profile_id, tr?.active === true);
+    trialEndedByChild.set(c.profile_id, tr?.used === true && tr?.active !== true);
   });
+
+  // "Your child's free access has ended" — one dismissible banner per child
+  // this parent created, whose trial is over with nothing else open. The same
+  // rule the pill applies, so the banner and the card never disagree.
+  const endedTrials: EndedTrialItem[] = pillReadsOn
+    ? (children.data ?? []).flatMap((c, i) => {
+        const tr = trialQueries[i]?.data;
+        if (c.created_by_parent_profile_id !== accountId || !tr?.endsAt) return [];
+        const key = accessPill(
+          c.access_status,
+          entitledByChild.get(c.profile_id) === true,
+          tr.active,
+          tr.used && !tr.active,
+        ).key;
+        return key === "mob.access.trialExpired"
+          ? [{ childId: c.profile_id, name: childDisplayName(c), endsAt: tr.endsAt }]
+          : [];
+      })
+    : [];
 
   const kids = children.data ?? [];
   const hasKids = kids.length > 0;
@@ -441,6 +469,8 @@ export default function ParentHome() {
         />
       ) : null}
 
+      <TrialEndedBanners items={endedTrials} />
+
       <InfoCarousel />
 
       <SectionHeader
@@ -473,6 +503,7 @@ export default function ParentHome() {
               child={c}
               entitled={entitledByChild.get(c.profile_id) === true}
               onTrial={trialByChild.get(c.profile_id) === true}
+              trialEnded={trialEndedByChild.get(c.profile_id) === true}
               giveawayActive={giveawayActive}
               freeAccessActive={freeActive}
               leaderboardOn={leaderboardOn}

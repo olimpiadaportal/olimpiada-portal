@@ -178,8 +178,11 @@ export type AccessPill = { key: string; tone: "ok" | "bad" | "muted" };
  * caller-scoped twin of the entitlement RPC — whose `active` is DERIVED from
  * ends_at, so no job has to run for the pill and the arena to agree.
  *
- * It reuses `access.trialing`, the word the subscription rail already uses for
- * exactly this state, rather than minting a second vocabulary for "temporary".
+ * Since 2026-10-10 the trial has its own two words, the ones the owner asked
+ * the parent to read: `mob.access.trialActive` while it runs and
+ * `mob.access.trialExpired` once it is over with nothing else open (`trialEnded`).
+ * Status, not a sales line — it names no price and offers nothing, so it is the
+ * same on the purchase-silent Android binary.
  *
  * FAIL OPEN. `entitled === false` is the entitlement reader's own safe fallback
  * (that is what it returns when the RPC hiccups) and `onTrial === false` is the
@@ -197,10 +200,12 @@ export function accessPill(
   status: string | null | undefined,
   entitled: boolean,
   onTrial = false,
+  trialEnded = false,
 ): AccessPill {
   const tone = accessTone(status);
   if (tone !== "ok" && entitled) return { key: "mob.sub.accessActive", tone: "ok" };
-  if (tone !== "ok" && onTrial) return { key: "access.trialing", tone: "ok" };
+  if (tone !== "ok" && onTrial) return { key: "mob.access.trialActive", tone: "ok" };
+  if (tone !== "ok" && trialEnded) return { key: "mob.access.trialExpired", tone: "bad" };
   return { key: accessStatusKey(status), tone };
 }
 

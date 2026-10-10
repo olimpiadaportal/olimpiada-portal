@@ -23,6 +23,7 @@ import {
 } from "lucide-react-native";
 import { AppText } from "./AppText";
 import { AppVersion } from "./AppVersion";
+import { SwipeDownSheet } from "./SwipeDownSheet";
 import { ListRow } from "./ListRow";
 import { Segmented } from "./Segmented";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -120,7 +121,10 @@ export function AccountSheet({
         onPress={onClose}
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
       />
-      <View
+      <SwipeDownSheet
+        visible={visible}
+        onDismiss={onClose}
+        closeLabel={t("drawer.close")}
         style={{
           backgroundColor: tokens.surface,
           borderTopLeftRadius: radius.xl,
@@ -134,15 +138,6 @@ export function AccountSheet({
           flexShrink: 1,
         }}
       >
-        <View
-          style={{
-            alignSelf: "center",
-            width: 44,
-            height: 4,
-            borderRadius: 2,
-            backgroundColor: tokens.border,
-          }}
-        />
         <ScrollView bounces={false} contentContainerStyle={{ gap: spacing.lg }}>
         {role === "parent" || role === "student" ? (
           <View style={{ gap: spacing.xs }}>
@@ -276,7 +271,7 @@ export function AccountSheet({
         {/* Version footer (owner rule): dynamic, from the build's own config. */}
         <AppVersion />
         </ScrollView>
-      </View>
+      </SwipeDownSheet>
     </Modal>
   );
 }

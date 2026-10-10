@@ -30,6 +30,9 @@ function keyForHint(hint: string | null | undefined, message: string): string {
   if (h === "bad_subject") return "trial.err.badSubject";
   if (h === "already_free") return "trial.err.alreadyFree";
   if (h === "already_covered") return "trial.err.alreadyCovered";
+  // Migration 183: this parent's email has already received the maximum
+  // number of child trials (the ledger survives account deletion).
+  if (h === "email_cap") return "trial.err.limitReached";
   if (h === "not_your_child") return "sub.err.notYourChild";
   // The once-only constraint can also surface as a bare unique violation if the
   // insert races ahead of the hint being attached.

@@ -6,6 +6,87 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## TRIAL-FIRST ONBOARDING — web, iOS, Android, admin (2026-10-10)
+
+Gates: web tsc 0, 1613 tests, build OK; admin tsc 0, 1169 tests, build OK;
+mobile tsc 0, 75 suites / 1534 tests (store-copy sweep included).
+
+**Owner request:** every registering parent gets 24 h on 2 subjects per child,
+no card, then pays manually (no recurring); onboarding = create child → pick 2
+subjects → immediate access; payment moves out of onboarding; countdown on the
+child dashboard only; parent sees Trial Active / Trial Expired / Subscription
+Active plus a dismissible expired banner; Manage Subscription under Child →
+Edit; admin-configurable extension; mobile in-app activation; sheets dismiss
+by swipe.
+
+**Anti-abuse (migration 183, staging → production, backported 007/011/012,
+013 check 137 PASS on both).** `trial_email_ledger` keyed on
+`sha256(normalised email)` — lowercase, `+tag` stripped, Gmail dots removed,
+googlemail→gmail — with `student_profile_id ON DELETE SET NULL`, so deleting
+the account (or the child) does not erase the record. `activate_free_trial`
+takes an advisory lock on the key and refuses past `trial.max_per_email`
+(default 3; hint `email_cap`). Chosen over device fingerprinting (unreliable,
+privacy cost, and Expo Go cannot read stable IDs) and over phone (optional
+since 5.1.1(v)). Residual risk, accepted: a genuinely new mailbox gets new
+trials — a 24 h, 2-subject grant is cheap, and the cap bounds Gmail aliasing.
+Proven on staging (rolled back): cap, deleted-and-re-registered alias refused,
+non-admin extension refused, extension works, 0 payment rows.
+
+**Extension:** `grant_free_trial_extension(student, note)` — admin only, only
+after every window ended, `trial.max_extensions` (1) × `trial.extension_hours`
+(24), 'trial' entitlements, audit `free_trial.extend`. `child_free_trial`
+returns `server_now`, `extended`, effective `ends_at`.
+
+**Web.** `AddChildWizard` real flow = info → trial → done (plan/payment steps
+and their code removed; giveaway/off unchanged). Trial step = inline
+`FreeTrialActivation` (new `initialSelected`, `onActivated`, exactly-two rule)
+over subjects filtered by `subjects_taught_to_grade` per grade (page
+precomputes `taughtByGrade`). `addChild` now returns `childUniqueId`. Skip →
+Done with Manage Subscription link. Child dashboard: trial counts as access,
+trial subjects merged, `ChildTrialCard` (server-skew countdown). Parent
+dashboard: `lib/childPlanStatus` + `accessPillKey(status, entitled, onTrial,
+trialEnded)` → `access.subscriptionActive|trialActive|trialExpired`;
+`TrialExpiredBanner` (localStorage per child+endsAt). Child edit: Manage
+Subscription card. BFF `POST /api/mobile/v1/children/[id]/trial` (same core,
+same rate limit).
+
+**Admin.** Accounts → child → "Access & trial": trial state + Grant trial
+extension (`lib/admin/trialExtension.ts`, `requireAdmin` + RPC `is_admin()`).
+
+**Mobile (OTA on 1.16.0, no version bump).** `lib/trialClock.ts` (pure:
+parse, skew, remaining, error-key map), `features/trial/` (`TrialPicker`,
+`ChildTrialCard`, `TrialEndedBanner`, `useTrialCountdown`). Add-child: Info →
+Free access → Done in `real` mode. Child home: card + trial subjects. Parent
+home: pill `mob.access.trialActive|trialExpired`, banner — iOS CTA to the
+child's subscribe screen (StoreKit rail), Android no CTA, switched on
+`IAP_PLATFORM_SUPPORTED` (build-time). Edit: "Subjects & access".
+
+**Sheets (mobile):** `components/SwipeDownSheet.tsx` + pure `swipeDismiss.ts`
+(PanResponder + Animated, native driver, no new deps): 44px handle strip,
+close past min(120px, 30%) or vy > 1.0, springs back otherwise; backdrop tap
+and Android back kept; strict `SheetDialog` (no `onDismiss`) stays
+undismissable; screen-reader activate closes. Applied to AccountSheet,
+SheetDialog, NotificationDetailSheet, parent SheetShell, profile SelectField,
+LocaleSwitcher. Full-screen modals with their own close (news, PhoneField,
+parent SelectField) left alone. Test `swipe-to-dismiss.test.ts`.
+
+**Store-policy decisions (mobile):**
+- iOS: a $0 non-consumable was evaluated and rejected — it is per Apple ID,
+  not per child, so it cannot represent "one trial per child" (a second
+  child, or a trial started on the web, would collide), and Apple's free
+  trials for subscriptions apply to AUTO-RENEWABLE products, which we do not
+  sell. Shipped instead: a free, server-granted promotional window with no
+  purchase UI — the same shape as the giveaway/free-access windows already
+  approved in 1.15.0/1.16.0. Review risk is low but non-zero; put it in the
+  App Review notes (text in the round report).
+- Android: no price, no subscribe CTA, no link; the banner only informs.
+- Wording: the store-copy sweep bans "free trial / sınaq müddəti / пробный
+  период / subscribe" catalogue-wide (one JS bundle serves both stores), so
+  the apps say "24 hours of free access" and "Start My Free 24 Hours" where
+  the web says "free trial". Same feature, store-safe words.
+
+---
+
 ## FREE TRIAL — web fixed, mobile AWAITING OWNER DECISION (2026-10-09)
 
 **Evidence:** production `free_trials` had 0 rows ever; 5 `checkout_sessions`

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { getChildPlanStatus } from "@/lib/childPlanStatus";
+import { isGiveawayActive } from "@/lib/paymentMode";
 import { notFound } from "next/navigation";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
@@ -111,6 +113,20 @@ export default async function EditChildPage({
 
   const childName = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim();
 
+  // Manage Subscription (owner, 2026-10-10): Parent Dashboard → Children →
+  // Child → Edit → Manage Subscription. The status reads the same way it does
+  // on the dashboard card.
+  const { data: accessRow } = await supabase
+    .from("students")
+    .select("access_status")
+    .eq("profile_id", id)
+    .maybeSingle();
+  const planStatus = await getChildPlanStatus(
+    id,
+    (accessRow as { access_status?: string } | null)?.access_status ?? null,
+    await isGiveawayActive(),
+  );
+
   // Existing PHOTO avatar → a short-lived signed URL via the parent's own
   // session client (the private bucket's RLS covers the linked family).
   const avatarPhotoUrl =
@@ -130,6 +146,16 @@ export default async function EditChildPage({
         {t("childedit.intro")}
         {childName ? ` — ${childName}` : ""}
       </p>
+      <div className="card child-plan-card">
+        <div className="child-plan-card-label">
+          <strong>{t("childedit.planTitle")}</strong>
+          <span className={planStatus.free ? "pill gvw-access" : "pill"}>{t(planStatus.pillKey)}</span>
+          <span className="muted" style={{ flexBasis: "100%" }}>{t("childedit.planHint")}</span>
+        </div>
+        <Link className="btn" href={`/children/${id}/subscribe`}>
+          {t("addchild.manageSubscription")}
+        </Link>
+      </div>
       <ChildInfoEditForm
         studentProfileId={c.profile_id}
         childUniqueId={c.child_unique_id ?? null}

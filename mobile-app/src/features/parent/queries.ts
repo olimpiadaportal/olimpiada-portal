@@ -2,6 +2,7 @@
 // provisioning write goes through src/lib/api.ts (BFF) inside the screens.
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { NO_TRIAL, parseTrialState, type TrialState } from "@/lib/trialClock";
 import {
   fetchChildLeaderboardSummary,
   fetchChildSubscriptions,
@@ -406,19 +407,21 @@ export function useEntitledSubjectsByChild(
  * posture) and it derives `active` from `ends_at` INSIDE the database, so no
  * screen ever asks the device clock whether a family's trial is over.
  *
- * Only `active` survives the parse. `ends_at` and the subject list belong to a
- * countdown this screen does not draw.
+ * The whole state survives the parse since 2026-10-10: `used` and `active`
+ * together are what tell "Trial Expired" apart from "never had one", and the
+ * expired-trial banner needs `ends_at` to remember which window it was
+ * dismissed for. The countdown itself stays on the CHILD's dashboard.
  *
  * Safe fallback = NO trial, the opposite direction from the entitlement reader
  * and correct in both places: an empty entitlement list has to OFFER a product,
  * while a failed trial read can only cost the nicer of two labels.
  */
-async function fetchChildFreeTrialActive(studentProfileId: string): Promise<boolean> {
+async function fetchChildFreeTrial(studentProfileId: string): Promise<TrialState> {
   const { data, error } = await supabase.rpc("child_free_trial", {
     p_student: studentProfileId,
   });
-  if (error || !data || typeof data !== "object") return false;
-  return (data as { active?: unknown }).active === true;
+  if (error) return { ...NO_TRIAL, receivedAt: Date.now() };
+  return parseTrialState(data, Date.now());
 }
 
 /** One trial flag per child, positional like the two hooks above; same gate and
@@ -427,7 +430,7 @@ export function useFreeTrialsByChild(children: ChildRow[] | undefined, enabled: 
   return useQueries({
     queries: (children ?? []).map((c) => ({
       queryKey: QK.trial(c.profile_id),
-      queryFn: () => fetchChildFreeTrialActive(c.profile_id),
+      queryFn: () => fetchChildFreeTrial(c.profile_id),
       enabled,
       staleTime: 5 * 60_000,
     })),

@@ -537,6 +537,20 @@ export const bffActivateFree = (childId: string) =>
     "sub.err.failed",
   );
 
+/**
+ * Start a child's one-time 24 hours of free access (2026-10-10). NOT a
+ * purchase on either platform: no price, no store account, no card — the
+ * server grants a time-boxed window and the database expires it. Every rule
+ * (creator-only, once per child, two subjects, the per-email cap) is enforced
+ * by activate_free_trial behind this route.
+ */
+export const bffStartTrial = (childId: string, subjectIds: string[], locale: string) =>
+  bffAuthedPost<{ ends_at: string; server_now: string }>(
+    `/api/mobile/v1/children/${childId}/trial`,
+    { subject_ids: subjectIds, locale },
+    "mob.trial.err.generic",
+  );
+
 export const bffEditChild = (childId: string, fields: Omit<AddChildFields, "password">) =>
   bffAuthedPost<Record<string, any>>(
     `/api/mobile/v1/children/${childId}/edit`,

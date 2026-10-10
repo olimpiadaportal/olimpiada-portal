@@ -1796,7 +1796,59 @@ another extended review rather than a fast one.
   shows the free-trial note and a "Start the free 24-hour trial" button that
   leads to the existing two-subject picker; paying now stays available as the
   second option. After the trial, payment is made from the child's
-  subscription page in the parent's area, as before.
+  subscription page in the parent's area, as before. *(Superseded the next day
+  by the trial-first onboarding below.)*
+
+### Trial-first onboarding, in the apps too (2026-10-10)
+
+- `[store]` Adding a child now ends with 24 hours of free access instead of a
+  payment step: choose 2 subjects and both open straight away, with no card and
+  no payment. The step can be skipped. iOS and Android alike, over the air.
+
+- `[store]` A child on free access sees a live countdown at the top of their
+  home screen, with the two subjects; when it ends the card says so and tells
+  them to talk to a parent. The time comes from the server, so it matches the
+  website and the other phone.
+
+- `[store]` The parent's child card reads "Trial Active" or "Trial Expired",
+  and an ended free access shows a dismissible notice on the parent's home. On
+  iPhone it leads to the child's App Store activation; on Android it only
+  informs.
+
+- `[store]` Child → Edit has a "Subjects & access" button.
+
+- `[store]` Every bottom sheet (the profile/account sheet, language picker,
+  notification details, select lists, confirm sheets) closes by holding the
+  grab line at the top and swiping down — a tall sheet left no backdrop to tap
+  and could not be closed. Tapping outside and the Android back button still
+  work. iOS and Android alike.
+
+- `[web]` Add Child is Info → Free trial → Done. The trial step is the existing
+  two-subject picker, limited to the subjects the child's grade studies, and
+  asks for exactly two. Subscription and payment are no longer part of
+  onboarding; the Done step shows the trial's subjects and countdown (or, if
+  skipped, a Manage Subscription link) next to the 8-digit ID.
+
+- `[web]` The child dashboard counts an active trial as access (it showed the
+  locked screen before), lists the trial's subjects, and shows "Your Free
+  Trial · 23h 45m 12s remaining · Subjects: …" — then "Your Free Trial Has
+  Ended". The countdown runs on server time.
+
+- `[web]` Parent dashboard: each child reads Subscription Active / Trial Active
+  / Trial Expired, with no countdown. A child whose trial ended with nothing
+  else open gets a dismissible banner with Subscribe Now. The child's edit page
+  has a Manage Subscription card.
+
+- `[admin]` A child's Access page shows their trial and lets an administrator
+  grant one extension after it has ended. Free; its length and limit are system
+  settings.
+
+- `[internal]` Migration 183: a re-registered account cannot get another trial.
+  Each trial is recorded against a hash of the normalised parent email (Gmail
+  dots and `+tags` folded), the record survives account deletion, and the
+  number of trials per email is a setting (default 3). Trial extensions are
+  their own table and audit event, and the trial reader returns the server
+  clock. New mobile route `POST /api/mobile/v1/children/[id]/trial`.
 
 ---
 

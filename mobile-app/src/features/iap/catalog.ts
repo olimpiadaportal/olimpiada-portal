@@ -43,30 +43,55 @@ const INTERVAL_ORDER: Record<string, number> = { week: 0, month: 1, year: 2 };
 export async function fetchIosIapCatalog(): Promise<IapCatalogRow[]> {
   const { data, error } = await supabase
     .from("iap_products")
-    .select("product_id, scope, subject_id, package_id, interval, subject:subject_id(code, name)")
+    .select(
+      "product_id, scope, subject_id, package_id, interval, subject:subject_id(code, name, status)",
+    )
     .eq("platform", "ios")
     .eq("active", true);
   if (error) throw error;
-  const rows = (data ?? []) as unknown as {
-    product_id: string;
-    scope: string;
-    subject_id: string | null;
-    package_id: string | null;
-    interval: string | null;
-    subject: { code: string | null; name: string | null } | null;
-  }[];
-  return rows.map((r) => ({
-    productId: r.product_id,
-    scope: r.scope === "olympiad_package" ? "olympiad_package" : "subject",
-    subjectId: r.subject_id,
-    packageId: r.package_id,
-    interval:
-      r.interval === "week" || r.interval === "month" || r.interval === "year"
-        ? r.interval
-        : null,
-    subjectCode: r.subject?.code ?? null,
-    subjectName: r.subject?.name ?? null,
-  }));
+  return catalogRowsFromQuery((data ?? []) as unknown as IapProductQueryRow[]);
+}
+
+/** One `iap_products` row as the select above returns it. */
+export type IapProductQueryRow = {
+  product_id: string;
+  scope: string;
+  subject_id: string | null;
+  package_id: string | null;
+  interval: string | null;
+  subject: { code: string | null; name: string | null; status?: string | null } | null;
+};
+
+/**
+ * Shape the query result, and DROP EVERY SUBJECT PRODUCT WHOSE SUBJECT IS NOT
+ * PUBLISHED (owner, 2026-10-10: "when we hide a subject in the admin panel it
+ * must not be visible to others in the app").
+ *
+ * `iap_products.active` is the switch for the App Store PRODUCT; it knows
+ * nothing about the SUBJECT. An admin who sets a subject to Gizli/Private
+ * (`subjects.status = 'inactive'`) or archives it hid it everywhere else in
+ * the app and still had it on sale here, because this read never looked. Only
+ * `status = 'active'` passes. A subject product whose embedded subject came
+ * back NULL is dropped too: either the subject row is gone or RLS will not
+ * show it to this account, and either way the app cannot say what is being
+ * sold. Olympiad package rows carry no subject and pass through unchanged —
+ * buildOffers() decides about them, not this.
+ */
+export function catalogRowsFromQuery(rows: readonly IapProductQueryRow[]): IapCatalogRow[] {
+  return rows
+    .filter((r) => r.scope === "olympiad_package" || r.subject?.status === "active")
+    .map((r) => ({
+      productId: r.product_id,
+      scope: r.scope === "olympiad_package" ? "olympiad_package" : "subject",
+      subjectId: r.subject_id,
+      packageId: r.package_id,
+      interval:
+        r.interval === "week" || r.interval === "month" || r.interval === "year"
+          ? r.interval
+          : null,
+      subjectCode: r.subject?.code ?? null,
+      subjectName: r.subject?.name ?? null,
+    }));
 }
 
 /** The SKUs StoreKit has to be asked about. Subject products only — see below. */

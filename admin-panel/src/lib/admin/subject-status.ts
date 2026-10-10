@@ -64,9 +64,30 @@ const SUBJECT_TRANSITIONS: Record<string, { from: string[]; to: string }> = {
   archive: { from: ["active", "inactive"], to: "archived" },
 };
 
-export type SubjectStatusState = { error?: string; ok?: boolean } | null;
+/**
+ * What a transition did, for a caller that shows it (the row's buttons).
+ *
+ * WHY A RESULT AND NOT A SILENT RETURN (2026-10-10). The owner reported that
+ * hiding a subject ended on the panel's generic "an unexpected error occurred"
+ * page, and the database showed no subject had been written since August. The
+ * old action answered every refusal — a stale row, a failed write — by
+ * returning nothing, and the plain <form> that posted it had no way to show
+ * anything either, so the only failure an admin could ever SEE was a crash.
+ * Every outcome now comes back as a key the buttons translate in place.
+ */
+export type SubjectStatusState =
+  | { ok: true; to: string; error?: undefined }
+  | { ok?: false; error: string; to?: undefined }
+  | null;
 
-export async function transitionSubject(formData: FormData): Promise<void> {
+type TransitionOutcome =
+  | { kind: "done"; to: string }
+  | { kind: "ignored" }
+  | { kind: "stale" }
+  | { kind: "publishBlocked"; back: string }
+  | { kind: "failed" };
+
+async function applyTransition(formData: FormData): Promise<TransitionOutcome> {
   // Guard FIRST, before any client-supplied field is read.
   const ctx = await requireAdmin();
 
@@ -74,16 +95,25 @@ export async function transitionSubject(formData: FormData): Promise<void> {
   const action = String(formData.get("__action") ?? "").trim();
   const returnKey = String(formData.get("__return") ?? "").trim();
   const tr = SUBJECT_TRANSITIONS[action];
-  if (!UUID_RE.test(id) || !tr) return;
+  if (!UUID_RE.test(id) || !tr) return { kind: "ignored" };
 
   const supabase = await createClient();
-  const { data: row } = await supabase
+  const { data: row, error: readErr } = await supabase
     .from("subjects")
     .select("status, name")
     .eq("id", id)
     .maybeSingle();
-  // Re-read, then verify the move is legal FROM WHERE THE ROW ACTUALLY IS.
-  if (!row || !tr.from.includes(String(row.status))) return;
+  if (readErr) {
+    console.error("[admin] subject transition read failed", readErr.code ?? "unknown");
+    return { kind: "failed" };
+  }
+  // Re-read, then verify the move is legal FROM WHERE THE ROW ACTUALLY IS. A
+  // row that has already moved (another tab, another admin) is STALE, and is
+  // reported as such instead of being written or silently dropped.
+  if (!row) return { kind: "stale" };
+  if (!tr.from.includes(String(row.status))) {
+    return String(row.status) === tr.to ? { kind: "done", to: tr.to } : { kind: "stale" };
+  }
 
   // PUBLISHED-AND-UNSELLABLE IS THE BUG THIS BLOCKS. A subject's price is not
   // a column on the row: it lives in subjects_pricing, one row per
@@ -91,10 +121,8 @@ export async function transitionSubject(formData: FormData): Promise<void> {
   // Add-Child, the per-child subscribe screen, even the admin Free Access
   // picker — builds its subject list from PRICED rows, so a subject that is
   // 'active' with an incomplete price set is published nowhere and says so
-  // nowhere. Elm and Fizika sat in exactly that state until migration 154
-  // priced them. Publishing now requires all three cycles to be priced, and
-  // the refusal is SHOWN (query flag) rather than swallowed — an admin who is
-  // told nothing assumes the publish worked.
+  // nowhere. Publishing requires all three cycles to be priced, and the
+  // refusal is SHOWN rather than swallowed.
   if (tr.to === "active") {
     const { data: prices, error: priceErr } = await supabase
       .from("subjects_pricing")
@@ -104,43 +132,76 @@ export async function transitionSubject(formData: FormData): Promise<void> {
     const priced = new Set(
       (prices ?? []).map((p) => String((p as { interval: string }).interval)),
     );
-    const complete =
-      !priceErr && PRICE_INTERVALS.every((iv) => priced.has(iv));
+    const complete = !priceErr && PRICE_INTERVALS.every((iv) => priced.has(iv));
     if (!complete) {
       if (priceErr) {
-        console.error(
-          "[admin] subject pricing check failed",
-          priceErr.code ?? "unknown",
-        );
+        console.error("[admin] subject pricing check failed", priceErr.code ?? "unknown");
       }
-      const back =
-        returnKey === "edit" ? RETURN_PATHS.edit(id) : RETURN_PATHS.list();
-      redirect(`${back}?publishBlocked=1`);
+      const back = returnKey === "edit" ? RETURN_PATHS.edit(id) : RETURN_PATHS.list();
+      return { kind: "publishBlocked", back };
     }
   }
 
+  // HIDING IS ONE COLUMN. 'inactive' takes the subject out of every family
+  // catalogue — /services, /register, Add-Child, the subscribe screen, the
+  // apps' subject lists and the iOS App Store list all read status = 'active'
+  // — while its prices, curriculum, questions and every family's existing
+  // access stay exactly as they were. Publishing brings it straight back.
   const { error } = await supabase
     .from("subjects")
     .update({ status: tr.to, updated_at: new Date().toISOString() })
     .eq("id", id);
 
-  if (!error) {
-    await writeAuditLog({
-      actorProfileId: ctx.profileId,
-      action: "admin.subject.transition",
-      targetTable: "subjects",
-      targetId: id,
-      metadata: { transition: action, from: row.status, to: tr.to, name: row.name },
-    });
-  } else {
-    // Never surface a raw Postgres message; the list re-renders showing the
-    // unchanged status, which is the honest outcome.
+  if (error) {
+    // Never surface a raw Postgres message; the caller gets a translated key.
     console.error("[admin] subject transition failed", error.code ?? "unknown");
+    return { kind: "failed" };
   }
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.subject.transition",
+    targetTable: "subjects",
+    targetId: id,
+    metadata: { transition: action, from: row.status, to: tr.to, name: row.name },
+  });
 
   // Both Subjects screens show a subject's status, and /services on the web
   // reads it too — but that is a different deployment and revalidates on its
   // own 60s cache. (/pricing is no longer a screen; it redirects here.)
   revalidatePath("/manage/subjects");
   revalidatePath(`/manage/subjects/${id}/edit`);
+  return { kind: "done", to: tr.to };
+}
+
+/**
+ * The buttons' action: every outcome is a RESULT, never a crash and never a
+ * silence. Keys are translated by the caller's dictionary.
+ */
+export async function transitionSubjectAction(
+  _prev: SubjectStatusState,
+  formData: FormData,
+): Promise<SubjectStatusState> {
+  const out = await applyTransition(formData);
+  switch (out.kind) {
+    case "done":
+      return { ok: true, to: out.to };
+    case "publishBlocked":
+      return { error: "subj.publishBlocked" };
+    case "stale":
+      return { error: "subj.act.stale" };
+    case "ignored":
+    case "failed":
+      return { error: "subj.act.failed" };
+  }
+}
+
+/**
+ * The form-post shape, kept for the delete dialog's "archive instead" and for
+ * any cached page still posting a plain <form>: a refused publish redirects
+ * back with the flag the list and edit pages already render.
+ */
+export async function transitionSubject(formData: FormData): Promise<void> {
+  const out = await applyTransition(formData);
+  if (out.kind === "publishBlocked") redirect(`${out.back}?publishBlocked=1`);
 }

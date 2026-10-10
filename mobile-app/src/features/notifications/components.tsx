@@ -418,7 +418,8 @@ export function NotificationDetailSheet({
             // indicator / Android gesture bar.
             paddingBottom: insets.bottom + spacing.xl,
             gap: spacing.lg,
-            maxHeight: "80%",
+            // No height clamp here: SwipeDownSheet owns the detents (80% of
+            // the window, draggable to just below the top inset).
           },
           shadow("float", tokens.shadow),
         ]}

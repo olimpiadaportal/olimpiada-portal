@@ -1850,6 +1850,29 @@ another extended review rather than a fast one.
   their own table and audit event, and the trial reader returns the server
   clock. New mobile route `POST /api/mobile/v1/children/[id]/trial`.
 
+### Sheets, the iPhone activation list, hiding subjects (2026-10-10)
+
+- `[store]` Bottom sheets open to about 80% of the screen instead of running up
+  under the camera. Drag the grab line up for full screen (it stops below the
+  status bar) or down to close. The grab line is larger and clearly visible in
+  light and dark mode. iOS and Android alike.
+
+- `[store]` iPhone: the App Store activation list is grouped by subject — one
+  row per subject; open it to pick weekly, monthly or yearly (monthly is
+  preselected) and activate with one button showing the App Store price.
+  Previously every subject appeared three times as separate price buttons.
+
+- `[store]` iPhone: a subject the admin hides is no longer offered in the App
+  Store activation list. The website and the other app lists already left
+  hidden subjects out.
+
+- `[admin]` Hiding, publishing and archiving a subject from the Subjects
+  screen now report the result on the row ("Subject hidden: parents and
+  students no longer see it…"), and any refusal or failure is shown there too,
+  instead of ending on the panel's "an unexpected error occurred" page. A
+  page left open across a deploy now says "reload the page" rather than
+  crashing.
+
 ---
 
 ## 1.15.0 — RELEASED on the App Store 2026-09-09 (submitted 2026-09-04, approved and released the same day)

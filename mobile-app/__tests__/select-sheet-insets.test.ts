@@ -29,7 +29,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { spacing } from "@/theme/tokens";
-import { HANDLE_STRIP } from "@/components/swipeDismiss";
+import { COLLAPSED_FRACTION, HANDLE_STRIP, sheetDetents } from "@/components/swipeDismiss";
 
 const SRC = resolve(__dirname, "..", "src");
 
@@ -94,7 +94,16 @@ function maxHeightPercent(source: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-const CLAMPED = SHEETS.filter((s) => maxHeightPercent(s.code) !== null);
+/** A bottom sheet on SwipeDownSheet is clamped by the component's detents
+ *  (COLLAPSED_FRACTION of the window, draggable up to the top inset) instead of
+ *  a percentage of its own. */
+function usesSheetDetents(source: string): boolean {
+  return source.includes("<SwipeDownSheet");
+}
+
+const CLAMPED = SHEETS.filter(
+  (s) => maxHeightPercent(s.code) !== null || usesSheetDetents(s.code),
+);
 
 describe("every modal option list", () => {
   it("is found by the scan at all", () => {
@@ -119,7 +128,7 @@ describe("every modal option list", () => {
   });
 });
 
-describe("a sheet clamped by maxHeight", () => {
+describe("a sheet clamped by a height cap", () => {
   it("is the bottom sheet and the centred dialog — the two that sit off the window edge", () => {
     expect(CLAMPED.map((s) => s.file).sort()).toEqual([
       PROFILE_SHEET,
@@ -149,9 +158,18 @@ describe("a sheet clamped by maxHeight", () => {
 
   it("leaves the list a usable share of the screen", () => {
     // 70% was the old value in both files and it is too tight — see the
-    // geometry below. 88% is SheetShell's number, 85% the arena dialogs'.
+    // geometry below. 85% is the arena dialogs' number. A bottom sheet on
+    // SwipeDownSheet opens at the owner's 80% detent (2026-10-10: a sheet must
+    // not open up into the camera cutout) and drags up to the full window,
+    // which is what buys back the rows the lower cap costs.
     for (const s of CLAMPED) {
-      expect(maxHeightPercent(s.code)).toBeGreaterThanOrEqual(85);
+      if (usesSheetDetents(s.code)) {
+        // One cap, the component's: a percentage here as well would fight it.
+        expect(maxHeightPercent(s.code)).toBeNull();
+        expect(COLLAPSED_FRACTION).toBeGreaterThanOrEqual(0.8);
+      } else {
+        expect(maxHeightPercent(s.code)).toBeGreaterThanOrEqual(85);
+      }
     }
   });
 });
@@ -162,6 +180,7 @@ describe("geometry on a 320x568 phone with a three-button navigation bar", () =>
   // is on screen above the list as well.
   const WINDOW_H = 568;
   const NAV_BAR = 48; // three-button bar; the gesture pill is ~24
+  const STATUS = 24; // the top inset the expanded detent stops under
   const LINE = 20;
   /** One option row: paddingVertical spacing.md top and bottom + one line. */
   const ROW = 2 * spacing.md + LINE;
@@ -177,17 +196,33 @@ describe("geometry on a 320x568 phone with a three-button navigation bar", () =>
     spacing.md; // search box + gap
 
   function rowsFullyVisible(pct: number): number {
-    const height = (WINDOW_H * pct) / 100;
+    return rowsInCard((WINDOW_H * pct) / 100);
+  }
+
+  function rowsInCard(height: number): number {
     // The sheet's bottom padding is insets.bottom + spacing.xl, and
     // insets.bottom IS the navigation bar — that is what the fix buys.
     const list = height - CHROME - (NAV_BAR + spacing.xl);
     return Math.floor((list - spacing.md) / ROW); // less the content padding
   }
 
-  it("shows at least six options, with the rest reachable by scrolling", () => {
-    const pct = maxHeightPercent(sheet(PROFILE_SHEET));
-    expect(pct).not.toBeNull();
-    expect(rowsFullyVisible(pct as number)).toBeGreaterThanOrEqual(6);
+  const detents = sheetDetents(WINDOW_H, STATUS);
+
+  it("is on the detent sheet, so both detents below apply to it", () => {
+    expect(usesSheetDetents(sheet(PROFILE_SHEET))).toBe(true);
+  });
+
+  it("opens showing five options, with the rest reachable by scrolling", () => {
+    // Was six at the old 88% cap. The owner's 80% opening cap costs one row on
+    // this, the smallest phone we ship to — no chrome trim recovers it (even the
+    // pre-handle chrome needs a 472pt card for six rows; 80% is 454) — and the
+    // expanded detent below is what pays it back.
+    expect(rowsInCard(detents.collapsed)).toBeGreaterThanOrEqual(5);
+  });
+
+  it("shows at least seven once the handle drags it up to the top inset", () => {
+    expect(detents.full).toBe(WINDOW_H - STATUS);
+    expect(rowsInCard(detents.full)).toBeGreaterThanOrEqual(7);
   });
 
   it("shows why 70% moved: it left barely four rows once the bar was cleared", () => {

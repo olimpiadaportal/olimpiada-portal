@@ -131,5 +131,13 @@ export function subjectLifecycleDict(t: T): Record<string, string> {
     "subj.act.archive": t("subj.act.archive"),
     "subj.publishNeedsPrices": t("subj.publishNeedsPrices"),
     "pend.processing": t("pend.processing"),
+    // Every outcome of a row button is shown in place (2026-10-10).
+    "subj.act.done.inactive": t("subj.act.done.inactive"),
+    "subj.act.done.active": t("subj.act.done.active"),
+    "subj.act.done.archived": t("subj.act.done.archived"),
+    "subj.act.stale": t("subj.act.stale"),
+    "subj.act.failed": t("subj.act.failed"),
+    "subj.act.reload": t("subj.act.reload"),
+    "subj.act.reloadBtn": t("subj.act.reloadBtn"),
   };
 }

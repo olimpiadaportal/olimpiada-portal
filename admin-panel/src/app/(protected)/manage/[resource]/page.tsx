@@ -10,6 +10,7 @@ import {
   type SubjectDeleteStrings,
 } from "@/components/SubjectDeleteButton";
 import { SubjectLifecycle } from "@/components/SubjectLifecycle";
+import { subjectLifecycleDict } from "../subjects/strings";
 import { getT, type T } from "@/i18n/server";
 import { localizeFields, resourceTitle } from "@/i18n/resources-i18n";
 import { FilterBar, type FilterBarSelect } from "@/components/FilterBar";
@@ -226,12 +227,7 @@ export default async function ManageResourcePage({
                       <SubjectLifecycle
                         id={row.id}
                         status={String(row.status ?? "")}
-                        dict={{
-                          "subj.act.publish": t("subj.act.publish"),
-                          "subj.act.unpublish": t("subj.act.unpublish"),
-                          "subj.act.archive": t("subj.act.archive"),
-                          "pend.processing": t("pend.processing"),
-                        }}
+                        dict={subjectLifecycleDict(t)}
                       />
                     ) : null}
                     <Link href={`/manage/${res.slug}/${row.id}/edit`}>

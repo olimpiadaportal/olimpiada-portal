@@ -362,7 +362,8 @@ export function SheetShell({
             padding: spacing.xl,
             paddingBottom: insets.bottom + spacing.xl,
             gap: spacing.lg,
-            maxHeight: "88%",
+            // No height clamp here: SwipeDownSheet owns the detents (80% of
+            // the window, draggable to just below the top inset).
           },
           shadow("float", tokens.shadow),
         ]}

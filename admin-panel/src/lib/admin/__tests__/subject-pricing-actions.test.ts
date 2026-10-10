@@ -180,7 +180,7 @@ const GOOD = {
 };
 
 import { createSubject, updateSubject } from "../actions";
-import { transitionSubject } from "../subject-status";
+import { transitionSubject, transitionSubjectAction } from "../subject-status";
 import { saveSubjectPrice } from "../pricing";
 
 beforeEach(() => {
@@ -1340,5 +1340,69 @@ describe("the staleness guard is armed by the form, not disarmed by it", () => {
     // the identical refusal until the admin reloaded by hand.
     const src = read("src/app/(protected)/manage/subjects/SubjectForm.tsx");
     expect(src).toContain("if (state?.stale) router.refresh();");
+  });
+});
+
+// =============================================================================
+// Hide (unpublish) and the buttons' result shape — 2026-10-10. The owner hit the
+// panel's generic error page when hiding a subject; every outcome is now a
+// RESULT the row buttons show in place.
+// =============================================================================
+describe("transitionSubjectAction — hiding a subject, and every outcome reported", () => {
+  it("hides a public subject: one status write, an audit row, ok with the new status", async () => {
+    subjectRow = { id: SUBJECT, name: "Fizika", code: "fizika", status: "active" };
+    const res = await transitionSubjectAction(null, form({ __id: SUBJECT, __action: "unpublish" }));
+    expect(res).toEqual({ ok: true, to: "inactive" });
+    expect(ops.some((o) => o.op === "update" && o.payload?.status === "inactive")).toBe(true);
+    expect(audits.length).toBeGreaterThan(0);
+    // Hiding never asks about prices — it is a way OUT, not a reward.
+    expect(redirects).toHaveLength(0);
+  });
+
+  it("reports a failed write instead of returning silently", async () => {
+    subjectRow = { id: SUBJECT, name: "Fizika", code: "fizika", status: "active" };
+    updateError = { code: "42501", message: "denied" };
+    const res = await transitionSubjectAction(null, form({ __id: SUBJECT, __action: "unpublish" }));
+    expect(res).toEqual({ error: "subj.act.failed" });
+    expect(audits).toHaveLength(0);
+  });
+
+  it("reports a row that already moved as stale, and treats an already-hidden row as done", async () => {
+    subjectRow = { id: SUBJECT, name: "Fizika", code: "fizika", status: "archived" };
+    expect(await transitionSubjectAction(null, form({ __id: SUBJECT, __action: "unpublish" }))).toEqual({
+      error: "subj.act.stale",
+    });
+    subjectRow = { id: SUBJECT, name: "Fizika", code: "fizika", status: "inactive" };
+    expect(await transitionSubjectAction(null, form({ __id: SUBJECT, __action: "unpublish" }))).toEqual({
+      ok: true,
+      to: "inactive",
+    });
+    expect(ops.some((o) => o.op === "update")).toBe(false);
+  });
+
+  it("answers a refused publish with the translated key, not a redirect", async () => {
+    subjectRow = { id: SUBJECT, name: "Fizika", code: "fizika", status: "inactive" };
+    pricingRows = [];
+    const res = await transitionSubjectAction(null, form({ __id: SUBJECT, __action: "publish" }));
+    expect(res).toEqual({ error: "subj.publishBlocked" });
+    expect(redirects).toHaveLength(0);
+  });
+
+  it("refuses a forged action or id without touching the database", async () => {
+    expect(await transitionSubjectAction(null, form({ __id: SUBJECT, __action: "delete" }))).toEqual({
+      error: "subj.act.failed",
+    });
+    expect(await transitionSubjectAction(null, form({ __id: "x", __action: "unpublish" }))).toEqual({
+      error: "subj.act.failed",
+    });
+    expect(ops.some((o) => o.op === "update")).toBe(false);
+  });
+
+  it("the row buttons catch an unreachable action instead of crashing the screen", () => {
+    const src = readFileSync(resolve(process.cwd(), "src/components/SubjectLifecycle.tsx"), "utf8");
+    expect(src).toContain("transitionSubjectAction(null, fd)");
+    expect(src).toMatch(/try \{\s*res = await transitionSubjectAction/);
+    expect(src).toContain('"subj.act.reload"');
+    expect(src).not.toContain("<form action={transitionSubject}");
   });
 });

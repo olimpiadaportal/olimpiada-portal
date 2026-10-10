@@ -254,6 +254,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
       "Avtomatik yenilənmə yoxdur: müddət bitəndə giriş dayanır və yenisini özünüz başladırsınız.",
     "mob.iap.loading": "App Store yoxlanılır…",
     "mob.iap.working": "Gözləyin…",
+    "mob.iap.activate": "Aktivləşdir",
+    "mob.iap.choosePeriod": "Müddəti seçin",
     "mob.iap.done": "Hazırdır — giriş açıldı.",
     // THE MOST IMPORTANT SENTENCE IN THIS FILE: shown when money has moved and
     // the grant could not be confirmed. It must never read as a failure.
@@ -520,6 +522,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
       "Nothing renews automatically: access ends when the period is over, and you start a new one yourself.",
     "mob.iap.loading": "Checking the App Store…",
     "mob.iap.working": "Please wait…",
+    "mob.iap.activate": "Activate",
+    "mob.iap.choosePeriod": "Choose a period",
     "mob.iap.done": "Done — access is open.",
     // THE MOST IMPORTANT SENTENCE IN THIS FILE: shown when money has moved and
     // the grant could not be confirmed. It must never read as a failure.
@@ -773,6 +777,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
       "Автоматического продления нет: доступ заканчивается по окончании срока, а новый вы начинаете сами.",
     "mob.iap.loading": "Проверяем App Store…",
     "mob.iap.working": "Подождите…",
+    "mob.iap.activate": "Активировать",
+    "mob.iap.choosePeriod": "Выберите срок",
     "mob.iap.done": "Готово — доступ открыт.",
     // THE MOST IMPORTANT SENTENCE IN THIS FILE: shown when money has moved and
     // the grant could not be confirmed. It must never read as a failure.

@@ -18,7 +18,12 @@
 // shows up in review and in this failure rather than in a rejection weeks later.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { buildOffers, sellableProductIds } from "../src/features/iap/catalog";
+import {
+  buildOffers,
+  catalogRowsFromQuery,
+  sellableProductIds,
+  type IapProductQueryRow,
+} from "../src/features/iap/catalog";
 import { mobileMessages } from "../src/i18n/messages.mobile";
 import type { IapCatalogRow, StoreProduct } from "../src/features/iap/types";
 
@@ -191,9 +196,16 @@ describe("no price is written anywhere in this module", () => {
     });
   }
 
-  it("renders StoreKit's own string as the button label", () => {
+  it("renders StoreKit's own string on the period option and the action", () => {
+    // Grouped layout (2026-10-10): the price is its own text node on each
+    // period option, and the one action per subject repeats the chosen
+    // period's price in its label. Both are the untouched StoreKit string.
     const panel = codeOnly(readFileSync(join(IAP_DIR, "IapPanel.tsx"), "utf8"));
-    expect(panel.includes("title={o.displayPrice}")).toBe(true);
+    expect(/>\s*\{offer\.displayPrice\}\s*</.test(panel)).toBe(true);
+    expect(/title=\{`[^`]*\$\{chosen\.displayPrice\}`\}/.test(panel)).toBe(true);
+    // Nothing in the panel derives anything FROM a price string.
+    expect(/displayPrice\s*\.\s*(replace|split|match|slice|substring|trim)\b/.test(panel)).toBe(false);
+    expect(/(parseFloat|parseInt|Number)\(\s*[\w.]*displayPrice/.test(panel)).toBe(false);
   });
 
   it("passes the price through the catalogue untouched", () => {
@@ -212,6 +224,48 @@ describe("no price is written anywhere in this module", () => {
       { id: "p.month", displayPrice: "9,99 ₼", title: "Maths, one month" },
     ];
     expect(buildOffers(catalog, products, [])[0]?.displayPrice).toBe("9,99 ₼");
+  });
+});
+
+describe("a subject the admin has hidden is never on sale (2026-10-10)", () => {
+  // `iap_products.active` switches the App Store PRODUCT; it knows nothing
+  // about the SUBJECT. A subject set to Gizli/Private ('inactive') or archived
+  // was hidden everywhere else in the app and still sold here.
+  const q = (over: Partial<IapProductQueryRow>): IapProductQueryRow => ({
+    product_id: "p",
+    scope: "subject",
+    subject_id: "s1",
+    package_id: null,
+    interval: "month",
+    subject: { code: "math", name: "Riyaziyyat", status: "active" },
+    ...over,
+  });
+
+  it("keeps active subjects and drops inactive and archived ones", () => {
+    const rows = [
+      q({ product_id: "on", subject_id: "s1" }),
+      q({ product_id: "hidden", subject_id: "s2", subject: { code: "a", name: "A", status: "inactive" } }),
+      q({ product_id: "gone", subject_id: "s3", subject: { code: "b", name: "B", status: "archived" } }),
+    ];
+    expect(catalogRowsFromQuery(rows).map((r) => r.productId)).toEqual(["on"]);
+  });
+
+  it("drops a subject product whose subject did not come back at all", () => {
+    // Deleted, or not visible to this account under RLS: either way the app
+    // cannot say what it would be selling.
+    expect(catalogRowsFromQuery([q({ subject: null })])).toEqual([]);
+    expect(catalogRowsFromQuery([q({ subject: { code: "m", name: "M" } })])).toEqual([]);
+  });
+
+  it("leaves olympiad package rows to buildOffers()", () => {
+    const pkg = q({ product_id: "k", scope: "olympiad_package", subject_id: null, package_id: "k1", interval: null, subject: null });
+    expect(catalogRowsFromQuery([pkg]).map((r) => r.productId)).toEqual(["k"]);
+  });
+
+  it("asks the database for the subject's status", () => {
+    const code = codeOnly(readFileSync(join(IAP_DIR, "catalog.ts"), "utf8"));
+    expect(/subject:subject_id\([^)]*\bstatus\b[^)]*\)/.test(code)).toBe(true);
+    expect(code).toContain("catalogRowsFromQuery(");
   });
 });
 

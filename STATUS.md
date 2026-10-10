@@ -6,6 +6,50 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## SHEETS 80% + IAP GROUPING + SUBJECT HIDE (2026-10-10, round 2)
+
+**Sheets.** `components/swipeDismiss.ts` detents: open at min(content, 80% of
+window); drag up to full = window − top safe inset (never under the notch);
+release rules: flick (vy > 1.0) decides direction; below the 80% line closes
+past min(120pt, 30%) else springs back; between 80% and full snaps to nearer.
+Height is JS-driven (cannot use the native driver). Handle 48×5 in
+`tokens.muted` — 3.19:1 light (#9a8aa8 on #fff), 5.92:1 dark (#9b9999 on
+#1f1d1d); the old `border` colour was ~1.2:1. Per-sheet height caps removed
+(notifications 80%, SheetShell 88%, profile SelectField 88%); the component
+owns the cap. Changed test expectation: the profile picker on 320×568 now
+opens showing 5 options (was 6), 7 at full height — 80% is 454pt and 6 rows
+needed 472pt.
+
+**iOS IAP list.** One accordion row per subject (first open), the three
+cycles as a radio group with StoreKit's own `displayPrice`, monthly
+preselected (never yearly), one "Aktivləşdir · <price>" button. Pure helper
+`features/iap/offerGroups.ts`; purchase flow untouched. `catalog.ts` now
+drops subject products whose subject is not `active` (hidden/archived).
+
+**Admin subject Hide error.** Not reproduced. Production: no `subjects` row
+updated since 2026-08-28 and no hide in `audit_logs`, so the request never
+reached the write; replaying the same UPDATE as the Super Admin in a
+rolled-back transaction succeeded (RLS `is_admin()` passes, no blocking
+trigger), and `admin.news.*` server actions worked on production the same
+morning. A local end-to-end reproduction as the owner's account was refused
+by the session's safety classifier and not pursued. Most likely cause: a tab
+opened before a deploy (Next 15 regenerates server-action ids per build, so a
+stale page's action is not found and the root error boundary renders). Fix
+covers every cause: `transitionSubjectAction` returns a result for every
+outcome (done / stale / publishBlocked / failed); `SubjectLifecycle` is a
+client component that calls it inside try/catch, shows the outcome in place,
+and turns an unreachable action into "reload the page". Sentry captures the
+original event if it recurs. Recommended: enable Vercel Skew Protection on
+the admin project. Known gap, not changed: `quote_child_plan` checks pricing
+rows but not `subjects.status`, so a hand-crafted request could still
+subscribe to a hidden subject (no UI offers it); left as is because existing
+plans that include a later-hidden subject must keep renewing.
+
+Gates: admin tsc 0, 1175 tests, build OK; mobile tsc 0, 76 suites / 1576
+tests.
+
+---
+
 ## TRIAL-FIRST ONBOARDING — web, iOS, Android, admin (2026-10-10)
 
 Gates: web tsc 0, 1613 tests, build OK; admin tsc 0, 1169 tests, build OK;

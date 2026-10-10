@@ -1,32 +1,49 @@
-// THE iOS PURCHASE SURFACE. One card, one child, one row per sellable subject.
+// THE iOS PURCHASE SURFACE. One card, one child, one section per sellable
+// subject.
+//
+// LAYOUT (owner feedback, 2026-10-10): this used to be one flat row per SKU —
+// seven subjects times three periods, twenty-one price buttons in a column. It
+// is now the standard paywall shape, grouped by subject (offerGroups.ts): each
+// subject is an accordion row; the open one lists its periods as radio options
+// with StoreKit's price on each, and carries ONE action whose label repeats the
+// chosen price. One section is open at a time, the first by default, so a
+// price is on screen without a tap. Monthly is preselected.
 //
 // WHAT A REVIEWER MUST NEVER SEE HERE: a blank area, a spinner that does not
 // end, a purchase button with no price, a raw error, or a red screen. Every
 // branch below renders a sentence somebody wrote on purpose.
 //
-// PRICES ARE StoreKit'S OWN STRINGS. `displayPrice` is rendered verbatim as the
-// button's label — already localised, already in the viewer's storefront
-// currency, already correct about tax. This app formats no amount anywhere, and
-// a helper that could print one is exactly how a wrong price gets back onto a
-// screen.
+// PRICES ARE StoreKit'S OWN STRINGS. `displayPrice` is rendered verbatim on the
+// period option and in the action's label — already localised, already in the
+// viewer's storefront currency, already correct about tax. This app formats no
+// amount anywhere, and a helper that could print one is exactly how a wrong
+// price gets back onto a screen.
 //
 // The panel is also given the current server-resolved availability. During an
 // admin giveaway, scheduled free access, or payment-off state it renders
 // nothing and its press handler refuses to start. The BFF repeats the gate
 // before an intent is written, so a stale frame cannot open StoreKit.
 import React, { useState } from "react";
-import { View } from "react-native";
+import { LayoutAnimation, Pressable, View } from "react-native";
+import { ChevronDown } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/theme/ThemeProvider";
-import { spacing } from "@/theme/tokens";
+import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { INTERVAL_NAME_KEY } from "@/features/parent/commerce";
 import { bffIapApi } from "./api";
 import { runPurchase } from "./purchaseFlow";
 import { appleStore } from "./store";
+import {
+  groupIapOffers,
+  openSubjectId,
+  selectedOffer,
+  type IapInterval,
+  type IapOfferGroup,
+} from "./offerGroups";
 import type { IapOffer } from "./catalog";
 import type { IapSurfaceState } from "./queries";
 import type { PurchaseOutcome } from "./types";
@@ -89,6 +106,21 @@ export function IapPanel({
   });
   const soldSubjectIds = sold.studentProfileId === studentProfileId ? sold.subjectIds : [];
   const visibleOffers = offers.filter((o) => !soldSubjectIds.includes(o.subjectId));
+  // Built from the FILTERED list, never the raw prop — a grouped subject the
+  // panel has just sold would put its price options straight back.
+  const groups = groupIapOffers(visibleOffers);
+  // Presentation only: which section is open and which period each subject
+  // has chosen. Neither is about money — the purchase below is always for the
+  // offer the open section DISPLAYS, resolved from the live list at press time.
+  const [chosenSubject, setChosenSubject] = useState<string | null | undefined>(undefined);
+  const [picked, setPicked] = useState<Record<string, IapInterval>>({});
+  const openId = openSubjectId(groups, chosenSubject);
+
+  function toggleSubject(subjectId: string) {
+    if (pendingId !== null) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setChosenSubject(openId === subjectId ? null : subjectId);
+  }
 
   async function buy(offer: IapOffer) {
     if (!purchaseEnabled || pendingId !== null) return;
@@ -176,31 +208,17 @@ export function IapPanel({
       </View>
     ) : (
       <View style={{ gap: spacing.md }}>
-        {visibleOffers.map((o) => (
-          <View
-            key={o.productId}
-            style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}
-          >
-            {/* flex + minWidth:0 so a long az/ru subject name truncates instead
-                of pushing the price button off a 320pt screen. */}
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <AppText variant="label" numberOfLines={2}>
-                {subjectLabel(t, o.subjectCode, o.subjectName)}
-              </AppText>
-              <AppText variant="muted" style={{ fontSize: 13 }}>
-                {t(INTERVAL_NAME_KEY[o.interval])}
-              </AppText>
-            </View>
-            {/* Apple's string, untouched. */}
-            <Button
-              title={o.displayPrice}
-              pending={pendingId === o.productId}
-              pendingTitle={t("mob.iap.working")}
-              disabled={pendingId !== null && pendingId !== o.productId}
-              onPress={() => void buy(o)}
-            />
-          </View>
-        ))}
+        <SubjectList
+          groups={groups}
+          openId={openId}
+          picked={picked}
+          pendingId={pendingId}
+          onToggle={toggleSubject}
+          onPick={(subjectId, interval) =>
+            setPicked((prev) => ({ ...prev, [subjectId]: interval }))
+          }
+          onActivate={(offer) => void buy(offer)}
+        />
         <AppText variant="muted" style={{ fontSize: 13 }}>
           {t("mob.iap.noRenew")}
         </AppText>
@@ -214,6 +232,203 @@ export function IapPanel({
       {body}
       <PurchaseNotice outcome={outcome} />
     </Card>
+  );
+}
+
+/**
+ * The grouped offer list: one accordion row per subject inside a single
+ * bordered group (a nested card per subject would stack seven shadows inside
+ * the panel's own). Only the open section shows periods and the action.
+ */
+function SubjectList({
+  groups,
+  openId,
+  picked,
+  pendingId,
+  onToggle,
+  onPick,
+  onActivate,
+}: {
+  groups: IapOfferGroup[];
+  openId: string | null;
+  picked: Record<string, IapInterval>;
+  pendingId: string | null;
+  onToggle: (subjectId: string) => void;
+  onPick: (subjectId: string, interval: IapInterval) => void;
+  onActivate: (offer: IapOffer) => void;
+}) {
+  const { tokens } = useTheme();
+  const { t } = useT();
+  const busy = pendingId !== null;
+
+  return (
+    <View
+      style={{
+        borderWidth: 1,
+        borderColor: tokens.border,
+        borderRadius: radius.md,
+        overflow: "hidden",
+      }}
+    >
+      {groups.map((group, index) => {
+        const isOpen = openId === group.subjectId;
+        const label = subjectLabel(t, group.subjectCode, group.subjectName);
+        const chosen = selectedOffer(group, picked[group.subjectId]);
+        return (
+          <View
+            key={group.subjectId}
+            style={index > 0 ? { borderTopWidth: 1, borderTopColor: tokens.border } : null}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{ expanded: isOpen, disabled: busy }}
+              onPress={() => onToggle(group.subjectId)}
+              disabled={busy}
+              android_ripple={{ color: tokens.chipBg }}
+              style={({ pressed }) => ({
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.md,
+                paddingHorizontal: spacing.md,
+                paddingVertical: spacing.md,
+                minHeight: 52,
+                opacity: pressed ? 0.8 : 1,
+              })}
+            >
+              {/* flex + minWidth:0 so a long az/ru subject name wraps instead of
+                  pushing the chevron off a 320pt screen. */}
+              <AppText
+                variant="label"
+                numberOfLines={2}
+                style={{ flex: 1, minWidth: 0, fontSize: 15 }}
+              >
+                {label}
+              </AppText>
+              <View style={{ transform: [{ rotate: isOpen ? "180deg" : "0deg" }] }}>
+                <ChevronDown
+                  size={18}
+                  color={isOpen ? tokens.accent : tokens.muted}
+                  strokeWidth={2}
+                />
+              </View>
+            </Pressable>
+
+            {isOpen && chosen ? (
+              <View
+                style={{
+                  paddingHorizontal: spacing.md,
+                  paddingBottom: spacing.md,
+                  gap: spacing.md,
+                }}
+              >
+                <View
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel={t("mob.iap.choosePeriod")}
+                  style={{ gap: spacing.sm }}
+                >
+                  {group.offers.map((offer) => (
+                    <PeriodOption
+                      key={offer.productId}
+                      offer={offer}
+                      selected={offer.productId === chosen.productId}
+                      disabled={busy}
+                      onPress={() => onPick(group.subjectId, offer.interval)}
+                    />
+                  ))}
+                </View>
+                {/* ONE action per subject. Its label carries the chosen
+                    period's price — Apple's string, untouched — so what the
+                    sheet will charge is written on the button that opens it. */}
+                <Button
+                  title={`${t("mob.iap.activate")} · ${chosen.displayPrice}`}
+                  pending={pendingId === chosen.productId}
+                  pendingTitle={t("mob.iap.working")}
+                  disabled={busy && pendingId !== chosen.productId}
+                  onPress={() => onActivate(chosen)}
+                />
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** One period of one subject: a radio option with StoreKit's price on it. */
+function PeriodOption({
+  offer,
+  selected,
+  disabled,
+  onPress,
+}: {
+  offer: IapOffer;
+  selected: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const { tokens } = useTheme();
+  const { t } = useT();
+  const period = t(INTERVAL_NAME_KEY[offer.interval]);
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      // The price is part of what is being chosen, so it is part of the label.
+      accessibilityLabel={`${period}, ${offer.displayPrice}`}
+      accessibilityState={{ checked: selected, disabled }}
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: spacing.md,
+        minHeight: 48,
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.md,
+        borderRadius: radius.sm,
+        // Same width selected or not, so choosing a period never shifts the
+        // rows; only the colour changes.
+        borderWidth: 2,
+        borderColor: selected ? tokens.accent : tokens.border,
+        backgroundColor: selected ? tokens.pillBg : tokens.surface,
+        // One-decimal opacities: this module's no-amount sweep treats any
+        // two-decimal literal as a price, and it is right to be that blunt.
+        opacity: disabled && !selected ? 0.5 : pressed ? 0.8 : 1,
+      })}
+    >
+      {/* Radio mark — fixed-size art, not layout. */}
+      <View
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 10,
+          borderWidth: 2,
+          borderColor: selected ? tokens.accent : tokens.muted,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {selected ? (
+          <View
+            style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: tokens.accent }}
+          />
+        ) : null}
+      </View>
+      <AppText variant="label" style={{ flex: 1, minWidth: 0 }} numberOfLines={2}>
+        {period}
+      </AppText>
+      {/* Apple's string, untouched. Allowed to wrap rather than truncate: a
+          clipped price is worse than a taller row. */}
+      <AppText
+        variant="label"
+        // pillText, not accent: it is the readable ink on pillBg in both themes.
+        color={selected ? tokens.pillText : tokens.text}
+        style={{ flexShrink: 1, textAlign: "right" }}
+      >
+        {offer.displayPrice}
+      </AppText>
+    </Pressable>
   );
 }
 

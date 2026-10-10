@@ -134,10 +134,15 @@ export function SelectField({
             (PhoneField precedent). */}
         <KeyboardFocusBoundary>
           <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+            {/* minHeight: with the keyboard up this window is shorter than
+                SwipeDownSheet's computed detents, the card flex-shrinks to fit,
+                and this backdrop is what keeps its top below the status bar /
+                camera cutout (a margin on the card would be an undimmed
+                stripe). */}
             <Pressable
               accessibilityLabel={label}
               onPress={close}
-              style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
+              style={{ flex: 1, minHeight: insets.top, backgroundColor: "rgba(0,0,0,0.45)" }}
             />
             {/* The sheet sits ON the window's bottom edge, and under Android's
                 edge-to-edge windows that edge is BEHIND the gesture/navigation
@@ -148,9 +153,11 @@ export function SelectField({
                 to nor tapped: taps in that strip go to the system. Same
                 insets.bottom + spacing.xl as SheetShell, for the same reason.
 
-                88% (was 70%) is SheetShell's number too: the handle, the title
-                and the search box spend ~120pt before a single option renders,
-                so on a 568pt-tall phone a 70% sheet showed barely five rows. */}
+                The height cap is SwipeDownSheet's, not this file's: the sheet
+                opens at most 80% of the window and the handle drags it up to
+                just below the top inset. The handle, the title and the search
+                box spend ~150pt before a single option renders, which is why
+                the expanded detent exists — see select-sheet-insets.test.ts. */}
             <SwipeDownSheet
               visible={open}
               onDismiss={close}
@@ -160,9 +167,7 @@ export function SelectField({
                 borderTopLeftRadius: radius.xl,
                 borderTopRightRadius: radius.xl,
                 paddingHorizontal: spacing.xl,
-                paddingTop: spacing.lg,
                 paddingBottom: insets.bottom + spacing.xl,
-                maxHeight: "88%",
                 gap: spacing.md,
               }}
             >
@@ -187,9 +192,9 @@ export function SelectField({
                 keyExtractor={(o) => o.id}
                 // The list is the sheet's only elastic row. ScrollView's base
                 // style (flexShrink: 1) already shrinks it once the options
-                // overflow the maxHeight box, which is what makes it scroll at
-                // all; flexGrow: 0 keeps a two-option sheet content-sized
-                // instead of stretching to the full 88% (the rules card in
+                // overflow the sheet's height cap, which is what makes it scroll
+                // at all; flexGrow: 0 keeps a two-option sheet content-sized
+                // instead of stretching to the full cap (the rules card in
                 // TestsHomeScreen pins the same pair for the same reason).
                 style={{ flexGrow: 0 }}
                 // The CONTENT, not just the container, has to end clear of the

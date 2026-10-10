@@ -283,6 +283,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.publishBlocked":
       "Fənn dərc edilmədi: hər üç dövr üçün qiymət təyin olunmayıb. Əvvəlcə qiymətləri daxil edin.",
     "subj.publishNeedsPrices": "Dərc etmək üçün əvvəlcə hər üç qiyməti daxil edin.",
+    "subj.act.done.inactive": "Fənn gizlədildi: valideynlər və şagirdlər onu artıq sayt və tətbiqdə yeni seçim kimi görmür. Mövcud girişlər toxunulmaz qalır.",
+    "subj.act.done.active": "Fənn dərc edildi: artıq sayt və tətbiqdə görünür.",
+    "subj.act.done.archived": "Fənn arxivləndi: ailələrə görünmür, istənilən vaxt geri qaytarmaq olar.",
+    "subj.act.stale": "Bu fənnin statusu artıq dəyişib. Siyahı yeniləndi — yenidən yoxlayın.",
+    "subj.act.failed": "Status dəyişdirilmədi. Yenidən cəhd edin.",
+    "subj.act.reload": "Panel yenilənib və bu səhifə köhnə versiyadadır. Heç nə dəyişdirilmədi — səhifəni yeniləyib yenidən cəhd edin.",
+    "subj.act.reloadBtn": "Səhifəni yenilə",
     "subj.err.name": "Fənnin adı 1–120 simvol olmalıdır.",
     "subj.err.price":
       "Hər qiymət 0-dan böyük, 10000-dən çox olmayan və ən çoxu 2 onluq rəqəmli olmalıdır.",
@@ -2203,6 +2210,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.publishBlocked":
       "The subject was not published: it has no price for all three cycles. Set the prices first.",
     "subj.publishNeedsPrices": "Set all three prices before publishing.",
+    "subj.act.done.inactive": "Subject hidden: parents and students no longer see it as a new choice on the website or in the app. Existing access is untouched.",
+    "subj.act.done.active": "Subject published: it is now visible on the website and in the app.",
+    "subj.act.done.archived": "Subject archived: families no longer see it, and it can be restored at any time.",
+    "subj.act.stale": "This subject's status had already changed. The list has been refreshed — please check again.",
+    "subj.act.failed": "The status was not changed. Please try again.",
+    "subj.act.reload": "The panel has been updated and this page is out of date. Nothing was changed — reload the page and try again.",
+    "subj.act.reloadBtn": "Reload page",
     "subj.err.name": "The subject name must be 1–120 characters.",
     "subj.err.price":
       "Each price must be above 0, at most 10000, with up to 2 decimal places.",
@@ -4103,6 +4117,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.publishBlocked":
       "Предмет не опубликован: у него заданы не все три цены. Сначала укажите цены.",
     "subj.publishNeedsPrices": "Перед публикацией укажите все три цены.",
+    "subj.act.done.inactive": "Предмет скрыт: родители и ученики больше не видят его для выбора на сайте и в приложении. Уже открытый доступ сохраняется.",
+    "subj.act.done.active": "Предмет опубликован: теперь он виден на сайте и в приложении.",
+    "subj.act.done.archived": "Предмет в архиве: семьи его не видят, вернуть можно в любой момент.",
+    "subj.act.stale": "Статус этого предмета уже изменился. Список обновлён — проверьте ещё раз.",
+    "subj.act.failed": "Статус не изменён. Попробуйте ещё раз.",
+    "subj.act.reload": "Панель обновилась, а эта страница устарела. Ничего не изменено — перезагрузите страницу и повторите.",
+    "subj.act.reloadBtn": "Перезагрузить страницу",
     "subj.err.name": "Название предмета должно содержать от 1 до 120 символов.",
     "subj.err.price":
       "Каждая цена должна быть больше 0, не более 10000 и максимум с 2 знаками после запятой.",

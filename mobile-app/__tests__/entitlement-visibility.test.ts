@@ -90,8 +90,14 @@ describe("the purchase panel withdraws what it has just sold", () => {
   const panel = readFileSync(join(SRC, "features", "iap", "IapPanel.tsx"), "utf8");
 
   it("renders the filtered list, never the raw offers prop", () => {
-    expect(panel.includes("visibleOffers.map(")).toBe(true);
-    expect(/\boffers\.map\(/.test(panel)).toBe(false);
+    // The list is grouped by subject (offerGroups.ts) since 2026-10-10; the
+    // grouping must be fed the FILTERED offers, or a subject just sold comes
+    // straight back as a price option.
+    expect(/groupIapOffers\(\s*visibleOffers\s*\)/.test(panel)).toBe(true);
+    expect(/groupIapOffers\(\s*offers\b/.test(panel)).toBe(false);
+    // Lookbehind, not \b: `group.offers.map(` (one subject's periods) is fine;
+    // a bare `offers.map(` over the raw prop is not.
+    expect(/(?<![.\w])offers\.map\(/.test(panel)).toBe(false);
   });
 
   it("withdraws an offer only on a GRANT", () => {

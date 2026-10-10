@@ -16,7 +16,11 @@
 //      height it needs and `flexShrink: 1`s into what the window leaves; the
 //      top margin is what keeps it off the status bar. A `maxHeight: "88%"`
 //      measures the whole window, system bars included, and is the same
-//      mistake in a different disguise.
+//      mistake in a different disguise. (SwipeDownSheet, which draws this card,
+//      adds the owner's 80%-of-window OPENING cap on top — computed in points
+//      from the window minus this same top clearance, and harmless to rule 1
+//      because the bottom padding still carries the inset. The flex shrink
+//      below is unchanged.)
 //
 //   3. THE BODY SCROLLS, THE ACTIONS DO NOT. The deletion sheet's confirmation
 //      paragraph is ~180 characters in az and longer in ru; at the 1.3x font

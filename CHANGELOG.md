@@ -37,6 +37,12 @@ tester who keeps reporting.
 
 ## 1.17.0 — not built yet (new native build required: Play Billing)
 
+- `[web]` `[admin]` Rounded controls stay properly rounded: the child switcher on
+  Subscription (and every other segmented row) becomes an evenly rounded
+  rectangle when its items wrap onto several lines, instead of a capsule whose
+  ends cut through the corner items; short badges no longer wrap, and longer
+  ones round evenly if they do.
+
 - `[admin]` Hiding a subject (Status → Gizli on the edit page) works again. Since
   2026-09-11 every action on that form — Save, Create subject, and the generic
   row save/delete — crashed to the panel's "Xəta baş verdi" page before

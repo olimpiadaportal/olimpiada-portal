@@ -12662,6 +12662,12 @@ body[data-site-typography] .btn-ghost {
   border: 1px solid var(--border);
   border-radius: var(--seg-track-radius, 999px);
 }
+/* Wrapped onto several rows: a rounded rectangle, concentric with the options
+   (Segmented.tsx measures --seg-wrap-radius = option radius + rail inset). A
+   capsule radius on a multi-row rail cuts through the corner options. */
+.seg-track[data-seg][data-seg-wrap="1"] {
+  border-radius: min(var(--seg-track-radius, 999px), var(--seg-wrap-radius, 20px));
+}
 .seg-track[data-seg="on"] > *,
 .seg-track[data-seg="on"] > *:hover {
   background-color: transparent;
@@ -14919,3 +14925,36 @@ body[data-site-typography] .btn-ghost {
 }
 .child-plan-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0 18px; }
 .child-plan-card-label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ==========================================================================
+   CAPSULES STAY CAPSULES (2026-10-12)
+   A 999px radius is only right while an element is ONE line tall. The moment
+   it wraps, the radius turns it into a stadium whose curved ends cut through
+   the content in its corners (the /subscription child switcher with 13
+   children). Two rules, applied everywhere a capsule exists:
+   1. SHORT LABELS (status, counts, filter tabs) never wrap: nowrap.
+   2. FREE TEXT that may legitimately need two lines gets a fixed radius just
+      above half its one-line height: browsers clamp it to a perfect capsule
+      on one line, and it becomes an evenly rounded rectangle on two.
+   Multi-row segmented rails are handled in Segmented.tsx (data-seg-wrap).
+   ========================================================================== */
+.pill, .plan-badge, .plan-save, .arena-chip, .news-sort-btn, .like-btn,
+.ana-tab, .pcfg-add, .pcfg-seg-item, .splan-seg-item, .splan-chip,
+.subjedit-chip, .bkids-tab, .stk-count, .lb-prov-badge, .ntf-chip, .plb-chip,
+.child-trial-chip, .arena .tst-pill, .arena .tst-rated-chip, .arena .tst-fact,
+.arena .tst-flag, .arena .tst-filter-tab, .arena .tst-explain-lang {
+  white-space: nowrap;
+}
+/* The leaderboard summary on a child card: three short facts in one capsule. */
+.lbchip {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.about2-eyebrow, .about2-tag, .pricing2-promo, .drs-fact, .poly-owned,
+.gvw-oly-free, .pp-eyebrow, .pp-tbd, .arena .tst-expand, .arena .tst-report {
+  border-radius: 16px;
+}
+.oly4-btn {
+  border-radius: 20px;
+}

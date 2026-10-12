@@ -109,6 +109,35 @@ export function Segmented({
     const el = ref.current;
     if (!el) return;
 
+    // WRAPPED RAILS ARE NOT CAPSULES (2026-10-12). A track is a pill
+    // (border-radius 999px) — right for one row, wrong for two: a 999px radius
+    // on a multi-row box becomes a stadium whose curved ends cut through the
+    // items in its corners (/subscription with 13 children). When the options
+    // wrap, the rail becomes a rounded rectangle whose radius is CONCENTRIC
+    // with the options inside it: the option's own corner radius plus the
+    // rail's padding and border, so every gap around the corner items is
+    // even. One row keeps the capsule untouched.
+    const kids = Array.from(el.children).filter(
+      (n): n is HTMLElement => n instanceof HTMLElement && n.offsetParent !== null,
+    );
+    const wrapped =
+      kids.length > 1 && kids[kids.length - 1].offsetTop - kids[0].offsetTop > 2;
+    if (wrapped) {
+      const host = getComputedStyle(el);
+      const first = kids[0];
+      const itemRadius = Math.min(
+        parseFloat(getComputedStyle(first).borderTopLeftRadius) || 0,
+        first.offsetHeight / 2,
+      );
+      const inset =
+        (parseFloat(host.paddingTop) || 0) + (parseFloat(host.borderTopWidth) || 0);
+      el.style.setProperty("--seg-wrap-radius", `${Math.round(itemRadius + inset)}px`);
+      if (el.getAttribute("data-seg-wrap") !== "1") el.setAttribute("data-seg-wrap", "1");
+    } else if (el.hasAttribute("data-seg-wrap")) {
+      el.removeAttribute("data-seg-wrap");
+      el.style.removeProperty("--seg-wrap-radius");
+    }
+
     // Direct children only: `.active` also appears on nested marks/badges
     // (e.g. `.bkids-tab.active .bkids-mark`), which must never be measured.
     let active: HTMLElement | null = null;

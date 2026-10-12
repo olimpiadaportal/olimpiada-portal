@@ -4966,3 +4966,24 @@ a.qpage-link:hover {
 .store-sync-failures li {
   color: var(--danger-fg);
 }
+
+/* ==========================================================================
+   CAPSULES STAY CAPSULES (2026-10-12)
+   A 999px radius is only right while an element is ONE line tall. The moment
+   it wraps, the radius turns it into a stadium whose curved ends cut through
+   the content in its corners (the /subscription child switcher with 13
+   children). Two rules, applied everywhere a capsule exists:
+   1. SHORT LABELS (status, counts, filter tabs) never wrap: nowrap.
+   2. FREE TEXT that may legitimately need two lines gets a fixed radius just
+      above half its one-line height: browsers clamp it to a perfect capsule
+      on one line, and it becomes an evenly rounded rectangle on two.
+   ========================================================================== */
+.pill, .badge-soon, .loc-col-count, .loc-pill, .role-pill-super, .review-chip,
+.fawiz-stepchip {
+  white-space: nowrap;
+}
+/* Option chips can hold long names (schools, cities): rounded, not capsule,
+   once they wrap. */
+.checkbox-chip {
+  border-radius: 17px;
+}

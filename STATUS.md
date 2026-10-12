@@ -6,6 +6,37 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## SUBJECT HIDE CRASH — ROOT CAUSE FOUND + investor feedback (2026-10-12)
+
+**Root cause.** `admin-panel/src/lib/admin/actions.ts` is a "use server"
+module and exported `SUBJECT_LOCALES` (an array) since 30eeb14, 2026-09-11.
+Next.js validates "use server" exports at RUNTIME (ensureServerEntryExports,
+E352): the compiled module ended in `(0,m.D)([s,v,y,F,G])` with `y` the array,
+so loading it threw "can only export async functions, found object". Every
+action in the file (updateSubject, createSubject, saveRow, deleteRow) died
+before line one → "Xəta baş verdi". Build, tsc and unit tests all passed.
+Evidence: production pg_stat_statements — the subject UPDATE (3 calls) and the
+transition read (2 calls) last ran in August; replaying the UPDATE as the
+Super Admin succeeded; other actions (prices, store sync) ran. Fix: the
+constant is no longer exported; rebuilt chunk validates `[s,v,F,G]`.
+Guard: `admin-panel/src/lib/admin/__tests__/use-server-exports.test.ts`
+sweeps every "use server" file in admin-panel AND web-app (only offender).
+The 2026-10-10 inline-result rework of SubjectLifecycle stays (useful), but it
+was not the cause.
+
+**Investor feedback (az, translated):** (1) fix the X on the expired-trial
+banner; (2) the subscribe page still said "Start 7-day free trial" — remove it
+and any 7-day logic. Production `launch_promo_config.trial_days` = 0, so no
+7-day logic was live; only copy. SubscribeForm's button now follows the server
+quote (`pay.continue` / `pay.confirmNoCharge`); `sub.submit`,
+`pricing.trial`, `faq.q6/a6`, `faq.a3`, `carousel.i2.body` rewritten for
+the 24-hour trial (az/en/ru). Banner X: corner icon, 44px hit area.
+
+Gates: admin 1225 tests + build; web 1734 tests + build; mobile 77 suites /
+1628 tests (i18n resynced).
+
+---
+
 ## DONE (code) — STORE PRICES FOLLOW THE ADMIN PANEL + ANDROID SELLS (2026-10-10)
 
 **Shipped in code; live only after the owner's console setup + new builds.**

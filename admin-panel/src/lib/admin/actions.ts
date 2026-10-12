@@ -405,8 +405,19 @@ export type SubjectFormField =
   | "status"
   | PriceInterval;
 
-/** The three locales a subject name is stored in (public.content_locale). */
-export const SUBJECT_LOCALES = ["az", "en", "ru"] as const;
+/**
+ * The three locales a subject name is stored in (public.content_locale).
+ *
+ * NOT EXPORTED, AND IT MUST STAY THAT WAY. This is a "use server" module, and
+ * Next.js checks at RUNTIME — never at build time — that every value such a
+ * module exports is a function. This array was exported from 2026-09-11 until
+ * 2026-10-12, and for that whole month the check threw the moment the module
+ * loaded: every action in this file (the subject edit form's Save, Create
+ * subject, the generic row save and delete) failed before its first line ran,
+ * and the admin saw only "Xəta baş verdi". Types are erased and may be
+ * exported; values may not. Guarded by __tests__/use-server-exports.test.ts.
+ */
+const SUBJECT_LOCALES = ["az", "en", "ru"] as const;
 export type SubjectLocale = (typeof SUBJECT_LOCALES)[number];
 
 export type SubjectSaveState = {

@@ -334,8 +334,21 @@ export function SubscribeForm({
       </div>
 
       {state?.error && <p className="form-error">{state.error}</p>}
+      {/* THE BUTTON SAYS WHAT HAPPENS (2026-10-12). It used to read "Start
+          7-day free trial" for every family, long after migration 142 retired
+          that trial (launch_promo_config.trial_days = 0) — a parent whose
+          24-hour trial had just ended was offered a 7-day one that does not
+          exist and then sent to the bank. Same rule as the Add-Child wizard:
+          "continue to payment" whenever the SERVER quote has anything due
+          (or has not answered yet — promising a payment step that turns out
+          free is the smaller surprise), "confirm" only when nothing is
+          charged today. */}
       <button className="btn" type="submit" disabled={pending || plan.length === 0}>
-        {pending ? tt("sub.submitting") : tt("sub.submit")}
+        {pending
+          ? tt("sub.submitting")
+          : !quote || !quote.ok || quote.dueNow > 0
+            ? tt("pay.continue")
+            : tt("pay.confirmNoCharge")}
       </button>
     </form>
   );

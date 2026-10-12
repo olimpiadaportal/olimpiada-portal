@@ -626,7 +626,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pricing.weekly": "Həftəlik",
     "pricing.monthly": "Aylıq",
     "pricing.yearly": "İllik",
-    "pricing.trial": "Hər yeni fənn 7 günlük pulsuz sınaqla başlayır.",
+    "pricing.trial": "Hər yeni uşaq seçdiyiniz 2 fənn üzrə 24 saatlıq pulsuz sınaqla başlayır — kart tələb olunmur.",
     "pricing.sibling":
       "Avtomatik qardaş/bacı endirimi: 2-ci uşaq −10%, 3-cü və sonrakı −15%.",
     "pricing.promo":
@@ -642,7 +642,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Şagird 8 rəqəmli ID və valideynin təyin etdiyi parolla portala daxil olur. E-poçt tələb olunmur.",
     "faq.q3": "Qiymət necə işləyir?",
     "faq.a3":
-      "Hər fənn və hər uşaq üçün (həftəlik, aylıq və ya illik) abunə paketi var. İlk 7 günlük ödənişsiz sınaq və eyni ailədən olan 2 və daha çox uşaq üçün avtomatik bacı/qardaş endirimi verilir.",
+      "Hər fənn və hər uşaq üçün (həftəlik, aylıq və ya illik) abunə paketi var. Hər yeni uşaq 2 fənn üzrə 24 saatlıq pulsuz sınaqla başlayır, eyni ailədən olan 2 və daha çox uşaq üçün isə avtomatik bacı/qardaş endirimi verilir.",
     "faq.q4": "Olimpiada Hazırlığı nədir?",
     "faq.a4":
       "Olimpiadaların mövzularına uyğun tərtib edilmiş suallara limitsiz giriş.",
@@ -861,8 +861,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.subjects": "Fənlər",
     "sub.subtotal": "Aralıq cəm",
     "sub.siblingNote": "qardaş/bacı endirimi təsdiqlədikdə tətbiq olunur",
-    "sub.submit": "7 günlük pulsuz sınağı başlat",
-    "sub.submitting": "Başladılır…",
+    "sub.submit": "Ödənişə keç",
+    "sub.submitting": "Hazırlanır…",
     "sub.done": "Sınaq başladı.",
     "sub.base": "Əsas qiymət",
     "sub.discount": "Qardaş/bacı endirimi",
@@ -1374,9 +1374,9 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Suallar sinifə uyğun serverdə seçilir, nəticələr şəffaf şəkildə göstərilir, ödənişlər yalnız valideyn tərəfindən və təhlükəsiz, təsdiqlənmiş üsulla aparılır. Uşaqların məlumatları qorunur və heç vaxt satış məqsədilə istifadə olunmur.",
 
     // — FAQ (extended) —
-    "faq.q6": "7 günlük pulsuz sınaq necə işləyir?",
+    "faq.q6": "24 saatlıq pulsuz sınaq necə işləyir?",
     "faq.a6":
-      "Platformada seçilən hər yeni fənn üçün şagirdə 7 günlük pulsuz sınaq müddəti verilir. Sınaq müddətində ödəniş alınmır. Sınaq bitdikdən sonra seçdiyiniz dövr üzrə ödəniş başlayır.",
+      "Hər uşaq üçün bir dəfə: uşağı əlavə edərkən 2 fənn seçirsiniz və həmin fənlər 24 saat ərzində tam açılır. Kart tələb olunmur və heç bir ödəniş alınmır. Sınaq bitdikdən sonra davam etmək üçün valideyn panelindən abunə ola bilərsiniz.",
     "faq.q7": "Bir ailədən olan 2 və daha çox uşaq üçün endirim varmı?",
     "faq.a7":
       "Bəli. Bacı/qardaş endirimi avtomatik tətbiq olunur. Valideyn qeydiyyat edərkən 2-ci uşaq üçün 10%, 3-cü və sonrakı uşaqlar üçün 15% endirim tətbiq olunur. Heç bir kod daxil etmək lazım deyil. Sistem avtomatik özü hesablayır.",
@@ -1928,7 +1928,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "İdarə panelindən «Uşaq əlavə et» seçin, övladınızın adını, şəhərini, məktəbini və sinfini daxil edin. Hər övlad üçün ayrıca hesab yaranır.",
     "carousel.i2.title": "Fənləri seçin və sınağı başladın",
     "carousel.i2.body":
-      "Riyaziyyat, Elm, Məntiq və İngilis dilindən lazım olanları seçin. Hər yeni fənn 7 günlük pulsuz sınaqla başlayır — sınaq bitənə qədər ödəniş yoxdur.",
+      "Riyaziyyat, Elm, Məntiq və İngilis dilindən lazım olanları seçin. Hər yeni uşaq 2 fənn üzrə 24 saatlıq pulsuz sınaqla başlayır — kart tələb olunmur.",
     "carousel.i3.title": "Uşaq 8 rəqəmli ID ilə daxil olur",
     "carousel.i3.body":
       "Plan seçiləndən sonra sistem unikal 8 rəqəmli giriş ID-si verir. Övladınız bu ID və sizin təyin etdiyiniz parolla daxil olur — e-poçt lazım deyil.",
@@ -2885,7 +2885,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pricing.weekly": "Weekly",
     "pricing.monthly": "Monthly",
     "pricing.yearly": "Yearly",
-    "pricing.trial": "Every new subject starts with a 7-day free trial.",
+    "pricing.trial": "Every new child starts with a free 24-hour trial on 2 subjects of your choice — no card needed.",
     "pricing.sibling": "Automatic sibling discount: 2nd child −10%, 3rd+ child −15%.",
     "pricing.promo":
       "A launch promotion runs at start; prices are illustrative and set by the platform.",
@@ -2899,7 +2899,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Students log in to the portal with their 8-digit ID and the password set by the parent. No email is required.",
     "faq.q3": "How does pricing work?",
     "faq.a3":
-      "Each subject and each child has its own subscription package (weekly, monthly or yearly). It starts with a free 7-day trial, and an automatic sibling discount applies for 2 or more children from the same family.",
+      "Each subject and each child has its own subscription package (weekly, monthly or yearly). Every new child starts with a free 24-hour trial on 2 subjects, and an automatic sibling discount applies for 2 or more children from the same family.",
     "faq.q4": "What is Olympiad Preparation?",
     "faq.a4":
       "Unlimited access to questions built around olympiad topics.",
@@ -3103,8 +3103,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.subjects": "Subjects",
     "sub.subtotal": "Subtotal",
     "sub.siblingNote": "sibling discount is applied on confirmation",
-    "sub.submit": "Start 7-day free trial",
-    "sub.submitting": "Starting…",
+    "sub.submit": "Continue to payment",
+    "sub.submitting": "Preparing…",
     "sub.done": "Trial started.",
     "sub.base": "Base price",
     "sub.discount": "Sibling discount",
@@ -3568,9 +3568,9 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Questions are selected on the server by grade level, results are shown transparently, and payments are made only by the parent through a secure, verified method. Children's data is protected and never used for marketing.",
 
     // — FAQ (extended) —
-    "faq.q6": "How does the 7-day free trial work?",
+    "faq.q6": "How does the free 24-hour trial work?",
     "faq.a6":
-      "Every new subject selected on the platform gives the student a 7-day free trial. You are not charged during the trial; once it ends, billing starts for the period you chose.",
+      "Once per child: when you add a child you pick 2 subjects, and both open in full for 24 hours. No card is needed and nothing is charged. When the trial ends, you can subscribe from the parent dashboard to continue.",
     "faq.q7": "Is there a discount for 2 or more children from the same family?",
     "faq.a7":
       "Yes. The sibling discount is applied automatically: 10% for the 2nd child and 15% for the 3rd and subsequent children. No code is needed — the system calculates it automatically.",
@@ -4001,7 +4001,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "From your dashboard, choose “Add child” and enter your child's name, city, school, and grade. A separate account is created for each child.",
     "carousel.i2.title": "Choose subjects & start the trial",
     "carousel.i2.body":
-      "Pick the subjects you need from Math, Science, Logic, and English. Every new subject starts with a 7-day free trial — no charge until the trial ends.",
+      "Pick the subjects you need from Math, Science, Logic, and English. Every new child starts with a free 24-hour trial on 2 subjects — no card needed.",
     "carousel.i3.title": "Your child logs in with an 8-digit ID",
     "carousel.i3.body":
       "Once you choose a plan, the system issues a unique 8-digit login ID. Your child signs in with that ID and the password you set — no email needed.",
@@ -4960,7 +4960,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pricing.weekly": "Еженедельно",
     "pricing.monthly": "Ежемесячно",
     "pricing.yearly": "Ежегодно",
-    "pricing.trial": "Каждый новый предмет начинается с 7-дневного бесплатного периода.",
+    "pricing.trial": "Каждый новый ребёнок начинает с бесплатного 24-часового пробного периода по 2 предметам на ваш выбор — карта не нужна.",
     "pricing.sibling": "Автоматическая скидка: 2-й ребёнок −10%, 3-й и далее −15%.",
     "pricing.promo":
       "На старте действует акция; цены ориентировочные и устанавливаются платформой.",
@@ -4974,7 +4974,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Ученик входит на портал по 8-значному ID и паролю, заданному родителем. Электронная почта не требуется.",
     "faq.q3": "Как работает оплата?",
     "faq.a3":
-      "Для каждого предмета и каждого ребёнка есть свой пакет подписки (на неделю, месяц или год). Действует бесплатный 7-дневный пробный период, а для 2 и более детей из одной семьи автоматически применяется скидка для братьев и сестёр.",
+      "Для каждого предмета и каждого ребёнка есть свой пакет подписки (на неделю, месяц или год). Каждый новый ребёнок начинает с бесплатного 24-часового пробного периода по 2 предметам, а для 2 и более детей из одной семьи автоматически применяется скидка для братьев и сестёр.",
     "faq.q4": "Что такое «Подготовка к олимпиадам»?",
     "faq.a4":
       "Безлимитный доступ к вопросам, составленным по олимпиадным темам.",
@@ -5178,8 +5178,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.subjects": "Предметы",
     "sub.subtotal": "Промежуточный итог",
     "sub.siblingNote": "скидка за детей применяется при подтверждении",
-    "sub.submit": "Начать 7-дневный бесплатный период",
-    "sub.submitting": "Запуск…",
+    "sub.submit": "Перейти к оплате",
+    "sub.submitting": "Подготовка…",
     "sub.done": "Пробный период начат.",
     "sub.base": "Базовая цена",
     "sub.discount": "Скидка за детей",
@@ -5641,9 +5641,9 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Вопросы подбираются на сервере по классу, результаты показываются прозрачно, а оплату совершает только родитель безопасным, проверенным способом. Данные детей защищены и никогда не используются в маркетинговых целях.",
 
     // — FAQ (extended) —
-    "faq.q6": "Как работает 7-дневный бесплатный период?",
+    "faq.q6": "Как работает бесплатный 24-часовой пробный период?",
     "faq.a6":
-      "За каждый новый предмет, выбранный на платформе, ученик получает 7-дневный бесплатный пробный период. Во время пробного периода оплата не списывается. После его окончания начинается оплата за выбранный период.",
+      "Один раз для каждого ребёнка: при добавлении ребёнка вы выбираете 2 предмета, и они полностью открываются на 24 часа. Карта не нужна, оплата не списывается. После окончания пробного периода можно оформить подписку в кабинете родителя.",
     "faq.q7": "Есть ли скидка для 2 и более детей из одной семьи?",
     "faq.a7":
       "Да. Скидка для братьев и сестёр применяется автоматически: 10% на 2-го ребёнка и 15% на 3-го и последующих детей. Никакой код вводить не нужно — система рассчитывает всё сама.",
@@ -6074,7 +6074,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "На панели выберите «Добавить ребёнка» и укажите имя, город, школу и класс ребёнка. Для каждого ребёнка создаётся отдельный аккаунт.",
     "carousel.i2.title": "Выберите предметы и начните пробный период",
     "carousel.i2.body":
-      "Выберите нужные предметы из математики, науки, логики и английского. Каждый новый предмет начинается с 7-дневного бесплатного периода — оплата не списывается до его окончания.",
+      "Выберите нужные предметы из математики, науки, логики и английского. Каждый новый ребёнок начинает с бесплатного 24-часового пробного периода по 2 предметам — карта не нужна.",
     "carousel.i3.title": "Ребёнок входит по 8-значному ID",
     "carousel.i3.body":
       "После выбора плана система выдаёт уникальный 8-значный ID для входа. Ребёнок входит по этому ID и заданному вами паролю — эл. почта не нужна.",

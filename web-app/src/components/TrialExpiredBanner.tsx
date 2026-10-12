@@ -60,18 +60,20 @@ export function TrialExpiredBanner({
             <Link className="btn" href={`/children/${item.childId}/subscribe`}>
               {d["parent.trialBanner.cta"]}
             </Link>
-            <button
-              type="button"
-              className="trial-banner-x"
-              aria-label={d["parent.trialBanner.dismiss"]}
-              title={d["parent.trialBanner.dismiss"]}
-              onClick={() => dismiss(item)}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-              </svg>
-            </button>
           </div>
+          {/* Corner dismiss (owner feedback 2026-10-12: the bordered circle
+              beside the button looked broken). */}
+          <button
+            type="button"
+            className="trial-banner-x"
+            aria-label={d["parent.trialBanner.dismiss"]}
+            title={d["parent.trialBanner.dismiss"]}
+            onClick={() => dismiss(item)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
       ))}
     </div>

@@ -37,6 +37,18 @@ tester who keeps reporting.
 
 ## 1.17.0 — not built yet (new native build required: Play Billing)
 
+- `[admin]` Hiding a subject (Status → Gizli on the edit page) works again. Since
+  2026-09-11 every action on that form — Save, Create subject, and the generic
+  row save/delete — crashed to the panel's "Xəta baş verdi" page before
+  running, because a server-actions file exported a constant, which Next.js
+  rejects at runtime. A test now sweeps every such file in both apps.
+
+- `[web]` The subscribe page no longer offers a "7-day free trial" that has not
+  existed since migration 142: its button now reads "Continue to payment" (or
+  "Confirm" when nothing is charged). The pricing line, FAQ and dashboard
+  slide describe the real 24-hour, 2-subject trial. The expired-trial banner's
+  close button is a quiet corner icon instead of a bordered circle.
+
 - `[store]` Parents on Android can activate a child's subject access through Google
   Play, the same way as on iPhone: one row per subject, pick weekly, monthly or
   yearly, pay with Google Play. Access opens for that child as soon as Google

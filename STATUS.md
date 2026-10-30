@@ -6,6 +6,22 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## STORE ACCOUNT TRANSFERS — Google Play pending review (2026-10-30)
+
+OlympIQ is moving out of the developer's personal store accounts into the
+operator's (Kamil Piriyev) own accounts so store payouts land in his name.
+Full checklist: `docs/STORE_ACCOUNT_TRANSFER_RUNBOOK.md`.
+
+- **Google Play:** transfer of `ai.olympiq.app` submitted and accepted on
+  2026-10-30; waiting for Google's review (~2 business days). Nothing may be
+  released or changed on the Play listing until it completes. Afterwards:
+  service account + RTDN + Vercel env, create the 21 Play products, sync prices,
+  activate Android rows, Data safety, then build/release 1.17.0
+  (`RELEASE_NOTES_v1.17.0.txt` still to be written from `CHANGELOG.md`).
+- **App Store:** not started. Agreements, tax, banking and API keys are
+  per-account and do NOT transfer; the investor's Apple Developer account must be
+  enrolled and fully Active before the app (and its 21 IAP products) can move.
+
 ## SUBJECT HIDE CRASH — ROOT CAUSE FOUND + investor feedback (2026-10-12)
 
 **Root cause.** `admin-panel/src/lib/admin/actions.ts` is a "use server"

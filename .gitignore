@@ -121,6 +121,13 @@ docs/investor/*melumat_formasi*.docx
 docs/investor/**/passport*
 docs/investor/**/*VOEN*
 docs/investor/**/*voen*
+# Identity / address proofs for store verification (2026-10-13): utility, phone
+# and bank documents carry a legal name and home address.
+docs/investor/**/*[Aa]zeri*iq*
+docs/investor/**/*[Uu]tility*
+docs/investor/**/*[Bb]ank*[Ss]tatement*
+docs/investor/**/*[Ii][Dd]*[Cc]ard*
+docs/investor/**/*[Ss]exsiyyet*
 
 # --- Store screenshots captured from a live account -------------------------
 # Added 2026-09-14. App Store / Play screenshots taken on a real device show

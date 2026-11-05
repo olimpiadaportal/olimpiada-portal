@@ -19,6 +19,7 @@ secrets/
 *.pem
 *.key
 *.p12
+*.p8
 *.pfx
 # Acquirer configuration handed over by the bank: terminal ids, gateway
 # endpoints, their MPI public key, registered callback URLs. Not a private

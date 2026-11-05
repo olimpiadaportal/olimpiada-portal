@@ -21,6 +21,7 @@ file, in `STATUS.md` or in git. Keys go into Vercel env vars and EAS secrets onl
 | Transfer request submitted from the developer's account (2026-10-30) | Done |
 | Transfer accepted in the investor's account (2026-10-30) | Done |
 | Google review of the transfer (usually ~2 business days) | **Waiting** |
+| Google paused the transfer (2026-11-05): target account must declare EU trader status | Declare **Trader** in Manage account → Account details → About you, then reply to Google's email |
 
 Notes from the submission, so they are not re-learnt:
 - Transfer page: `https://play.google.com/console/developers/app-transfer`
@@ -46,9 +47,15 @@ and payout reports (they stay with the old account — Android has had no sales)
 1. **Check the app landed.** Investor's Play Console → the app is listed, still
    in Production, no policy warnings. Settings → Payments profile shows the
    KAMIL PIRIYEV profile.
-2. **Re-invite people.** Users and permissions → invite the developer's Google
+2. **Per-app trader status.** App → Monitor and improve → Policy and programs →
+   App content → confirm trader status for OlympIQ (the account-level
+   declaration alone is not enough). Address and phone are shown publicly in
+   the EU. Do this in the INVESTOR's account once the app has arrived — never
+   in the developer's account (the account-level declaration was done there
+   on 2026-11-05 and Google confirmed it by email).
+3. **Re-invite people.** Users and permissions → invite the developer's Google
    account as Admin so day-to-day work continues.
-3. **Service account (purchase verification + price sync).**
+4. **Service account (purchase verification + price sync).**
    - Google Cloud Console (signed in as the investor's account) → new project →
      enable **Google Play Android Developer API** → create a service account →
      create a JSON key.
@@ -58,7 +65,7 @@ and payout reports (they stay with the old account — Android has had no sales)
    - Vercel → **web-app** AND **admin-panel** → set
      `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` (whole JSON) and
      `GOOGLE_PLAY_PACKAGE_NAME=ai.olympiq.app` → **Redeploy** both.
-4. **Real-time developer notifications (refunds, voided purchases).**
+5. **Real-time developer notifications (refunds, voided purchases).**
    - Google Cloud → Pub/Sub → create topic → grant
      `google-play-developer-notifications@system.gserviceaccount.com` the
      **Pub/Sub Publisher** role on it.
@@ -71,23 +78,23 @@ and payout reports (they stay with the old account — Android has had no sales)
      Redeploy.
    - Play Console → Monetization setup → paste the topic name → **Send test
      notification**.
-5. **Create the 21 Play products.** From `mobile-app/`:
+6. **Create the 21 Play products.** From `mobile-app/`:
    `node scripts/create-play-products.mjs` (dry run, read the plan) →
    `node scripts/create-play-products.mjs --apply`.
-6. **Prices from the admin panel.** Admin → Subjects → **Sync all store
+7. **Prices from the admin panel.** Admin → Subjects → **Sync all store
    prices** → every Google row should read "In sync".
-7. **Activate the Android rows** in Admin → `/iap`.
-8. **Play Data safety form:** add *Financial info → Purchase history* (collected,
+8. **Activate the Android rows** in Admin → `/iap`.
+9. **Play Data safety form:** add *Financial info → Purchase history* (collected,
    not shared, required for the purchase). Submit the form BEFORE submitting
    1.17.0.
-9. **Testers.** Re-create the internal/closed-testing tester lists if needed
+10. **Testers.** Re-create the internal/closed-testing tester lists if needed
    (`mobile-app/store-assets/TESTER_TELIMATI_AZ.txt`).
-10. **Build + release 1.17.0** (Android Play Billing). EAS build Android →
+11. **Build + release 1.17.0** (Android Play Billing). EAS build Android →
     upload to the investor's Play Console (the old account's EAS submit key no
     longer works; create a new one or upload the .aab manually). Release notes
     in az/en/ru: `mobile-app/store-assets/RELEASE_NOTES_v1.17.0.txt`, built
     from the 1.17.0 `[store]` lines in `CHANGELOG.md`.
-11. **Smoke test** a real purchase on Android with a license tester account,
+12. **Smoke test** a real purchase on Android with a license tester account,
     confirm the entitlement appears for the child, then refund it from the Play
     Console and confirm the refund notification removes the entitlement.
 

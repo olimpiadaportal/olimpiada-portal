@@ -331,6 +331,9 @@ const CONVERSION = {
     usdPrice: { currencyCode: "USD", units: "1", nanos: 180_000_000 },
     eurPrice: { currencyCode: "EUR", units: "1", nanos: 90_000_000 },
   },
+  // A version NEWER than the fallback constant, so the test proves the write
+  // follows the conversion rather than the constant.
+  regionVersion: { version: "2027/02" },
 };
 
 function googleHandler(opts: { patchStatus?: number; product?: unknown } = {}) {
@@ -360,6 +363,7 @@ describe("Google Play price payload", () => {
         regions: new Map([["TR", { currencyCode: "TRY", units: "40", nanos: 0 }]]),
         usdPrice: { currencyCode: "USD", units: "1", nanos: 180_000_000 },
         eurPrice: { currencyCode: "EUR", units: "1", nanos: 90_000_000 },
+        regionsVersion: "2027/02",
       },
     );
     expect(out[0]).not.toHaveProperty("state");
@@ -375,7 +379,7 @@ describe("Google Play price payload", () => {
     });
   });
 
-  it("PATCHes purchaseOptions with the regions version and the exact AZN amount", async () => {
+  it("PATCHes purchaseOptions with the conversion's regions version and the exact AZN amount", async () => {
     configureGoogle(true);
     stubFetch(googleHandler());
     const { syncGooglePlayPrice } = await google();
@@ -391,7 +395,9 @@ describe("Google Play price payload", () => {
     const patch = calls.find((c) => c.method === "PATCH");
     expect(patch?.url).toContain("/applications/ai.olympiq.app/onetimeproducts/ai.olympiq.app.sub.math.week?");
     expect(patch?.url).toContain("updateMask=purchaseOptions");
-    expect(patch?.url).toContain("regionsVersion.version=2025%2F03");
+    // Prices and the version they are written against must come from the
+    // same region list (2026-11-06: 2025/03 + a 2026/01 conversion = HTTP 400).
+    expect(patch?.url).toContain("regionsVersion.version=2027%2F02");
     const body = patch?.body as { purchaseOptions: { regionalPricingAndAvailabilityConfigs: { regionCode: string; price: unknown }[] }[] };
     const az = body.purchaseOptions[0].regionalPricingAndAvailabilityConfigs.find((x) => x.regionCode === "AZ");
     expect(az?.price).toEqual({ currencyCode: "AZN", units: "2", nanos: 0 });

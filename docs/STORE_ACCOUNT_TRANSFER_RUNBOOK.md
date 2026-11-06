@@ -10,7 +10,7 @@ file, in `STATUS.md` or in git. Keys go into Vercel env vars and EAS secrets onl
 
 ---
 
-## Part 1 — Google Play (IN PROGRESS)
+## Part 1 — Google Play (TRANSFERRED 2026-11-06, post-transfer setup in progress)
 
 ### Status
 
@@ -20,7 +20,7 @@ file, in `STATUS.md` or in git. Keys go into Vercel env vars and EAS secrets onl
 | Payments profile "KAMIL PIRIYEV — Individual profile for Play" linked | Done |
 | Transfer request submitted from the developer's account (2026-10-30) | Done |
 | Transfer accepted in the investor's account (2026-10-30) | Done |
-| Google review of the transfer (usually ~2 business days) | **Waiting** |
+| Google review of the transfer | Done — completed 2026-11-06 |
 | Google paused the transfer (2026-11-05): target account must declare EU trader status | Declare **Trader** in Manage account → Account details → About you, then reply to Google's email |
 
 Notes from the submission, so they are not re-learnt:
@@ -42,61 +42,79 @@ Does NOT move (must be redone below): testing groups/tester lists, user
 permissions, API access + service accounts, integrated-service links, earnings
 and payout reports (they stay with the old account — Android has had no sales).
 
-### After Google confirms the transfer — do these in order
+### After the transfer — the Android launch session, in this order
 
-1. **Check the app landed.** Investor's Play Console → the app is listed, still
-   in Production, no policy warnings. Settings → Payments profile shows the
-   KAMIL PIRIYEV profile.
-2. **Per-app trader status.** App → Monitor and improve → Policy and programs →
-   App content → confirm trader status for OlympIQ (the account-level
-   declaration alone is not enough). Address and phone are shown publicly in
-   the EU. Do this in the INVESTOR's account once the app has arrived — never
-   in the developer's account (the account-level declaration was done there
-   on 2026-11-05 and Google confirmed it by email).
-3. **Re-invite people.** Users and permissions → invite the developer's Google
-   account as Admin so day-to-day work continues.
-4. **Service account (purchase verification + price sync).**
-   - Google Cloud Console (signed in as the investor's account) → new project →
-     enable **Google Play Android Developer API** → create a service account →
-     create a JSON key.
-   - Play Console → Users and permissions → invite the service account email
-     with: View financial data, Manage orders and subscriptions, Manage store
-     presence (products/prices).
-   - Vercel → **web-app** AND **admin-panel** → set
-     `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` (whole JSON) and
-     `GOOGLE_PLAY_PACKAGE_NAME=ai.olympiq.app` → **Redeploy** both.
-5. **Real-time developer notifications (refunds, voided purchases).**
-   - Google Cloud → Pub/Sub → create topic → grant
-     `google-play-developer-notifications@system.gserviceaccount.com` the
-     **Pub/Sub Publisher** role on it.
-   - Create a **push** subscription to
-     `https://<web-app domain>/api/payments/google/notifications` with
-     authentication enabled (a service account of your choice, audience = that
-     URL).
-   - Vercel web-app → `GOOGLE_PLAY_RTDN_AUDIENCE` (the audience above) and
-     `GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT` (the push service account email) →
-     Redeploy.
-   - Play Console → Monetization setup → paste the topic name → **Send test
-     notification**.
-6. **Create the 21 Play products.** From `mobile-app/`:
-   `node scripts/create-play-products.mjs` (dry run, read the plan) →
-   `node scripts/create-play-products.mjs --apply`.
-7. **Prices from the admin panel.** Admin → Subjects → **Sync all store
-   prices** → every Google row should read "In sync".
-8. **Activate the Android rows** in Admin → `/iap`.
-9. **Play Data safety form:** add *Financial info → Purchase history* (collected,
-   not shared, required for the purchase). Submit the form BEFORE submitting
-   1.17.0.
-10. **Testers.** Re-create the internal/closed-testing tester lists if needed
-   (`mobile-app/store-assets/TESTER_TELIMATI_AZ.txt`).
-11. **Build + release 1.17.0** (Android Play Billing). EAS build Android →
-    upload to the investor's Play Console (the old account's EAS submit key no
-    longer works; create a new one or upload the .aab manually). Release notes
-    in az/en/ru: `mobile-app/store-assets/RELEASE_NOTES_v1.17.0.txt`, built
-    from the 1.17.0 `[store]` lines in `CHANGELOG.md`.
-12. **Smoke test** a real purchase on Android with a license tester account,
-    confirm the entitlement appears for the child, then refund it from the Play
-    Console and confirm the refund notification removes the entitlement.
+Google only lets in-app products exist once a build that declares the
+`com.android.vending.BILLING` permission has been uploaded to a track. The
+build in Production (1.16.x) deliberately strips that permission, so the
+products cannot be created until 1.17.0 sits on **internal testing**. That is
+why the build comes BEFORE the products, and why Production comes LAST.
+
+The trader/ToS change sent for review on 2026-11-06 does not block any of this.
+
+**A. Already done**
+1. App landed in the investor's account; payments profile = KAMIL PIRIYEV. ✅
+2. Per-app trader status (App content) + ToS `https://olympiq.ai/terms`,
+   sent for review 2026-11-06. ✅ (Done in the INVESTOR's account, never in the
+   developer's.)
+
+**B. Accounts and access (≈20 min, investor's Google account)** — ✅ steps 5–6 done 2026-11-06 (service account `play-billing@olympiq-play.iam.gserviceaccount.com`, key in `secrets/google/`); 3–4 open.
+3. **Payout bank account:** Payments profile → Add payment method → bank
+   account in Kamil Piriyev's name (AZN if offered, else the EUR account at
+   ABB) → confirm Google's test deposit when it arrives. Does not block sales.
+4. **Invite the developer:** Play Console → Users and permissions → invite
+   `elmlyapp@gmail.com` as **Admin**.
+5. **Service account:** console.cloud.google.com (investor's account) → create
+   project `olympiq-play` → APIs & Services → enable **Google Play Android
+   Developer API** → IAM → Service accounts → create `play-billing` → Keys →
+   Add key → JSON. Save the file as `secrets/google/play-service-account.json`
+   (git-ignored) — never email or commit it.
+6. **Give it Play access:** Play Console → Users and permissions → Invite new
+   users → the service account email → App permissions: OlympIQ → View app
+   information, View financial data, Manage orders and subscriptions, Manage
+   store presence, Release to testing tracks.
+
+**C. Server (≈15 min)** — ✅ done 2026-11-06: key verified against the Play API, env vars set in both Vercel projects, test RTDN received in `iap_notifications` (android/TEST/test).
+7. Vercel → **web-app** and **admin-panel** → Environment Variables
+   (Production): `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` = whole JSON file,
+   `GOOGLE_PLAY_PACKAGE_NAME` = `ai.olympiq.app`.
+8. **Refund notifications (RTDN):** Google Cloud → Pub/Sub → topic
+   `play-rtdn` → Permissions → add
+   `google-play-developer-notifications@system.gserviceaccount.com` as
+   **Pub/Sub Publisher** → Create subscription → **Push** → endpoint
+   `https://olympiq.ai/api/payments/google/notifications` → Enable
+   authentication → service account `play-billing` → audience = the same URL.
+   Vercel web-app: `GOOGLE_PLAY_RTDN_AUDIENCE` = that URL,
+   `GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT` = the `play-billing` email.
+   (Until this is set the endpoint answers 503 — checked 2026-11-06.)
+9. **Redeploy** web-app and admin-panel. Then Play Console → Monetize →
+   Monetization setup → topic `projects/olympiq-play/topics/play-rtdn` → Save →
+   **Send test notification**.
+
+**D. Build to internal testing (owner runs EAS)**
+10. Play **Data safety** → add *Financial info → Purchase history* (collected,
+    not shared, required, for app functionality) → submit. Before 1.17.0.
+11. `cd mobile-app && eas build -p android --profile production` → upload the
+    `.aab` to **Testing → Internal testing** (not Production). Add the
+    developer and investor Gmail accounts as internal testers AND as **License
+    testers** (Settings → License testing) so test purchases cost nothing.
+
+**E. Products and prices (Claude runs these once the key file exists)**
+12. From `mobile-app/`, with `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE` pointing at the
+    key: `node scripts/create-play-products.mjs` (dry run — expect 21 subject
+    products) → `--apply --only ai.olympiq.app.sub.math.week` → check it in Play
+    Console → `--apply` for the rest.
+13. Admin → Subjects → **Sync all store prices** → every Google row "In sync".
+14. Admin → `/iap` → activate the Android rows.
+
+**F. Test, then release**
+15. On a phone with the internal-testing build: buy one week of a subject for a
+    test child → access opens → Play Console → Order management → refund → the
+    access closes within minutes (RTDN).
+16. Promote the same build to **Production** with the Google Play notes from
+    `mobile-app/store-assets/RELEASE_NOTES_v1.17.0.txt`.
+17. iOS 1.17.0: build and submit from the current Apple account with the App
+    Store notes from the same file (or after the Apple transfer — Part 2).
 
 ---
 

@@ -120,6 +120,44 @@ export function releaseOutcome({
 }
 
 /**
+ * THE CARD'S EDGE (owner, 2026-11-06: "the bottom sheet looks a bit bad").
+ * Every caller gave the card 22pt top corners and the "float" shadow — a shadow
+ * cast DOWNWARD (offset +10), i.e. off the bottom of the screen, so the one edge
+ * a bottom sheet shows had no shadow at all and in dark mode the surface merged
+ * into the dimmed screen behind it. The component now owns the edge:
+ *   * 28pt top corners (Material 3's bottom-sheet radius), square bottom corners
+ *     flush with the screen edge;
+ *   * a shadow cast UPWARD, over the content the sheet covers (Android draws its
+ *     own from `elevation`);
+ *   * in dark mode a faint light hairline along the top and the curved corners,
+ *     because a dark shadow on a dark screen does not read.
+ */
+export const SHEET_CORNER_RADIUS = 28;
+
+export function sheetEdgeStyle(theme: "light" | "dark", shadowColor: string) {
+  return {
+    borderTopLeftRadius: SHEET_CORNER_RADIUS,
+    borderTopRightRadius: SHEET_CORNER_RADIUS,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    shadowColor,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: -6 },
+    elevation: 16,
+    ...(theme === "dark"
+      ? {
+          borderTopWidth: 1,
+          borderLeftWidth: 1,
+          borderRightWidth: 1,
+          borderBottomWidth: 0,
+          borderColor: "rgba(255, 255, 255, 0.10)",
+        }
+      : null),
+  } as const;
+}
+
+/**
  * The grab line's colour. NOT `border`: that token is a hairline tuned to be
  * barely there (1.2:1 on the light surface, 1.31:1 on the dark one), which is
  * exactly why owners could not see the handle. `muted` is the quietest ink that

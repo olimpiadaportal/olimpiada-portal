@@ -37,6 +37,19 @@ tester who keeps reporting.
 
 ## 1.17.0 — not built yet (new native build required: Play Billing)
 
+- `[admin]` `[internal]` Google Play price writes use the regions version that
+  Google's own price conversion reports (2026/01 on 2026-11-06) instead of a
+  pinned 2025/03. The pin made Google reject the first product with "Region code
+  ET is not billable at the specified regions version 2025/03", and it would
+  have broken every Play price sync from the admin panel the same way. Applies
+  to the admin panel's sync and to `create-play-products.mjs`.
+
+- `[store]` Bottom sheets have a new edge: 28pt rounded top corners, square
+  bottom corners flush with the screen, a shadow that falls upward over the
+  screen instead of off its bottom, and a faint light hairline in dark mode so
+  the card no longer merges into the dimmed screen. One shared style in
+  `SwipeDownSheet` (`sheetEdgeStyle`), so all six sheets match. (owner)
+
 - `[web]` `[admin]` Rounded controls stay properly rounded: the child switcher on
   Subscription (and every other segmented row) becomes an evenly rounded
   rectangle when its items wrap onto several lines, instead of a capsule whose

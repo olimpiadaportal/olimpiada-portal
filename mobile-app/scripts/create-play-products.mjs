@@ -10,7 +10,7 @@
 //
 // WHICH API. The current one-time products model, Android Publisher v3:
 //   PATCH .../applications/{pkg}/onetimeproducts/{id}?allowMissing=true
-//         &updateMask=listings,purchaseOptions&regionsVersion.version=2025/03
+//         &updateMask=listings,purchaseOptions&regionsVersion.version=<the version convertRegionPrices reports>
 //     https://developers.google.com/android-publisher/api-ref/rest/v3/monetization.onetimeproducts/patch
 //     (allowMissing=true is the documented way to CREATE through patch)
 //   POST  .../applications/{pkg}/oneTimeProducts/{id}/purchaseOptions:batchUpdateStates
@@ -59,7 +59,10 @@ import process from "node:process";
 const PLAY_API = "https://androidpublisher.googleapis.com/androidpublisher/v3";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SCOPE = "https://www.googleapis.com/auth/androidpublisher";
-const REGIONS_VERSION = "2025/03";
+// Fallback only: every write uses the regions version convertRegionPrices
+// reports, because the prices must come from the same region list the write
+// names (2026-11-06: 2025/03 rejected Ethiopia, which conversion now returns).
+const REGIONS_VERSION = "2026/01";
 const AZ = "AZ";
 const PURCHASE_OPTION_ID = "buy";
 const DEFAULT_RATE = 1.7;
@@ -326,6 +329,7 @@ async function convert(request, pkg, usdAmount) {
     regions,
     usdPrice: body.convertedOtherRegionsPrice?.usdPrice || null,
     eurPrice: body.convertedOtherRegionsPrice?.eurPrice || null,
+    regionsVersion: /^\d{4}\/\d{2}$/.test(body.regionVersion?.version || "") ? body.regionVersion.version : null,
   };
 }
 
@@ -423,7 +427,7 @@ async function main() {
       await request(
         "PATCH",
         `${PLAY_API}/applications/${pkg}/onetimeproducts/${encodeURIComponent(p.productId)}` +
-          `?allowMissing=true&updateMask=listings,purchaseOptions&regionsVersion.version=${encodeURIComponent(REGIONS_VERSION)}`,
+          `?allowMissing=true&updateMask=listings,purchaseOptions&regionsVersion.version=${encodeURIComponent(conversions.get(usd).regionsVersion || REGIONS_VERSION)}`,
         product,
       );
       await request(

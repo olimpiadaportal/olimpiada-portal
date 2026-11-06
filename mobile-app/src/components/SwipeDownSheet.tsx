@@ -67,6 +67,7 @@ import {
   dragPosition,
   releaseOutcome,
   sheetDetents,
+  sheetEdgeStyle,
   sheetHandleColor,
   type ReleaseOutcome,
   type SheetDetent,
@@ -89,14 +90,16 @@ export function SwipeDownSheet({
   /** Accessibility label for the handle strip (it is a close button). */
   closeLabel: string;
   /**
-   * The card's style (background, radii, padding, shadow…). The component owns
-   * paddingTop (the handle strip), maxHeight (the detents) and flexShrink; a
-   * caller marginTop is kept, and counted as the card's top clearance.
+   * The card's style (background, padding…). The component owns paddingTop
+   * (the handle strip), maxHeight (the detents), flexShrink, and the card's EDGE
+   * — corner radii, shadow and dark-mode hairline (sheetEdgeStyle), so every
+   * sheet looks the same. A caller marginTop is kept, and counted as the card's
+   * top clearance.
    */
   style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
 }) {
-  const { tokens } = useTheme();
+  const { tokens, theme } = useTheme();
   // The provider is outside the Modal, so these are the SCREEN's insets — which
   // is right: a transparent Modal's window IS the screen.
   const insets = useSafeAreaInsets();
@@ -274,6 +277,7 @@ export function SwipeDownSheet({
       }}
       style={[
         style,
+        sheetEdgeStyle(theme, tokens.shadow),
         {
           paddingTop: 0,
           flexShrink: 1,

@@ -19,7 +19,9 @@ import {
   SWIPE_VELOCITY,
   dragPosition,
   releaseOutcome,
+  SHEET_CORNER_RADIUS,
   sheetDetents,
+  sheetEdgeStyle,
   sheetHandleColor,
   shouldDismissOnRelease,
 } from "@/components/swipeDismiss";
@@ -340,5 +342,33 @@ describe("one height cap per sheet", () => {
     expect(profile?.code).toContain("KeyboardAvoidingView");
     expect(profile?.code).toContain("KeyboardFocusBoundary");
     expect(profile?.code).toMatch(/minHeight: insets\.top/);
+  });
+});
+
+describe("the card edge (owner, 2026-11-06)", () => {
+  it("top corners are rounded, bottom corners sit flush with the screen", () => {
+    for (const theme of ["light", "dark"] as const) {
+      const edge = sheetEdgeStyle(theme, "rgba(0,0,0,0.5)");
+      expect(edge.borderTopLeftRadius).toBe(SHEET_CORNER_RADIUS);
+      expect(edge.borderTopRightRadius).toBe(SHEET_CORNER_RADIUS);
+      expect(edge.borderBottomLeftRadius).toBe(0);
+      expect(edge.borderBottomRightRadius).toBe(0);
+    }
+    expect(SHEET_CORNER_RADIUS).toBeGreaterThanOrEqual(24);
+  });
+
+  it("the shadow falls upward, over what the sheet covers, not off the screen", () => {
+    expect(sheetEdgeStyle("light", "x").shadowOffset.height).toBeLessThan(0);
+    expect(sheetEdgeStyle("light", "x").elevation).toBeGreaterThan(0);
+  });
+
+  it("dark mode draws a hairline edge; light mode relies on the shadow", () => {
+    expect(sheetEdgeStyle("dark", "x")).toMatchObject({ borderTopWidth: 1, borderBottomWidth: 0 });
+    expect(sheetEdgeStyle("light", "x")).not.toHaveProperty("borderTopWidth");
+  });
+
+  it("SwipeDownSheet applies the edge after the caller style, so no sheet can opt out", () => {
+    const sheet = readFileSync(join(SRC, "components", "SwipeDownSheet.tsx"), "utf8");
+    expect(sheet).toMatch(/style,\s*sheetEdgeStyle\(theme, tokens\.shadow\),/);
   });
 });

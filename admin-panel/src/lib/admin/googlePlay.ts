@@ -66,12 +66,16 @@ const DEFAULT_PACKAGE = "ai.olympiq.app";
 const PLAY_TIMEOUT_MS = 10_000;
 
 /**
- * The regions version every price write is made against. Required by the
- * patch endpoint; Google publishes the current value in its "supported
- * locations" article, and an older version keeps working when a newer one
- * ships (RegionsVersion reference). Bump it deliberately, not reflexively.
+ * The regions version a price write is made against. Required by the patch
+ * endpoint, and it MUST match the region list the prices came from:
+ * convertRegionPrices answers for Google's CURRENT list and says which one in
+ * `regionVersion`. On 2026-11-06 that was 2026/01 while this constant said
+ * 2025/03, and the first product write failed with "Region code ET is not
+ * billable at the specified regions version 2025/03" (Ethiopia was added in
+ * between). So the write uses the version the conversion reports; this
+ * constant is only the fallback for a response that omits it.
  */
-export const PLAY_REGIONS_VERSION = "2025/03";
+export const PLAY_REGIONS_VERSION = "2026/01";
 export const PLAY_REGION = "AZ";
 
 export type PlayPriceProblem =
@@ -262,6 +266,8 @@ export type PlayConversion = {
   regions: Map<string, GoogleMoney>;
   usdPrice: GoogleMoney | null;
   eurPrice: GoogleMoney | null;
+  /** The regions version these prices belong to (Google's `regionVersion`). */
+  regionsVersion: string | null;
 };
 
 /** The AZ price on the product's buy option, or null. */
@@ -313,6 +319,11 @@ export function repricePurchaseOptions(
   });
 }
 
+/** A well-formed "YYYY/MM" regions version, or null. */
+function regionsVersionOf(v: unknown): string | null {
+  return typeof v === "string" && /^\d{4}\/\d{2}$/.test(v) ? v : null;
+}
+
 async function convertRegionPrices(
   config: PlayConfig,
   token: string,
@@ -328,6 +339,7 @@ async function convertRegionPrices(
   const body = (res.json ?? {}) as {
     convertedRegionPrices?: Record<string, { regionCode?: string; price?: GoogleMoney }>;
     convertedOtherRegionsPrice?: { usdPrice?: GoogleMoney; eurPrice?: GoogleMoney };
+    regionVersion?: { version?: string };
   };
   const regions = new Map<string, GoogleMoney>();
   for (const [code, entry] of Object.entries(body.convertedRegionPrices ?? {})) {
@@ -339,6 +351,7 @@ async function convertRegionPrices(
       regions,
       usdPrice: body.convertedOtherRegionsPrice?.usdPrice ?? null,
       eurPrice: body.convertedOtherRegionsPrice?.eurPrice ?? null,
+      regionsVersion: regionsVersionOf(body.regionVersion?.version),
     },
   };
 }
@@ -414,7 +427,7 @@ export async function syncGooglePlayPrice(
   const patched = await playCall(
     "PATCH",
     `${PLAY_API}/applications/${pkg}/onetimeproducts/${encodeURIComponent(productId)}` +
-      `?updateMask=purchaseOptions&regionsVersion.version=${encodeURIComponent(PLAY_REGIONS_VERSION)}`,
+      `?updateMask=purchaseOptions&regionsVersion.version=${encodeURIComponent(conv.conversion.regionsVersion ?? PLAY_REGIONS_VERSION)}`,
     auth.token,
     body,
   );

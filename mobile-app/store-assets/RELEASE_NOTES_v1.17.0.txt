@@ -1,0 +1,90 @@
+===========================================================
+  OlympIQ — Google Play / App Store
+  Version: 1.17.0
+===========================================================
+
+  YENİ BUILD TƏLƏB EDİR (Play Billing native konfiqurasiyadır,
+  runtimeVersion = appVersion) — OTA ilə çatdırıla bilməz.
+
+  Mənbə: CHANGELOG.md → 1.17.0 bölməsinin [store] sətirləri.
+  24 saatlıq pulsuz giriş, 80% alt pəncərələr və iPhone-da
+  qruplaşdırılmış siyahı artıq əvvəlki build-də çıxıb (owner,
+  2026-11-06) — ona görə burada təkrarlanmır.
+
+  İKİ MAĞAZA ÜÇÜN AYRI MƏTN: Android mətni Google Play ilə
+  aktivləşdirmədən danışır; App Store mətnində "Android" yoxdur.
+  Saylar CRLF ilə hesablanıb, hər biri 500-dən azdır.
+  Qiymət, "Abunə ol", ödəniş linki və sayt ünvanı yoxdur.
+
+
+-----------------------------------------------------------
+RELEASE NAME (yalnız Play Console)
+-----------------------------------------------------------
+
+1.17.0 — Google Play ilə aktivləşdirmə
+
+
+-----------------------------------------------------------
+GOOGLE PLAY — AZƏRBAYCAN (az)           370 simvol (CRLF)
+-----------------------------------------------------------
+
+Bu buraxılışda:
+
+• Android: valideyn uşağın fənn girişini birbaşa tətbiqdə Google Play ilə aktivləşdirə bilər — hər fənn üçün həftəlik, aylıq və ya illik seçin. Google təsdiqləyən kimi giriş həmin uşaq üçün açılır.
+• Alt pəncərələrin yeni görünüşü: yuxarı küncləri yumrulanıb, kənarı həm açıq, həm tünd rejimdə aydın seçilir.
+• Kiçik düzəlişlər və təkmilləşdirmələr.
+
+
+-----------------------------------------------------------
+GOOGLE PLAY — ENGLISH (en-US)           373 characters (CRLF)
+-----------------------------------------------------------
+
+In this release:
+
+• Android: parents can activate a child's subject access right in the app with Google Play — choose weekly, monthly or yearly for each subject. Access opens for that child as soon as Google confirms.
+• Bottom sheets have a new look: rounded top corners and an edge that stands out clearly in both light and dark mode.
+• Smaller fixes and improvements.
+
+
+-----------------------------------------------------------
+GOOGLE PLAY — РУССКИЙ (ru)              367 символов (CRLF)
+-----------------------------------------------------------
+
+В этом выпуске:
+
+• Android: родитель может активировать доступ ребёнка к предмету прямо в приложении через Google Play — выберите неделю, месяц или год для каждого предмета. Доступ откроется, как только Google подтвердит покупку.
+• Нижние панели выглядят по-новому: скруглённые верхние углы и чёткий край в светлой и тёмной теме.
+• Мелкие исправления и улучшения.
+
+
+-----------------------------------------------------------
+APP STORE — AZƏRBAYCAN (az)             171 simvol (CRLF)
+-----------------------------------------------------------
+
+Bu buraxılışda:
+
+• Alt pəncərələrin yeni görünüşü: yuxarı küncləri yumrulanıb, kənarı həm açıq, həm tünd rejimdə aydın seçilir.
+• Kiçik düzəlişlər və təkmilləşdirmələr.
+
+
+-----------------------------------------------------------
+APP STORE — ENGLISH (en-US)             172 characters (CRLF)
+-----------------------------------------------------------
+
+In this release:
+
+• Bottom sheets have a new look: rounded top corners and an edge that stands out clearly in both light and dark mode.
+• Smaller fixes and improvements.
+
+
+-----------------------------------------------------------
+APP STORE — РУССКИЙ (ru)                153 символов (CRLF)
+-----------------------------------------------------------
+
+В этом выпуске:
+
+• Нижние панели выглядят по-новому: скруглённые верхние углы и чёткий край в светлой и тёмной теме.
+• Мелкие исправления и улучшения.
+
+
+===========================================================

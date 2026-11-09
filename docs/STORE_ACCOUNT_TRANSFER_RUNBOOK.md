@@ -99,7 +99,7 @@ The trader/ToS change sent for review on 2026-11-06 does not block any of this.
     developer and investor Gmail accounts as internal testers AND as **License
     testers** (Settings → License testing) so test purchases cost nothing.
 
-**E. Products and prices (Claude runs these once the key file exists)**
+**E. Products and prices (Claude runs these once the key file exists)** — ✅ done 2026-11-06: build 13 (1.17.0) live on internal testing; 21 products created and ACTIVE on Play at AZN 2/7/70 (after fixing the regions-version pin, see CHANGELOG); the 21 Android `iap_products` rows activated in one guarded transaction (audited by `trg_audit_iap_products`). The 2 olympiad-package rows stay inactive, as on iOS.
 12. From `mobile-app/`, with `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE` pointing at the
     key: `node scripts/create-play-products.mjs` (dry run — expect 21 subject
     products) → `--apply --only ai.olympiq.app.sub.math.week` → check it in Play
@@ -107,14 +107,27 @@ The trader/ToS change sent for review on 2026-11-06 does not block any of this.
 13. Admin → Subjects → **Sync all store prices** → every Google row "In sync".
 14. Admin → `/iap` → activate the Android rows.
 
-**F. Test, then release**
+**F. Test, then release** — step 15 ✅ 2026-11-06: license-tester purchase (Azerbaijani, 1 month) → intent consumed, 30-day `google_play` entitlement for the right child, RTDN `ONE_TIME_PRODUCT_PURCHASED → granted`; refund with Remove entitlement → RTDN `VOIDED_PURCHASE → revoked` within a minute, entitlement revoked (`google_voided_purchase`).
 15. On a phone with the internal-testing build: buy one week of a subject for a
     test child → access opens → Play Console → Order management → refund → the
     access closes within minutes (RTDN).
 16. Promote the same build to **Production** with the Google Play notes from
-    `mobile-app/store-assets/RELEASE_NOTES_v1.17.0.txt`.
-17. iOS 1.17.0: build and submit from the current Apple account with the App
-    Store notes from the same file (or after the Apple transfer — Part 2).
+    `mobile-app/store-assets/RELEASE_NOTES_v1.17.0.txt`. — ✅ sent for review
+    2026-11-09 at **100% rollout** (owner's call: payments already proven on
+    internal testing). Google's trader/ToS and Data safety reviews passed first.
+17. **Admin → Mobile app (version gate)** — only AFTER each store actually
+    serves 1.17.0 (Android: production rollout at 100%; iOS: approved and
+    released). Set that platform's **latest_version = 1.17.0**; raise
+    min_version / force_update only if older builds must stop working. Setting
+    it before the store serves the build prompts users to update to a version
+    they cannot get. State on 2026-11-06: android latest 1.14.0 (stale — 1.16.x
+    is in production), ios latest 1.16.0 with force_update on.
+18. iOS 1.17.0: build and submit from the current Apple account with the App
+    Store notes from the same file (or after the Apple transfer — Part 2). — ✅
+    built with `eas build -p ios --profile production --auto-submit` (Apple
+    login declined; stored EAS credentials reused) and submitted for review
+    2026-11-09, release set to **manual**. The listing has English and Russian
+    pages only (no Azerbaijani); all three notes went into the English page.
 
 ---
 

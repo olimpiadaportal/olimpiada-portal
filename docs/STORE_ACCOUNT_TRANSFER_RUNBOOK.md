@@ -126,7 +126,9 @@ The trader/ToS change sent for review on 2026-11-06 does not block any of this.
     Store notes from the same file (or after the Apple transfer — Part 2). — ✅
     built with `eas build -p ios --profile production --auto-submit` (Apple
     login declined; stored EAS credentials reused) and submitted for review
-    2026-11-09, release set to **manual**. The listing has English and Russian
+    2026-11-09, release set to **manual**. Approved and released 2026-11-11;
+    iOS gate set to latest 1.17.0 the same day (min 1.14.0, force on — force
+    only blocks below min). Android gate still 1.14.0, waiting on Google. The listing has English and Russian
     pages only (no Azerbaijani); all three notes went into the English page.
 
 ---
